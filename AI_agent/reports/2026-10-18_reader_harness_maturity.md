@@ -146,4 +146,8 @@ v110输入632,996 tokens、缓存170,112，命中26.87%；v109为27.53%。全36�
 
 这是当前案例范围内的读图基线。未见图纸泛化、真实跨层整楼、跨图组装和完整热环境仿真未验收；局部墨线提示也不证明未覆盖处正确。默认仍保留必要的最终实际净图/回叠审阅和不确定性记录。
 
-最后图审通过；发布待提交后执行，固定桌面当前仍为`873fb37f`、runtime24/domain103。
+最终[文档与默认配置独立复核](D:/Sim-BIM-Agent/cache/reader-harness-20261018/reviewer-probe/final-maturity-report-review.md)无P1/P2阻塞。实现提交`b72ea6c7ecbdccffb08622239f84cfe14e2618dc`已推送main，并通过固定更新入口原位发布至`C:/Users/Horton/Desktop/Sim BIM Agent`，runtime24/domain110。520个清单文件逐项与已提交源码、发布包和安装目录SHA一致；变更12个文件、删除0个，依赖不变，离线安装验收25.438秒通过、0真实模型调用。
+
+[发布核验](D:/Sim-BIM-Agent/cache/reader-harness-20261018/release-verification.json)记录completed状态和完整清单摘要。上一版`873fb37f`的519个程序文件及清单已逐项核验，轻量备份`previous.zip`为5,060,336字节，未包含环境、案例或凭据；更新工具自己的工作副本已清理。桌面实际自定义配置保留，新建配置默认平面high/立面medium。
+
+本轮临时发布目录`D:/Sim-BIM-Agent/releases/20261018-reader-harness-v110`（约22MB）在发布核验后尝试删除，被自动审批拒绝，返回`blocked by policy`，未给更具体原因；已保留且不绕过重试。前两轮被拒绝的临时目录也未再操作。发布证据和36次模型运行保留在D盘，未清理无关工作树。收尾核验时磁盘剩余约C盘48.6GiB、D盘125.3GiB。
