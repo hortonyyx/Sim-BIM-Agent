@@ -108,6 +108,20 @@ def test_unknown_side_still_checks_known_width_without_guessing_faces():
     assert issue["declared_thickness_m"] == .72 and issue["ink_spacing_m"] == .24
 
 
+@pytest.mark.parametrize('mirror', [False, True])
+@pytest.mark.parametrize('side,thickness,expansion,comparison', [
+    ('inner_face', .24, 'up', 'placement_only'),
+    ('outer_face', .72, 'down', 'thickness_and_placement')])
+def test_hint_describes_material_direction_in_image_without_world_sign_arithmetic(
+        mirror, side, thickness, expansion, comparison):
+    plan, image, metadata, report = scene(side=side, thickness=thickness, mirror=mirror)
+    issue = append_wall_metadata_checks(report, image, plan, metadata)['items'][0]
+    assert issue['image_expansion'] == expansion
+    assert issue['comparison'] == comparison
+    assert issue['declared_reference_px'] == 100
+    assert issue['nearby_parallel_ink_px'] == [100, 124]
+
+
 def short_piers(*, pixels_per_m=100, sample_length_m=.6, side="outer_face", thickness=.16):
     """One door leaves two clear piers after the unchanged end/opening margins."""
     start, end = 100, 100 + 3 * pixels_per_m

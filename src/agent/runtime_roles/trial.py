@@ -241,6 +241,23 @@ def _audit_reference(receipt: Mapping[str, Any], field: str, value: object) -> d
     return reference
 
 
+def _numeric_failure_hint(plan, error):
+    """Unwrap a located compiler rejection without changing its coordinates."""
+    hint = plan_error_hint(plan, str(error))
+    if hint.get("path") != "plan_json":
+        return hint
+    report = getattr(error, "report", None)
+    for row in report.get("rejections", []) if isinstance(report, Mapping) else []:
+        if isinstance(row, Mapping) and isinstance(row.get("error"), str):
+            located = plan_error_hint(plan, row["error"])
+            if located.get("path") and located["path"] != "plan_json":
+                return located
+    # A numeric/geometry failure already parsed a plan. Repeating a synthetic
+    # whole-plan example (with unrelated heights) encourages a full rewrite.
+    return {"note": "The declaration parsed; inspect the named rejection and original drawing. "
+                    "Preserve other objects; edit only the supported correction."}
+
+
 def _model_visible_receipt(receipt: Mapping[str, Any]) -> dict[str, Any]:
     """Keep actionable trial feedback while referencing duplicated audit detail.
 
@@ -302,21 +319,6 @@ def _model_visible_receipt(receipt: Mapping[str, Any]) -> dict[str, Any]:
             hint["junction_repairs"] = copy.deepcopy(repairs[:8])
             hint["junction_repairs_remaining"] = len(repairs) - 8
         visible["repair_hint"] = hint
-    alignment = visible.get("reading_alignment")
-    if isinstance(alignment, Mapping):
-        compact = {}
-        for key in ("ink", "dimensions", "lite_bim"):
-            row = alignment.get(key)
-            if isinstance(row, Mapping):
-                compact[key] = {
-                    field: copy.deepcopy(row[field])
-                    for field in ("status", "summary", "search", "tolerances", "grid_step_m", "selection_basis") if field in row
-                }
-        compact["full_list"] = (
-            "The complete reading_alignment record is saved in this trial receipt and "
-            "regularization_inputs.reading_alignment of the compiled plan."
-        )
-        visible["reading_alignment"] = compact
     preflight = visible.get("alignment")
     if isinstance(preflight, Mapping):
         compact_preflight = {
@@ -381,12 +383,14 @@ def _model_visible_receipt(receipt: Mapping[str, Any]) -> dict[str, Any]:
         )
     # A compiled candidate can fail a later check while still carrying the same
     # enormous precision ledger as a passed trial. Preserve its failure actions.
-    from .trial_feedback import bound_receipt_projection, reference, report_summary
+    from .trial_feedback import AUDIT_ONLY_FIELDS, bound_receipt_projection, reference, report_summary
     for field in ("building_precision", "drawing_differences", "corridor_review"):
         if field in receipt and len(_plan_bytes({"value": receipt[field]})) > 8000:
             visible[field] = report_summary(receipt, field)
             visible.setdefault("audit_refs", {})[field] = reference(receipt, "/" + field, receipt[field])
     visible["receipt_audit"] = reference(receipt, "", receipt)
+    for field in AUDIT_ONLY_FIELDS:
+        visible.pop(field, None)
     return bound_receipt_projection(receipt, visible)
 
 
@@ -1234,7 +1238,7 @@ class PlanTrial:
                 },
                 "returned_images": [],
                 "reason": f"{getattr(error, 'failure_context', {}).get('failure_stage', 'numeric_plan_resolution')}: {error}",
-                "repair_hint": plan_error_hint(normalized, str(error)),
+                "repair_hint": _numeric_failure_hint(normalized, error),
                 "unhosted_openings": located_findings(unhosted_openings),
                 "loose_partition_ends": located_findings(loose_partition_ends),
                 "changes": change_report,

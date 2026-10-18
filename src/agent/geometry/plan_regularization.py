@@ -1379,7 +1379,14 @@ def _align_head_to_tail(plan: dict, calibration: dict, line_refs: dict[str, list
             distance = abs(first["coordinate_m"] - second["coordinate_m"])
             if not within_wall_tolerance(first, second):
                 continue
-            if _overlap(first, second) > _EPS or _span_gap(first, second) > _EPS:
+            # A raster-picked end can stop just short of a concave footprint
+            # corner. It still needs the thickness-qualified normal alignment
+            # before the perpendicular endpoint pass can attach it. Bound only
+            # this along-line rounding gap; disconnected parallel walls are not
+            # an axis-alignment group. Strict compilation still owns closure.
+            along_axis = "y" if first["axis"] == "x" else "x"
+            end_gap = min(.05, 3 * abs(calibration[along_axis]["slope"]))
+            if _overlap(first, second) > _EPS or _span_gap(first, second) > end_gap + _EPS:
                 continue
             candidates.append((distance, first, second))
     if not candidates:

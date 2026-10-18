@@ -158,6 +158,36 @@ def _original_junction_point(partition, endpoint_index, target):
     return junction, None
 
 
+def _original_edit_distance_m(plan, source, target):
+    """Measure a hint in the original calibration, independently on both axes."""
+    if not (_numeric_point(source) and _numeric_point(target)):
+        return None
+    deltas = []
+    for index, axis in enumerate(('x', 'y')):
+        anchors = plan.get(f'{axis}_anchors')
+        if not (isinstance(anchors, list) and len(anchors) == 2
+                and all(_numeric_point(point) and point[0] >= 0 for point in anchors)):
+            return None
+        (p0, w0), (p1, w1) = anchors
+        if p0 == p1 or w0 == w1:
+            return None
+        deltas.append((target[index] - source[index]) * (w1 - w0) / (p1 - p0))
+    distance = math.hypot(*deltas)
+    return distance if math.isfinite(distance) else None
+
+
+def _original_nearest_target(source, target):
+    segment = target.get('segment_original_pixels')
+    if not (_numeric_point(source) and isinstance(segment, list) and len(segment) == 2
+            and all(_numeric_point(point) for point in segment)):
+        return None
+    first, second = segment
+    if first[0] != second[0] and first[1] != second[1]:
+        return None
+    return [min(max(source[i], min(first[i], second[i])), max(first[i], second[i]))
+            for i in range(2)]
+
+
 def _junction_hint(plan, message):
     marker = 'nearest disconnected endpoints: '
     start = message.find(marker)
@@ -194,6 +224,8 @@ def _junction_hint(plan, message):
                       reported_point_after_alignment_original_pixels=list(target_point))
         if junction is not None:
             target['point_original_pixels'] = copy.deepcopy(junction)
+        distance_m = _original_edit_distance_m(
+            plan, original, junction if junction is not None else _original_nearest_target(original, target))
         repair = {
             'path': (f'plan.partitions[{index}].points[{endpoint_index}]'
                      if index is not None and endpoint_index is not None else None),
@@ -202,8 +234,16 @@ def _junction_hint(plan, message):
             'failed_endpoint_pixel': list(failed),
             'target': target,
             'distance_pixels': row.get('distance_pixels'),
+            'original_distance_m': distance_m,
         }
-        if junction is not None:
+        # Match the existing strict sub-0.30 m endpoint rule. Wall thickness
+        # does not justify retracting a dangling wall towards a distant divider.
+        if distance_m is None or distance_m >= .30 - 1e-8:
+            repair['blocked_reason'] = (
+                'The original gap is uncalibrated or at least 0.30 m. Inspect the original '
+                'around this endpoint for a missing or misread wall; add or correct a wall '
+                'only when visible. The nearest line is diagnostic, not a relocation target.')
+        elif junction is not None:
             repair['set_to_original_pixels'] = copy.deepcopy(junction)
             repair['requires_synchronous_target_endpoint_move'] = False
         else:
@@ -217,8 +257,9 @@ def _junction_hint(plan, message):
         'junction_repairs': repairs,
         'note': ('Copy set_to_original_pixels only when present; it is the intersection of the '
                  'original source wall axis and original target segment, not an aligned-draft value. '
-                 'Otherwise move the named source and target endpoints together. Do not round the '
-                 'coordinate or add a wall.'),
+                 'For a flagged local synchronous repair, inspect both named endpoints together. '
+                 'For a large or uncalibrated gap, inspect for a missing or misread wall. '
+                 'Do not round original coordinates or move to a nearest line merely to compile.'),
     }
 
 

@@ -74,6 +74,28 @@ def test_plan_requires_local_review_and_saved_result_views():
     assert submission.read() is None
 
 
+def test_elevation_overlay_uses_gray_original_and_retains_exact_adopted_geometry(tmp_path):
+    async def scenario():
+        tools = tools_at(tmp_path)
+        path = tmp_path / 'images/North.png'
+        image = elevation_image()
+        image.putpixel((20, 60), (0, 200, 200))
+        image.save(path)
+        inputs = json.loads((tmp_path / 'inputs.json').read_bytes())
+        inputs['images']['North.png']['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        (tmp_path / 'inputs.json').write_text(json.dumps(inputs), encoding='utf-8')
+        tools = ElevationReaderTools(Frozen(tmp_path), role_id='elevation_reader', image_name='North.png', target='North/F1')
+        result = await tools.call_tool('trial_elevation_reading', COMPACT_ELEVATION_EXAMPLE)
+        assert not result['isError'], result
+        views = result['structuredContent']['views']
+        with Image.open(tmp_path / next(v['file'] for v in views if v['kind'] == 'overlay')) as overlay:
+            r, g, b = overlay.getpixel((20, 60))
+            assert r == g == b and r > 0
+            assert overlay.size == image.size
+        assert image.getpixel((20, 60)) == (0, 200, 200)
+    asyncio.run(scenario())
+
+
 def test_reader_unit_uses_exact_task_with_no_coordinator_or_auto_filled_siblings(tmp_path, monkeypatch):
     monkeypatch.setattr("src.agent.runtime_roles.entry.make_versions", lambda *a, **k: versions())
     monkeypatch.setattr("src.agent.runtime_roles.session.make_versions", lambda *a, **k: versions())

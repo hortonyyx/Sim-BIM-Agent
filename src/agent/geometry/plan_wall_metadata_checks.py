@@ -34,6 +34,7 @@ def append_wall_metadata_checks(report, original, plan, metadata):
         return p0 + (value - w0) / slopes[axis]
 
     found = []
+    wall_pairs = {}
     for wall in wall_reading_input(plan, metadata)["walls"]:
         thickness, side = wall["thickness_m"], wall["reference_side"]
         for a, b in wall["segments_m"]:
@@ -69,6 +70,8 @@ def append_wall_metadata_checks(report, original, plan, metadata):
             lines = [(s + e) / 2 + cross_lo for s, e in strokes]
             if (lines[1] - lines[0]) < 2:
                 continue
+            if wall["target"].startswith("footprint:"):
+                wall_pairs[wall["target"]] = lines
             # Unknown thickness or side cannot define two declared faces, but
             # the reference still belongs within the observed pair. Unknown
             # metadata is not itself an error and is never filled from ink.
@@ -91,6 +94,10 @@ def append_wall_metadata_checks(report, original, plan, metadata):
                    else [int(lo), cross_lo, int(hi), cross_hi])
             found.append({"type": "wall_metadata_ink_mismatch", "wall_target": wall["target"],
                           "axis": "x" if normal == 0 else "y", "look_box": box,
+                          "comparison": "placement_only" if width_agrees else "thickness_and_placement",
+                          "image_expansion": ("unknown" if offsets is None else "both" if side == "centerline"
+                              else ("right" if normal == 0 else "down") if sum(offsets) / slopes[normal] > 0
+                              else ("left" if normal == 0 else "up")),
                           "declared_faces_px": None if faces is None else [round(p, 3) for p in faces],
                           "declared_reference_px": round(at, 3), "reference_side": side,
                           "reference_outside_ink_m": round(outside, 4),
@@ -101,11 +108,13 @@ def append_wall_metadata_checks(report, original, plan, metadata):
                           "sample_pixels": int(sample.size),
                           "check": "The declared wall reference, faces or width differ from two persistent nearby ink lines. "
                                    "Check the original pair, selected reference side and thickness basis; "
-                                   "these strokes may be other drawing features. Do not move walls automatically."})
+                                   "these strokes may be other drawing features. A placement_only hint may be an "
+                                   "audited grid/merge shift: correct a wrong feature or side, not a deliberate Lite BIM offset."})
     result["items"] = [*result.get("items", []), *found]
     result["total"] = len(result["items"])
     result["counts"] = dict(Counter(row["type"] for row in result["items"]))
     result["scope"] = result.get("scope", "") + " Also compares declared wall references and known thickness/side " \
                       "against unambiguous local parallel ink; unknown metadata is not an error or inferred here. " \
                       "This adds hints, not wall identification."
-    return result
+    from .plan_window_span_checks import append_window_span_checks
+    return append_window_span_checks(result, mask, plan, wall_pairs)

@@ -970,6 +970,10 @@
       "group": "targeted",
       "reason": "Offline module checks selected when changing src.agent.geometry.plan_wall_support"
     },
+    "tests/test_plan_window_span_checks.py": {
+      "group": "targeted",
+      "reason": "Scoped exterior-window span hints from observed wall-face pairs; ambiguity, neighbor protection and no geometry edits"
+    },
     "tests/test_product_release.py": {
       "group": "fast",
       "reason": "Current installable product release and entrypoint contracts"

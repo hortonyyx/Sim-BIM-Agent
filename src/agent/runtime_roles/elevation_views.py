@@ -106,7 +106,8 @@ def _overlay(original, artifact, openings, levels):
 def reading_views(original, artifact):
     _check_image_coordinates(artifact, original.size)
     openings, levels, issues = _adopted_geometry(artifact, original.size)
-    overlay = _overlay(original, artifact, openings, levels)
+    # Match the plan review convention: original ink gray, adopted values color.
+    overlay = _overlay(original.convert("L").convert("RGB"), artifact, openings, levels)
     diagram = _overlay(Image.new("RGB", original.size, "white"), artifact, openings, levels)
     ImageDraw.Draw(diagram).text((10, 10),
         f"{artifact['orientation']} - adopted opening and level readings (absolute Z, metres)", fill="black")

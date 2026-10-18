@@ -9,6 +9,17 @@ import re
 from collections.abc import Mapping
 
 
+# Complete values remain in the durable receipt for both outcomes.
+AUDIT_ONLY_FIELDS = frozenset({
+    'original_plan_sha256', 'image', 'reading_product_file', 'reading_product_sha256',
+    'candidate', 'draft', 'compiled_plan_sha256', 'input_plan_file',
+    'aligned_numeric_input_file', 'aligned_numeric_input_sha256',
+    'unaligned_numeric_input_file', 'unaligned_numeric_input_sha256',
+    'compiled_numeric_plan_file', 'compiled_numeric_plan_sha256', 'field_aliases',
+    'length_bindings', 'measurement_bindings', 'measurement_profiles', 'reading_alignment',
+    'overlay', 'base_plan_sha256', 'plan_revision', 'operations', 'phase', 'topology_dividers',
+})
+
 def _bytes(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                       allow_nan=False).encode("utf-8")
@@ -68,22 +79,38 @@ def report_summary(receipt, field):
             "not_checked", "reason", "wall_placement", "corridor_space_ids", "findings", "hint")
     # A floor's located differences are decision evidence, not a repeated audit
     # ledger. Keep a modest list together so offsets need no per-opening reads.
-    result = {key: _preview(receipt, _child(pointer, key), value[key],
-                          budget=8000 if field == "drawing_differences" and key == "items" else 1800)
-            for key in keep if key in value}
-    if field == 'drawing_differences' and isinstance(result.get('items'), list):
-        # Explain each heuristic once; keep each location and offset together.
+    differences = field == 'drawing_differences' and isinstance(value.get('items'), list)
+    result = {key: _preview(receipt, _child(pointer, key), value[key])
+              for key in keep if key in value and not (differences and key == 'items')}
+    if differences:
+        # Remove repeated prose before budgeting, so it cannot hide the located
+        # measurements. Evidence sampling detail remains in the full receipt.
+        items = copy.deepcopy(value['items'])
         guidance = {}
-        for row in result['items']:
-            if not isinstance(row, dict) or not isinstance(row.get('check'), str):
+        for row in items:
+            if not isinstance(row, dict):
                 continue
-            check = row.pop('check')
-            key = next((key for key, text in guidance.items() if text == check), None)
-            key = key or f'g{len(guidance) + 1}'
-            guidance[key] = check
-            row['guidance'] = key
-        if guidance:
-            result['guidance'] = guidance
+            if row.get('type') == 'wall_metadata_ink_mismatch':
+                row.pop('sample_pixels', None)
+                row.pop('sampled_length_m', None)
+                if row.get('face_residual_m') is not None:
+                    row.pop('reference_outside_ink_m', None)
+                if row.get('image_expansion') in {'up', 'down', 'left', 'right', 'both'}:
+                    row.pop('reference_side', None)
+            if isinstance(row.get('check'), str):
+                check = row.pop('check')
+                key = next((key for key, text in guidance.items() if text == check), None)
+                key = key or f'g{len(guidance) + 1}'
+                guidance[key] = check
+                row['guidance'] = key
+        if len(_bytes(items)) <= 8000:
+            result['items'] = items
+            if guidance:
+                result['guidance'] = guidance
+        else:
+            # Hashes and JSON pointers must describe the original saved rows,
+            # not the smaller projection above.
+            result['items'] = _preview(receipt, _child(pointer, 'items'), value['items'], budget=8000)
     return result
 
 
@@ -139,7 +166,10 @@ def bound_receipt_projection(receipt, visible, *, max_bytes=24_000):
     for field, value in visible.items():
         budget = (10_000 if field == "drawing_differences" else
                   6000 if field == "literal_geometry_diagnostic" else 3000)
-        if size(value) <= budget:
+        # Match report_summary's compact field budget; the complete wire-facing
+        # projection still uses the conservative default-JSON 24 KB cap below.
+        field_size = len(_bytes(value)) if field == 'drawing_differences' else size(value)
+        if field_size <= budget:
             projected[field] = value
             continue
         # Re-project the original field, not an already summarized value: every
@@ -170,13 +200,7 @@ def bound_receipt_projection(receipt, visible, *, max_bytes=24_000):
 def passed_receipt(receipt):
     """Return decisions and changes; keep repeated bookkeeping in the full receipt."""
     visible = {}
-    audit_only = {'original_plan_sha256', 'image', 'reading_product_file', 'reading_product_sha256',
-        'candidate', 'draft', 'compiled_plan_sha256', 'input_plan_file', 'aligned_numeric_input_file',
-        'aligned_numeric_input_sha256', 'unaligned_numeric_input_file', 'unaligned_numeric_input_sha256',
-        'compiled_numeric_plan_file', 'compiled_numeric_plan_sha256', 'field_aliases',
-        'length_bindings', 'measurement_bindings', 'measurement_profiles', 'reading_alignment',
-        'alignment', 'overlay', 'base_plan_sha256', 'plan_revision', 'operations', 'phase',
-        'topology_dividers', 'editable_draft'}
+    audit_only = AUDIT_ONLY_FIELDS | {'alignment', 'editable_draft'}
     for field, value in receipt.items():
         if field in audit_only:
             continue

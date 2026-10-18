@@ -57,10 +57,19 @@ missing connections. Complete plan example:
 {example}
 Replace synthetic values with observations. Use partitions[].points, openings[].p1/p2,
 space_seeds[].point, not wall/room polygons or opening room/space_id/facade fields.
-Seeds label room interiors, never create walls; choose role from the full table below.
+Seeds label connected room interiors, never create walls. Use one seed per continuous
+space, including a corridor with several named stretches; choose role from the full table below.
 Do not duplicate footprint as partitions. Exterior doors/windows lie on footprint;
-interior doors/open passages lie on partitions continuing through apertures. Only exterior
-windows are supported. Omit heights absent from this drawing. Never remove an observed object or change
+interior doors/open passages lie on partitions continuing through apertures. Each opening
+is one complete wall aperture: a double-leaf door is one door spanning both outer jambs,
+not one opening per leaf or swing arc. Endpoints are the two aperture jambs/frame ends;
+adjacent wall piers and nearby wall junctions are outside that span. Use clearly bracketed
+opening-width annotations over rough stroke-length estimates. For uncertain endpoints or
+a reported span conflict, an existing single-segment dimension_chain between that same
+aperture's two extension-line ticks can constrain its width. Do not require a chain for every
+already clear opening or add a separate per-opening measurement pass.
+Only exterior windows are supported.
+Omit heights absent from this drawing. Never remove an observed object or change
 room topology merely to make a trial pass.
 source_refs on partitions/openings may be omitted: code records the admitted image and object ID.
 Keep explicit annotation references when they add useful evidence. Room role_evidence is optional;
@@ -71,7 +80,8 @@ exact target overrides footprint:<edge>, partition:<id>, or partition:<id>:<segm
 Each row needs thickness_m, evidence_status=observed/inferred, short basis and source_refs.
 Batch defaults always adopt inferred evidence, even when based on a few measured walls.
 Only exact targets directly supported by the drawing may be observed.
-Use annotated dimensions when clear. Otherwise choose a plausible common thickness for
+An annotation is wall thickness only when its extension lines bracket that wall across its
+width; a nearby door pier or opening width is not thickness. Otherwise choose a plausible common thickness for
 the visible construction and mark inferred; no separate per-wall measurement pass.
 Candidates in cm: 6,7,8,9,10,12,13,14,15,16,18,19,20,22,24,25,26,28,29,30,
 35,36,37,40,45,49,50,55,60,62,65,70,75,80,85,90,95,100,110,120,130,140,150,160,180,200.
@@ -88,7 +98,8 @@ anchor then snapping it to the shared 10 cm grid; it never averages wall coordin
 Thickness changes remain segment attributes. Openings follow the host. Cross-floor
 matching is assembly work, not a reader task. Clean plan shows thickness; overlay emphasizes
 adopted reference lines over gray original ink. Both use the same adopted coordinates,
-opening colours, labels and calibration. Inspect thickness/direction on the clean plan and
+opening colours, labels and calibration. The clean plan's dark dashed line is the adopted
+reference; its position within the band shows the expansion side. Inspect thickness/direction there and
 object placement on the overlay. Review missing/wrong walls, rooms and openings, not every small deliberate
 thickness/grid offset. Original declarations and applied movements remain in the audit.
 Failed geometry remains a saved declaration, not an accepted reading. Use read_plan_draft()
@@ -109,10 +120,12 @@ objects. Notes may change freely but cannot authorize geometry or room-use chang
 
 _PLAN_REVIEW = """Review trial drawing_differences, hard-rule failures and the saved overlay. In that overlay,
 gray is original ink and color is adopted geometry. Compare the opening sequence and spans
-on each wall with the original symbols, including exterior windows outside the ink report's
-scope; a zero-item report or matching count does not establish their locations. Rework missing,
-extra or misconnected rooms/walls/openings and deviations over 0.30 m. A selection outside the intended wall band or a wrong opening endpoint still needs
-correction. Audited thickness merges and grid displacement are permitted simplifications.
+on each wall with the original symbols, including exterior windows; scoped ink hints do
+not cover every aperture or establish identity, and zero items or matching counts do not prove locations. Rework missing,
+extra or misconnected rooms/walls/openings, wrong aperture endpoints and spans inconsistent
+with clear opening dimensions. Audited thickness-normal shifts and grid displacement are
+permitted simplifications only for correctly identified features; they do not excuse a wrong
+opening span or selection outside the intended wall band.
 Keep adopted 0.1 m values for finer tails only when the correct physical feature was read;
 the report retains original readings. Revisit the specific inconsistency on the existing
 overlay, without restarting a whole-plan point-by-point measurement loop. Use a targeted
@@ -223,9 +236,13 @@ floor-contact sills and records numeric/ink disagreements for review. It then ad
 absolute level Z values and opening width/sill/head values on the configured Lite BIM grid
 (currently 0.1 m), retaining each pre-grid reading and shift in regularization metadata.
 Do not hand-round values or repeatedly measure four profiles to remove finer tails.
-Keep openings in image order within each floor and count every window/door. Keep unclear
+Floor levels must be supported by floor/level evidence; a raised door sill or threshold
+alone is not a floor level. Keep openings in image order within each floor and count every window/door. Keep unclear
 marks and mirrored/nonstandard views in unresolved; never borrow plan positions.
-Correct a named rejection and resubmit. After reviewing the returned adopted elevation and original overlay, call submit_elevation_reading with that trial_id and local_review.summary. A trial alone is not a delivery. Correct substantive errors with another trial; retain uncertain evidence in unresolved. Accepted submission ends the task automatically; do not spend another request acknowledging.""".format(
+Correct a named rejection and resubmit. In the returned overlay, gray is original ink and
+color is adopted geometry. Review it together with the clean elevation, then call
+submit_elevation_reading with that trial_id and local_review.summary. Batch already visible
+corrections into one trial; retain uncertain evidence in unresolved. Acceptance ends the task.""".format(
     example=json.dumps(COMPACT_ELEVATION_EXAMPLE, ensure_ascii=False, separators=(",", ":")))
 
 ELEVATION_READER_GUIDANCE = "\n\n".join((

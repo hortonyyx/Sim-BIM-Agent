@@ -176,6 +176,17 @@ def _views(plan, metadata, original, *, wall_views=None, overlay_thickness=False
         reference_draw.line(points, fill=(*wall, 255), width=1)
     overlay = Image.alpha_composite(overlay, reference_layer)
     clean = Image.alpha_composite(pictures[1].convert('RGBA'), band_layer)
+    # A dark dashed reference distinguishes centreline from selected wall face
+    # on the thickness-bearing view without obscuring the original line overlay.
+    clean_draw = ImageDraw.Draw(clean)
+    for a, b in wall_views['reference_lines']:
+        length = max(abs(b[0] - a[0]), abs(b[1] - a[1]))
+        if length <= 0:
+            continue
+        for start in range(0, int(length) + 1, 10):
+            end = min(start + 5, length)
+            points = [tuple(a[i] + (b[i] - a[i]) * t / length for i in (0, 1)) for t in (start, end)]
+            clean_draw.line(points, fill=(30, 55, 75, 255), width=1)
     return [Image.alpha_composite(p, layer).convert('RGB') for p in (overlay, clean)]
 
 

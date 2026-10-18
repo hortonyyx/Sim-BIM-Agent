@@ -75,6 +75,36 @@ def test_connected_different_thickness_segments_survive_source_binding():
     assert {r['thickness_m'] for r in patch['component_attributes']} >= {.12, .24}
 
 
+@pytest.mark.parametrize('reverse', [False, True])
+def test_thickness_aligned_concave_corner_closes_subpixel_end_gap(reverse):
+    # The wall bands meet, but a raster-picked end misses the concave corner
+    # in both axes. Normal alignment must precede perpendicular attachment.
+    plan = thickness(_plan([
+        ('spine', [[40, 0], [40, 61]]), ('return', [[40, 61], [59.9, 61]])],
+        footprint=[[0, 0], [100, 0], [100, 60], [60, 60], [60, 100], [0, 100]]), .12)
+    if reverse:
+        for row in plan['partitions']:
+            row['points'].reverse()
+    before = copy.deepcopy(plan)
+    adopted, report = regularize_lite_plan(plan, image_size=IMAGE_SIZE)
+    walls = {p['id']: p['points'] for p in adopted['partitions']}
+    assert plan == before and adopted['footprint_pixels'] == plan['footprint_pixels']
+    assert sorted(walls['return']) == [[40., 60.], [60., 60.]]
+    assert [40., 60.] in walls['spine']
+    assert report['wall_merging']['semantic_mapping']['space_count_after'] == 2
+
+
+def test_head_tail_does_not_align_independent_parallel_walls_across_larger_gap():
+    from src.agent.geometry.plan_regularization import _align_head_to_tail, _calibration
+    from src.agent.geometry.wall_merge_policy import prepare_thickness_plan
+    plan = prepare_thickness_plan(thickness(_plan([
+        ('A', [[40, 0], [40, 49]]), ('B', [[42, 51], [42, 100]])]), .12))
+    before = copy.deepcopy(plan)
+    changes = []
+    assert not _align_head_to_tail(plan, _calibration(plan, IMAGE_SIZE), {}, [], changes)
+    assert plan == before and changes == []
+
+
 def test_cross_floor_moves_xy_and_openings_retains_floor_thickness_and_z():
     lower = thickness(_plan([('A', [[40.3, 0], [40.3, 100]])], openings=[_door('D', 40.3)]))
     upper = thickness(_plan([('A', [[44.3, 0], [44.3, 100]])], openings=[_door('D', 44.3)]), .12)

@@ -125,6 +125,34 @@ def test_failed_trial_is_one_json_after_adapter_and_loses_no_error_location(tmp_
     assert json.loads(receipt_path.read_text(encoding="utf-8")) == complete
 
 
+def test_wrapped_geometry_failure_reuses_original_coordinate_hint():
+    from src.agent.geometry.plan_partition import compile_plan_partition
+    from src.agent.geometry.plan_regularization import PlanRegularizationError
+    from src.agent.runtime_roles.trial import _numeric_failure_hint
+    from tests.test_plan_regularization import _plan, IMAGE_SIZE
+    plan = _plan([('wall', [[40, 0], [40, 95]])])
+    with pytest.raises(ValueError) as caught:
+        compile_plan_partition(plan, image_size=IMAGE_SIZE, image_name='plan.png')
+    error = PlanRegularizationError('The adjusted draft did not compile literally.', report={
+        'rejections': [{'type': 'strict_compile_failed_after_regularization', 'error': str(caught.value)}]})
+    hint = _numeric_failure_hint(plan, error)
+    assert hint['path'] == 'plan.partitions[0].points[1]'
+    assert hint['junction_repairs'][0]['original_endpoint_pixel'] == [40, 95]
+    assert 'example' not in hint
+
+
+def test_failure_bookkeeping_is_readable_only_in_full_receipt(tmp_path):
+    complete, image, receipt_path, _ = _receipt(tmp_path, passed=False)
+    complete['reading_alignment'] = {'status': 'reported', 'repeated_ledger': ['audit-only'] * 100}
+    complete['failed_stage_input_file'] = 'trial_001_failed_stage_input.json'
+    complete['repair_coordinate_basis'] = 'Edit original pixels, not failed-stage coordinates.'
+    visible = asyncio.run(InjectedTrial(complete, [image]).call({}))['structuredContent']
+    assert 'reading_alignment' not in visible and 'candidate' not in visible
+    assert visible['failed_stage_input_file'] == complete['failed_stage_input_file']
+    assert visible['repair_coordinate_basis'] == complete['repair_coordinate_basis']
+    assert visible['receipt_audit']['read']['arguments']['field'] == 'report:'
+
+
 def test_large_failed_trial_keeps_located_actions_and_references_repeated_audit_detail(tmp_path):
     complete, image, receipt_path, _ = _receipt(tmp_path, passed=False)
     complete["reason"] = "many dangles; " + ("repeated compiler detail " * 200)
@@ -596,6 +624,69 @@ def test_large_difference_list_stays_bounded_and_references_original_evidence(tm
         args = page.get("next")
     assert recovered == rows
     assert receipt_path.read_bytes() == original
+
+
+def _wall_differences(count):
+    # Reproduce a batch of located measurements with a repeated long heuristic.
+    rows = [{"type": "wall_metadata_ink_mismatch", "wall_target": f"partition:synthetic-wall-{i}",
+             "axis": "y", "comparison": "placement_only", "image_expansion": "both",
+             "declared_reference_px": 495.2, "declared_faces_px": [492.422, 497.978],
+             "declared_thickness_m": .12, "nearby_parallel_ink_px": [489.5, 495.0],
+             "ink_spacing_m": .1188, "face_residual_m": [.0631, .0643],
+             "reference_outside_ink_m": .0043, "reference_side": "centerline",
+             "look_box": [282, 474, 513, 517], "sample_pixels": 166, "sampled_length_m": 3.59,
+             "check": ("Compare the original ink pair, wall reference, expansion side and thickness basis. "
+                       "Persistent strokes can be another feature; an audited grid or merge shift is "
+                       "permitted. Correct a wrong physical feature or side, not every small displacement. "
+                       "Preserve real partitions and openings; use the original drawing as evidence.")}
+            for i in range(count)]
+    return rows
+
+
+def test_wall_difference_batch_exposes_decisions_before_prose_is_budgeted(tmp_path):
+    complete, image, receipt_path, _ = _receipt(tmp_path, passed=True)
+    complete['trial_id'] = 'trial_001'
+    rows = _wall_differences(19)
+    complete['drawing_differences'] = {'status': 'reported', 'items': rows, 'total': len(rows),
+                                     'coverage': {'note': 'x' * 1500}}
+    receipt_path.write_text(json.dumps(complete), encoding='utf-8')
+    before = receipt_path.read_bytes()
+    trial = InjectedTrial(complete, [image])
+    trial.workspace, trial.receipts = tmp_path, [complete]
+    shown = asyncio.run(trial.call({}))['structuredContent']
+    differences = shown['drawing_differences']
+    assert len(json.dumps(rows, separators=(',', ':')).encode()) > 8000
+    assert len(differences['items']) == 19
+    assert len(differences['guidance']) == 1
+    for actual, original in zip(differences['items'], rows):
+        for key in ('wall_target', 'axis', 'comparison', 'image_expansion', 'declared_reference_px',
+                    'declared_faces_px', 'declared_thickness_m', 'nearby_parallel_ink_px',
+                    'ink_spacing_m', 'face_residual_m', 'look_box'):
+            assert actual[key] == original[key]
+        assert not {'check', 'sample_pixels', 'sampled_length_m', 'reference_side',
+                    'reference_outside_ink_m'} & actual.keys()
+    assert len(json.dumps(shown, ensure_ascii=False).encode()) <= 24000
+    assert trial.read_draft(field='report:/drawing_differences/items/18')['value'] == rows[-1]
+    assert receipt_path.read_bytes() == before
+
+
+def test_wall_difference_projection_preserves_only_available_side_and_metric():
+    from src.agent.runtime_roles.trial_feedback import report_summary
+    row = _wall_differences(1)[0]
+    row.update(image_expansion='unknown', face_residual_m=None)
+    receipt = {'drawing_differences': {'items': [row]}}
+    shown = report_summary(receipt, 'drawing_differences')['items'][0]
+    assert shown['reference_side'] == row['reference_side']
+    assert shown['reference_outside_ink_m'] == row['reference_outside_ink_m']
+
+
+def test_oversized_wall_projection_references_original_unstripped_rows():
+    from src.agent.runtime_roles.trial_feedback import report_summary, reference
+    rows = _wall_differences(100)
+    receipt = {'trial_id': 'trial_005', 'drawing_differences': {'items': rows}}
+    shown = report_summary(receipt, 'drawing_differences')['items']
+    assert shown['full_record'] == reference(receipt, '/drawing_differences/items', rows)
+    assert shown['items'][0]['full_record'] == reference(receipt, '/drawing_differences/items/0', rows[0])
 
 
 def test_giant_single_regularization_rejection_keeps_location_and_verified_full_receipt(tmp_path):

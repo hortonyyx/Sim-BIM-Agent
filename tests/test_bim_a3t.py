@@ -83,6 +83,7 @@ def test_disconnected_endpoint_reports_nearest_declared_line_without_snapping():
         'set_to_original_pixels': [50.0, 50.0],
         'requires_synchronous_target_endpoint_move': False,
         'distance_pixels': 1.0,
+        'original_distance_m': 0.1,
     }]
     assert plan == before
 
@@ -100,6 +101,87 @@ def test_disconnected_endpoint_hint_maps_an_aligned_target_back_to_the_original_
     assert repair['target']['segment_original_pixels'] == [[50, 10], [50, 50]]
     assert repair['set_to_original_pixels'] == [50, 50]
     assert repair['requires_synchronous_target_endpoint_move'] is False
+
+
+@pytest.mark.parametrize('scale', [.01, .1])
+@pytest.mark.parametrize('gap_m', [.299, .3, .301])
+@pytest.mark.parametrize('transpose,reverse,mirror', [(False, False, False), (True, True, True)])
+def test_junction_hint_bounds_original_metres_not_aligned_pixel_distance(scale, gap_m, transpose, reverse, mirror):
+    plan = _plan()
+    plan['x_anchors'] = [[0, 0], [99, 99 * scale * (-1 if mirror else 1)]]
+    plan['y_anchors'] = [[0, 0], [99, 99 * scale * 2]]
+    source = [50 - gap_m / scale, 50]
+    plan['partitions'][1]['points'][-1] = source
+    if transpose:
+        for row in plan['partitions']:
+            row['points'] = [point[::-1] for point in row['points']]
+        source = source[::-1]
+        plan['x_anchors'], plan['y_anchors'] = plan['y_anchors'], plan['x_anchors']
+    if reverse:
+        for row in plan['partitions']:
+            row['points'].reverse()
+    before = copy.deepcopy(plan)
+    row = dict(partition_id='P_left_branch', endpoint_pixel=source,
+               nearest_line='P_vertical', nearest_point_pixel=[50, 50], distance_pixels=.01)
+    repair = plan_error_hint(plan, 'nearest disconnected endpoints: ' + repr([row]))['junction_repairs'][0]
+    assert repair['original_distance_m'] == pytest.approx(gap_m)
+    assert repair['original_endpoint_pixel'] == source
+    if gap_m < .3:
+        assert repair['set_to_original_pixels'] == [50, 50]
+    else:
+        assert 'set_to_original_pixels' not in repair
+        assert 'requires_synchronous_target_endpoint_move' not in repair
+    assert plan == before
+
+
+@pytest.mark.parametrize('anchors', [None, [], [[0, 0], [0, 10]], [[0, 1], [99, 1]],
+                                     [[0, 0], [99, float('nan')]], [[False, 0], [99, 10]]])
+def test_junction_hint_without_valid_calibration_never_commands_endpoint_moves(anchors):
+    plan = _plan()
+    plan['x_anchors'] = anchors
+    plan['partitions'][1]['points'][-1] = [49, 50]
+    row = dict(partition_id='P_left_branch', endpoint_pixel=[49, 50],
+               nearest_line='P_vertical', nearest_point_pixel=[50, 50], distance_pixels=1)
+    repair = plan_error_hint(plan, 'nearest disconnected endpoints: ' + repr([row]))['junction_repairs'][0]
+    assert repair['original_distance_m'] is None
+    assert 'set_to_original_pixels' not in repair
+    assert 'requires_synchronous_target_endpoint_move' not in repair
+
+
+@pytest.mark.parametrize('target_end_y,local', [(49, True), (45, False)])
+def test_synchronous_junction_hint_also_requires_a_local_original_target(target_end_y, local):
+    plan = _plan()
+    plan['partitions'][0]['points'] = [[50, 10], [50, target_end_y]]
+    plan['partitions'][1]['points'][-1] = [49, 50]
+    row = dict(partition_id='P_left_branch', endpoint_pixel=[49, 50],
+               nearest_line='P_vertical', nearest_point_pixel=[50, 50], distance_pixels=1)
+    repair = plan_error_hint(plan, 'nearest disconnected endpoints: ' + repr([row]))['junction_repairs'][0]
+    assert 'set_to_original_pixels' not in repair
+    assert ('requires_synchronous_target_endpoint_move' in repair) == local
+
+
+def test_missing_wall_hint_preserves_diagnostic_without_shrinking_a_room():
+    from tests.test_plan_regularization import _plan as regularization_plan, IMAGE_SIZE
+    plan = regularization_plan([('spine', [[40, 0], [40, 70]]), ('divider', [[40, 50], [100, 50]])])
+    before = copy.deepcopy(plan)
+    with pytest.raises(ValueError) as exc:
+        compile_plan_partition(plan, image_size=IMAGE_SIZE, image_name='plan.png')
+    repair = plan_error_hint(plan, str(exc.value))['junction_repairs'][0]
+    assert repair['original_endpoint_pixel'] == [40, 70]
+    assert repair['original_distance_m'] == 2
+    assert 'set_to_original_pixels' not in repair
+    assert 'requires_synchronous_target_endpoint_move' not in repair
+    # Even when alignment made the reported gap tiny, the original edit is 2 m.
+    row = dict(partition_id='spine', endpoint_pixel=[40, 50.1], nearest_line='divider',
+               nearest_point_pixel=[40, 50], distance_pixels=.1)
+    repair = plan_error_hint(plan, 'nearest disconnected endpoints: ' + repr([row]))['junction_repairs'][0]
+    assert repair['original_distance_m'] == 2
+    assert 'set_to_original_pixels' not in repair
+    assert plan == before
+    plan['partitions'].append(dict(id='missing-bottom', points=[[40, 70], [100, 70]],
+                                   source_refs=['synthetic observed divider']))
+    _, mapping = compile_plan_partition(plan, image_size=IMAGE_SIZE, image_name='plan.png')
+    assert len(mapping['space_mapping']) == 3
 
 
 def test_same_space_seed_hint_points_to_the_original_region_without_inventing_a_wall():
