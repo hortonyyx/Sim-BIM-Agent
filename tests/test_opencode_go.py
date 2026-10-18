@@ -50,7 +50,7 @@ def test_go_model_protocol_sampling_and_reasoning_fail_closed():
             provider_parameters('opencode-go', model='kimi-k3', output_tokens=32000, **kwargs)
 
 
-@pytest.mark.parametrize('model', ['glm-5.3-flash','minimax-m3','gpt-6-luna'])
+@pytest.mark.parametrize('model', ['glm-5.3-flash','mimo-v2.6-flash','minimax-m3','gpt-6-luna'])
 def test_go_transport_uses_own_agent_stable_session_exact_wire_and_no_redirect(tmp_path, model):
     async def scenario():
         connection = resolve_connection('opencode-go', private(tmp_path), model=model)
@@ -72,7 +72,7 @@ def test_go_transport_uses_own_agent_stable_session_exact_wire_and_no_redirect(t
         assert seen[0].headers['x-opencode-session']==session
         assert seen[0].headers['user-agent']=='Sim-BIM-Agent/work-model'
         assert seen[0].headers['authorization']=='Bearer private-go-key'
-        expected={'glm-5.3-flash':'/chat/completions','minimax-m3':'/messages','gpt-6-luna':'/responses'}[model]
+        expected={'glm-5.3-flash':'/chat/completions','mimo-v2.6-flash':'/chat/completions','minimax-m3':'/messages','gpt-6-luna':'/responses'}[model]
         assert str(seen[0].url)==BASE_URL+expected
         assert 'anthropic-beta' not in seen[0].headers
         if model=='minimax-m3':
@@ -93,9 +93,10 @@ def native_response(model, *, tool=False):
         'usage':{'input_tokens':40,'output_tokens':11,'total_tokens':51}}
 
 
-@pytest.mark.parametrize('model', ['glm-5.3-flash','minimax-m3','gpt-6-luna'])
+@pytest.mark.parametrize('model', ['glm-5.3-flash','mimo-v2.6-flash','minimax-m3','gpt-6-luna'])
 def test_go_real_runtime_preserves_tool_images_native_history_usage_and_subscription(tmp_path, model):
-    replies=[response(('view-1','view',{}),reasoning=True),response(text='OK',reasoning=True)] if model=='glm-5.3-flash' else [native_response(model,tool=True),native_response(model)]
+    chat_model = model in {'glm-5.3-flash', 'mimo-v2.6-flash'}
+    replies=[response(('view-1','view',{}),reasoning=True),response(text='OK',reasoning=True)] if chat_model else [native_response(model,tool=True),native_response(model)]
     engine=runtime(tmp_path,replies,limits=RunLimits(model_calls=2,tool_calls=4,seconds=30,tokens=200000))
     engine.model=model
     engine.parameters=provider_parameters('opencode-go',model=model,output_tokens=32000)
@@ -109,14 +110,14 @@ def test_go_real_runtime_preserves_tool_images_native_history_usage_and_subscrip
         assert result['billing_usd'] is None and result['estimated_cost_cny'] is None
         profile=engine._config()['model_profile']
         assert profile['text_safety_factor']==2.0 and 'unverified_endpoint' in profile['profile_status']
-        assert profile['context_window_tokens']==(1050000 if model=='gpt-6-luna' else 1000000)
+        assert profile['context_window_tokens']=={'gpt-6-luna':1050000,'mimo-v2.6-flash':1048576}.get(model,1000000)
         requests=[event.payload for event in engine.store.events if event.payload.event_type=='adapter_request']
         assert len(requests[1].images)==1
         for wire,event in zip(engine.adapter.requests,requests):
             assert wire==engine.store.capture_bytes(event.final_request_body)
             body=json.loads(wire)
             assert body['model']==model and body['stream'] is False
-            if model=='glm-5.3-flash':
+            if chat_model:
                 assert 'n' not in body and 'enable_thinking' not in body
                 assert body['max_tokens']==32000
             elif model=='minimax-m3':

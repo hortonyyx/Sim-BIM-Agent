@@ -370,6 +370,36 @@
       "profile_status": "provider_catalog_with_unverified_image_proxy",
       "recommended_min_output_tokens": 32000,
       "output_limit_source": "models.dev Go catalog output 128000; 32000 is a local recommendation, not a provider minimum."
+    },
+    {
+      "canonical_name": "mimo-v2.6-flash",
+      "aliases": [],
+      "context_window_tokens": 1048576,
+      "native_context_window_tokens": 1048576,
+      "extended_context_window_tokens": null,
+      "endpoint_context_window_tokens": 1048576,
+      "context_limit_kind": "provider_catalog_with_endpoint_uncertainty",
+      "context_source": "https://models.dev/api.json (opencode-go/mimo-v2.6-flash, 2026-10-19); https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+      "context_uncertainty": "Go catalog capacity, not a saturated endpoint test; the served checkpoint behind the moving alias is not independently attested.",
+      "text_estimator": "unicode_chars_v1",
+      "text_estimate_offset": 0,
+      "text_safety_factor": 2.0,
+      "text_fixed_margin": 32,
+      "safety_margin_source": "Local uncalibrated 2x text reservation margin; not a provider tokenizer guarantee.",
+      "reasoning_may_exceed_max_tokens": true,
+      "reasoning_token_allowance": 0,
+      "reasoning_allowance_source": "max_tokens is sent as a combined local output reservation. No independent Go saturation test establishes a bound on reasoning overrun; actual usage is settled separately.",
+      "image_estimator": "openai_patch32_proxy_v1",
+      "image_patch_size": 32,
+      "image_merge_size": 1,
+      "image_min_pixels": 1,
+      "image_max_pixels": 2560000,
+      "image_special_tokens": 0,
+      "image_source": "https://models.dev/api.json (opencode-go/mimo-v2.6-flash image input); existing local patch32 proxy reservation",
+      "image_uncertainty": "UNVERIFIED PROXY: patch32 sizing with local 2x multiplier is a reservation estimate only, not a MiMo processor formula, billing rate or guaranteed upper bound. No image resizing is introduced.",
+      "profile_status": "provider_catalog_with_unverified_image_proxy",
+      "recommended_min_output_tokens": 32000,
+      "output_limit_source": "Go catalog output limit 131072; 32000 is the local reader smoke-test reservation, not a measured minimum."
     }
   ]
 }

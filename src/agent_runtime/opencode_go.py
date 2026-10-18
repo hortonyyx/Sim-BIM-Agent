@@ -20,10 +20,11 @@ from .store import json_bytes
 
 PROVIDER = "opencode-go"
 BASE_URL = "https://opencode.ai/inference/go/v1"
-# The six admitted IDs have model profiles and explicit protocol contracts.
+# Admitted IDs have model profiles and explicit protocol contracts.
 # Other catalog entries, including experimental IDs, fail before a model request.
 MODELS = {
     "glm-5.3-flash": ("openai_chat_completions", 1_000_000, ("low", "high", "max")),
+    "mimo-v2.6-flash": ("openai_chat_completions", 1_048_576, ()),
     "kimi-k3": ("openai_chat_completions", 1_048_576, ("max",)),
     "minimax-m3": ("anthropic_messages", 1_000_000, ()),
     "qwen3.8-max": ("anthropic_messages", 1_000_000, ("low", "medium", "xhigh")),
@@ -84,7 +85,8 @@ def model_profile(model):
     _, cap, _ = model_contract(model)
     selected = get_model_profile(model, strict=True)
     return replace(selected, context_window_tokens=cap, endpoint_context_window_tokens=cap,
-        context_source="https://models.dev/api.json (opencode-go, 2026-10-14)",
+        context_source=(selected.context_source if model == "mimo-v2.6-flash"
+                        else "https://models.dev/api.json (opencode-go, 2026-10-14)"),
         context_uncertainty="Provider catalog capacity, not an independently saturated endpoint test.",
         text_estimate_offset=0, text_safety_factor=2.0, text_fixed_margin=32,
         safety_margin_source="Local uncalibrated Go 2x text margin; not provider billing evidence.",
