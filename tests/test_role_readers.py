@@ -102,7 +102,7 @@ def test_reader_tools_filter_catalog_enforce_one_image_and_reference_provenance(
         trial_description = next(row["description"] for row in catalog if row["name"] == "trial_plan_bim")
         assert "segments_mm" in trial_description
         assert "printed_segments_mm" not in trial_description
-        assert "tick_pixels has one more item than segments_mm" in trial_description
+        assert "tick_pixels" in trial_description and "[x,y]" in trial_description
         assert "Never omit an observed wall/opening or change room topology to pass" in trial_description
         with pytest.raises(ValueError, match="only image"):
             await tools.call_tool("view_image", {"name": "other.png"})

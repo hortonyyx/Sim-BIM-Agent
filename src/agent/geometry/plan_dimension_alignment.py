@@ -54,6 +54,12 @@ def _chain_shape(raw: object, index: int) -> tuple[dict[str, Any] | None, dict[s
     start_world = raw.get("start_world_m")
     if axis not in {"x", "y"}:
         return None, {"chain_id": chain_id, "reason": "axis must be x or y"}
+    # Axis already identifies the measured component. Accept the original [x,y]
+    # ticks as well as scalars, preserving raw declarations in the trial audit.
+    if isinstance(ticks, list):
+        ticks = [value[0 if axis == 'x' else 1]
+                 if isinstance(value, (list, tuple)) and len(value) == 2
+                 and all(_finite(part) for part in value) else value for value in ticks]
     if (not isinstance(segments, list) or not segments
             or any(not _finite(value) or float(value) <= 0 for value in segments)):
         return None, {"chain_id": chain_id, "reason": "segments_mm must be positive finite millimetres"}

@@ -90,7 +90,7 @@ def test_trial_model_projection_keeps_actionable_feedback_and_full_disk_receipt(
     assert visible["building_precision"] == complete["building_precision"]
     assert visible["topology_issues"] == complete["topology_issues"]
     assert visible["changes"] == complete["changes"]
-    assert visible["audit_refs"]["operations"]["receipt_file"] == complete["receipt_file"]
+    assert visible["receipt_audit"]["receipt_file"] == complete["receipt_file"]
     assert "operations" not in visible and "plan_revision" not in visible
     assert json.loads(receipt_path.read_text(encoding="utf-8")) == complete
     assert json.loads(receipt_path.read_text(encoding="utf-8"))["returned_images"][0]["origin"]
@@ -552,7 +552,9 @@ def test_floor_difference_list_keeps_offsets_without_per_opening_reads(tmp_path)
     envelope = asyncio.run(trial.call({}))
     message, _, _, _ = _convert(tmp_path, envelope)
     visible = json.loads(message["content"])
-    assert visible["drawing_differences"]["items"] == rows
+    shown = visible["drawing_differences"]
+    assert [dict({k: v for k, v in row.items() if k != 'guidance'},
+                 check=shown['guidance'][row['guidance']]) for row in shown['items']] == rows
     assert len(json.dumps(visible, ensure_ascii=False).encode()) <= 24_000
     assert visible["submission"]["status"] == "not_submitted"
     assert visible["next_action"]["tool"] == "submit_plan_reading"

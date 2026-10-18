@@ -14,6 +14,23 @@ from src.agent.runtime_roles import trial as trial_module
 from src.agent.runtime_roles.trial import PlanTrial
 
 
+@pytest.mark.parametrize('axis', ['x', 'y'])
+def test_dimension_tick_points_match_axis_scalars_without_rewriting_declarations(axis):
+    from src.agent.geometry.plan_dimension_alignment import _chain_shape
+    scalar = {'id': 'ticks', 'axis': axis, 'segments_mm': [1000, 1000],
+              'tick_pixels': [20, 30, 40], 'source_refs': ['fixture']}
+    points = copy.deepcopy(scalar)
+    points['tick_pixels'] = [[v, 87] if axis == 'x' else [87, v] for v in scalar['tick_pixels']]
+    original = copy.deepcopy(points)
+    assert _chain_shape(points, 0) == _chain_shape(scalar, 0)
+    assert points == original
+    plan = _plan()
+    plan['dimension_chains'] = [points]
+    assert not any('dimension_chains' in e['path'] for e in plan_format_errors(plan))
+    points['tick_pixels'][1] = [True, 30]
+    assert _chain_shape(points, 0)[1] is not None
+
+
 def _plan():
     return {
         "floor_id": "F1",
@@ -902,8 +919,9 @@ def test_trial_compiles_aligned_numeric_plan_and_returns_only_compact_summary(tm
         assert receipt["reading_alignment"]["ink"]["status"] == "not_applied"
         assert receipt["reading_alignment"]["dimensions"]["summary"]["chains_applied"] == 1
         visible = envelope["structuredContent"]
-        assert visible["audit_refs"]["reading_alignment"]["json_pointer"] == "/reading_alignment"
-        assert visible["audit_refs"]["reading_alignment"]["read"]["arguments"]["field"] == "report:/reading_alignment"
+        assert visible['receipt_audit']['read']['arguments']['field'] == 'report:'
+        assert 'reading_alignment' not in visible
+        assert trial.read_draft(field='report:/reading_alignment/ink/status')['value'] == 'not_applied'
         numeric = trial.numeric_plan(receipt)
         assert receipt["unaligned_numeric_input_file"] != receipt["aligned_numeric_input_file"]
         unaligned = json.loads(

@@ -68,9 +68,23 @@ def report_summary(receipt, field):
             "not_checked", "reason", "wall_placement", "corridor_space_ids", "findings", "hint")
     # A floor's located differences are decision evidence, not a repeated audit
     # ledger. Keep a modest list together so offsets need no per-opening reads.
-    return {key: _preview(receipt, _child(pointer, key), value[key],
+    result = {key: _preview(receipt, _child(pointer, key), value[key],
                           budget=8000 if field == "drawing_differences" and key == "items" else 1800)
             for key in keep if key in value}
+    if field == 'drawing_differences' and isinstance(result.get('items'), list):
+        # Explain each heuristic once; keep each location and offset together.
+        guidance = {}
+        for row in result['items']:
+            if not isinstance(row, dict) or not isinstance(row.get('check'), str):
+                continue
+            check = row.pop('check')
+            key = next((key for key, text in guidance.items() if text == check), None)
+            key = key or f'g{len(guidance) + 1}'
+            guidance[key] = check
+            row['guidance'] = key
+        if guidance:
+            result['guidance'] = guidance
+    return result
 
 
 def bound_receipt_projection(receipt, visible, *, max_bytes=24_000):
@@ -154,40 +168,42 @@ def bound_receipt_projection(receipt, visible, *, max_bytes=24_000):
 
 
 def passed_receipt(receipt):
-    """Project every field without permitting a nested report to grow unbounded."""
+    """Return decisions and changes; keep repeated bookkeeping in the full receipt."""
     visible = {}
-    audit_refs = {}
+    audit_only = {'original_plan_sha256', 'image', 'reading_product_file', 'reading_product_sha256',
+        'candidate', 'draft', 'compiled_plan_sha256', 'input_plan_file', 'aligned_numeric_input_file',
+        'aligned_numeric_input_sha256', 'unaligned_numeric_input_file', 'unaligned_numeric_input_sha256',
+        'compiled_numeric_plan_file', 'compiled_numeric_plan_sha256', 'field_aliases',
+        'length_bindings', 'measurement_bindings', 'measurement_profiles', 'reading_alignment',
+        'alignment', 'overlay', 'base_plan_sha256', 'plan_revision', 'operations', 'phase',
+        'topology_dividers', 'editable_draft'}
     for field, value in receipt.items():
+        if field in audit_only:
+            continue
         if field == "returned_images":
             visible[field] = [{key: image[key] for key in ("file", "sha256") if key in image}
                               for image in value if isinstance(image, Mapping)]
             continue
         pointer = _child("", field)
-        if field in {"operations", "plan_revision", "measurement_profiles", "length_bindings",
-                     "measurement_bindings", "reading_alignment", "alignment"}:
-            if value not in (None, [], {}):
-                audit_refs[field] = reference(receipt, pointer, value)
-            if field not in {"reading_alignment", "alignment"}:
-                continue
         if field in {"building_precision", "drawing_differences", "corridor_review"} and isinstance(value, Mapping):
             # A precision report can carry the complete regularization ledger three
             # times. Keep the audit verdict and located findings, not that ledger.
             visible[field] = report_summary(receipt, field)
-            audit_refs[field] = reference(receipt, pointer, value)
+        elif field == 'changes' and isinstance(value, list) and len(_bytes(value)) > 1800:
+            visible[field] = {'count': len(value), 'items': [
+                {key: row[key] for key in ('item', 'path', 'field', 'id') if key in row}
+                for row in value], 'full_record': reference(receipt, pointer, value)}
         else:
             visible[field] = _preview(receipt, pointer, value)
-            if len(_bytes(value)) > 1800:
-                audit_refs[field] = reference(receipt, pointer, value)
     issues = receipt.get("topology_issues", [])
     visible["submission"] = {"status": "not_submitted", "topology_decisions_required": len(issues),
         "instruction": "Trial passed is a compiled floor draft, not a reader delivery or drawing-fidelity approval."}
     visible["next_action"] = {
         "tool": "submit_plan_reading", "arguments": {"trial_id": receipt.get("trial_id", "latest")},
-        "instruction": ("Review the returned overlay and scoped warnings. Resolve every topology_issues entry "
+        "instruction": ("Inspect the line overlay and thickness-bearing clean plan. Resolve every topology_issues entry "
                         "with a located topology_decision (read truncated lists via their reference); include "
                         "north_arrow if orientation_submission requires it, then submit this passed trial. "
                         "Use operations only if the drawing supports a correction; do not repeat the plan or audit ledger.")}
-    visible["audit_refs"] = audit_refs
     # This digest binds every original field, including decision obligations.
     # It belongs only to the projection, so the durable receipt is not recursive.
     visible["receipt_audit"] = reference(receipt, "", receipt)

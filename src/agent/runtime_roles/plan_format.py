@@ -102,7 +102,7 @@ DIMENSION_CHAIN = _object({
     "axis": {"enum": ["x", "y"]},
     "segments_mm": _array(POSITIVE_NUMBER, 1),
     "total_mm": POSITIVE_NUMBER,
-    "tick_pixels": _array(NUMBER, 2),
+    "tick_pixels": _array({"anyOf": [NUMBER, _array(NUMBER, 2, 2)]}, 2),
     "start_world_m": NUMBER,
     "source_refs": REFS,
 }, {"id", "axis", "segments_mm", "tick_pixels", "source_refs"})

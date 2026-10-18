@@ -99,11 +99,51 @@ def test_tolerance_is_inclusive_and_group_does_not_chain_outwards():
     assert not within_wall_tolerance(segment(.4, [0, .4]), segment(.8))
 
 
-def test_clean_and_overlay_are_identical_over_a_white_source():
+def test_clean_shows_thickness_and_overlay_shows_the_same_reference_line():
     plan = require_wall_thickness(thickness(_plan([('A', [[40, 0], [40, 100]])])))
     _, mapping = compile_plan_partition(plan, image_size=IMAGE_SIZE, image_name='plan.png')
     overlay, clean = _views(plan, mapping, Image.new('RGB', IMAGE_SIZE, 'white'))
-    assert overlay.tobytes() == clean.tobytes()
+    assert overlay.tobytes() != clean.tobytes()
+    assert overlay.getpixel((40, 50)) != (255, 255, 255)
+    assert overlay.getpixel((41, 50)) == (255, 255, 255)
+    assert clean.getpixel((41, 50)) != (255, 255, 255)
+
+
+def test_batch_observed_is_adopted_as_inferred_but_exact_observation_survives():
+    plan = thickness(_plan([('A', [[40, 0], [40, 100]])]))
+    for row in plan['wall_metadata']:
+        row['evidence_status'] = 'observed'
+    plan['wall_metadata'].append(dict(plan['wall_metadata'][0], target='footprint:0'))
+    original = copy.deepcopy(plan)
+    rows = require_wall_thickness(plan)['wall_metadata']
+    assert next(row for row in rows if row['target'] == 'footprint:0')['evidence_status'] == 'observed'
+    assert all(row['evidence_status'] == 'inferred' for row in rows if row['target'] != 'footprint:0')
+    assert plan == original
+
+
+@pytest.mark.parametrize('axis,direction', [(0, 'left'), (0, 'right'), (1, 'up'), (1, 'down')])
+@pytest.mark.parametrize('sign', [-1, 1])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_image_expansion_ignores_endpoint_order_and_respects_mirrored_axes(axis, direction, sign, reverse):
+    from src.agent.geometry.reader_wall_metadata import validate_wall_metadata
+    from tests.test_plan_wall_band_views import reading
+    plan = reading(x_sign=sign, y_sign=sign)
+    if axis == 1:
+        plan['partitions'][0]['points'] = [[50, 210], [370, 210]]
+    if reverse:
+        plan['partitions'][0]['points'].reverse()
+    record = plan['wall_metadata'][0]
+    record.pop('reference_side')
+    record['expand_direction'] = direction
+    before = copy.deepcopy(plan)
+    row = next(row for row in validate_wall_metadata(plan) if row['target'] == 'partition:P')
+    world_positive = sign * (1 if direction in {'right', 'down'} else -1) > 0
+    assert row['reference_side'] == ('negative_face' if world_positive else 'positive_face')
+    assert 'expand_direction' not in row
+    assert plan == before
+    record['expand_direction'] = 'up' if axis == 0 else 'left'
+    with pytest.raises(ValueError, match='perpendicular'):
+        validate_wall_metadata(plan)
 
 
 def test_partial_overlap_preserves_remainders_and_their_thickness():

@@ -133,8 +133,12 @@ def test_hosted_door_and_window_spans_remain_clear_in_both_views(x_sign, y_sign)
         assert view.getpixel(pixel([1.5, 3.8], x_sign, y_sign)) == WHITE
         assert view.getpixel(pixel([0, -1.5], x_sign, y_sign)) != WHITE  # Door mark remains.
         assert view.getpixel(pixel([1.5, 4], x_sign, y_sign)) != WHITE  # Window mark remains.
-        assert view.getpixel(pixel([-.15, 2], x_sign, y_sign)) != WHITE
-        assert view.getpixel(pixel([-2, 3.8], x_sign, y_sign)) != WHITE
+    for point in ([ -.15, 2], [-2, 3.8]):
+        assert views[0].getpixel(pixel(point, x_sign, y_sign)) == WHITE
+        assert views[1].getpixel(pixel(point, x_sign, y_sign)) != WHITE
+    thick, _ = _views(plan, metadata, Image.new('RGB', SIZE, WHITE), overlay_thickness=True)
+    assert thick.getpixel(pixel([-.15, 2], x_sign, y_sign)) != WHITE
+    assert thick.getpixel(pixel([-.15, -1.5], x_sign, y_sign)) == WHITE
 
 
 def test_overlay_preserves_visible_original_ink_under_declared_band():
@@ -143,8 +147,9 @@ def test_overlay_preserves_visible_original_ink_under_declared_band():
     original = Image.new("RGB", SIZE, WHITE)
     ImageDraw.Draw(original).rectangle([pixel([-.1, 1.5]), pixel([.1, 2.5])], fill=(20, 20, 20))
     overlay, _ = _views(plan, metadata, original)
-    assert max(overlay.getpixel(pixel([0, 2]))) < 50
-    assert min(overlay.getpixel(pixel([0, 3]))) > 210
+    assert overlay.getpixel(pixel([.05, 2])) == (20, 20, 20)
+    assert overlay.getpixel(pixel([.05, 3])) == WHITE
+    assert overlay.getpixel(pixel([0, 2])) == (15, 110, 195)
     assert original.getpixel(pixel([0, 2])) == (20, 20, 20)
 
 
@@ -218,8 +223,8 @@ def test_changed_declared_faces_need_a_fresh_observation_when_rendered_views_cha
     next(r for r in revised["wall_metadata"] if r["target"] == "partition:P").update(change)
     after = asyncio.run(trial.run(revised))
     assert before["status"] == after["status"] == "passed"
-    assert all(a["sha256"] != b["sha256"]
-               for a, b in zip(before["returned_images"], after["returned_images"]))
+    assert before['returned_images'][0]['sha256'] == after['returned_images'][0]['sha256']
+    assert before['returned_images'][1]['sha256'] != after['returned_images'][1]['sha256']
     with pytest.raises(ValueError, match="have not reached a model request"):
         require_observed_plan_trial(journal(before, after), trial, after)
 

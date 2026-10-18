@@ -37,7 +37,8 @@ trial_plan_bim so code can place it and expose only
 the remaining local conflicts. This produces a 2D reading, clean plan and original overlay,
 not source BIM. Source BIM is built only after assembly resolves cross-view geometry.
 
-dimension_chains rows use id, axis=x/y, segments_mm, tick_pixels and source_refs. total_mm
+dimension_chains rows use id, axis=x/y, segments_mm, tick_pixels and source_refs.
+tick_pixels accepts axis numbers or original [x,y] points; code extracts the stated axis. total_mm
 and start_world_m are optional when the drawing does not establish them. Supply printed
 segments and ordered ticks at their actual dimension extension lines. Keep nearby ticks
 for different wall faces or axes distinct; reuse a pixel only for the same physical reference.
@@ -47,6 +48,8 @@ dimensions are regularized on the configured grid (currently 0.1 m). Do not hand
 allocate a remainder, or repeat pixel measurements merely to remove a sub-grid tail.
 
 Use observed original pixels for ALL actual walls, openings and room seeds. Reuse exactly
+one representative line for a double-line wall band; do not trace both faces as separate
+partitions or create a space between them. Thickness and expansion carry that information. Reuse
 the same coordinates at shared wall junctions and for openings on a wall. A door/window
 must lie wholly on its host segment, without crossing a T-junction. Code applies verified
 dimensions and the common grid; it does not guess wall identity from nearby ink or repair
@@ -66,23 +69,27 @@ Every wall MUST have positive thickness, adopted at 1 cm resolution. Reduce work
 submitting wall_metadata batches target="footprint:*" and target="partition:*", then
 exact target overrides footprint:<edge>, partition:<id>, or partition:<id>:<segment>.
 Each row needs thickness_m, evidence_status=observed/inferred, short basis and source_refs.
+Batch defaults always adopt inferred evidence, even when based on a few measured walls.
+Only exact targets directly supported by the drawing may be observed.
 Use annotated dimensions when clear. Otherwise choose a plausible common thickness for
 the visible construction and mark inferred; no separate per-wall measurement pass.
 Candidates in cm: 6,7,8,9,10,12,13,14,15,16,18,19,20,22,24,25,26,28,29,30,
 35,36,37,40,45,49,50,55,60,62,65,70,75,80,85,90,95,100,110,120,130,140,150,160,180,200.
 Other explicit positive 1 cm values are allowed; this list is not a code restriction.
 Default trace: exterior outer face, thickness inward; interior centerline, half on each
-side. Omit reference_side to use these defaults. For a deliberately different chosen
-line state centerline/negative_face/positive_face (world -X/+X or -Y/+Y, independent of
-point order); perimeter additionally allows outer_face/inner_face. No null thickness
-or unknown side in an accepted plan. Batch defaults are inferred unless directly evidenced.
+side. Omit side fields for these defaults. If an exception uses a wall face, give
+expand_direction="up"/"down"/"left"/"right" toward the WALL MATERIAL in the ORIGINAL image.
+For example, a lower horizontal face with material above uses "up". Code converts image
+direction to world side; do not calculate normal signs or also supply reference_side.
+No null thickness or unknown side in an accepted plan.
 The geometry tool merges overlapping or connected parallel wall representatives within
 2 * the larger thickness, including tiny real gaps, selecting an existing supported
 anchor then snapping it to the shared 10 cm grid; it never averages wall coordinates.
 Thickness changes remain segment attributes. Openings follow the host. Cross-floor
-matching is assembly work, not a reader task. Clean plan and overlay share the same
-adopted wall-band geometry, opening colours, labels and calibration; overlay adds gray
-original ink. Review missing/wrong walls, rooms and openings, not every small deliberate
+matching is assembly work, not a reader task. Clean plan shows thickness; overlay emphasizes
+adopted reference lines over gray original ink. Both use the same adopted coordinates,
+opening colours, labels and calibration. Inspect thickness/direction on the clean plan and
+object placement on the overlay. Review missing/wrong walls, rooms and openings, not every small deliberate
 thickness/grid offset. Original declarations and applied movements remain in the audit.
 Failed geometry remains a saved declaration, not an accepted reading. Use read_plan_draft()
 to see editability, the current operations base and the last passed plan separately.
@@ -134,10 +141,8 @@ For a verified 2D reading, omitted top-level contract fields such as z_floor, ce
 are also addressable. Notes add no values or observations and do not
 change the passed plan; an omitted height remains unknown; thickness is required.
 unresolved lists delivery questions.
-wall_metadata carries per-wall thickness and reference side. Legacy wall_reference defaults
-(perimeter outer_face, partitions centerline) are broad conventions only, not measured thickness; no geometry move.
-Overrides: convention=centerline/inner_face/outer_face/explicit_face, dimension-to-line
-basis; optional matching dimension_basis and annotation bbox. For axis_orientation North
+wall_metadata already records thickness and expansion; do not restate wall_reference at
+submission for this 2D reading. For axis_orientation North
 at image_bottom or East at image_left, north_arrow needs original arrow bbox, drawing
 basis and matching world_north_toward/world_east_toward; overlays/instructions cannot prove
 it. Normal orientation needs none. Reject failed/stale trials; retry changed plans before
@@ -243,7 +248,8 @@ Read results with role_state and read_role_artifact. The reader owns local drawi
 its delivery includes numeric data, rendered views, a checked original overlay and unresolved
 items. Reuse these checks; do not remeasure every original feature. You own shared axes/origin,
 floor IDs, absolute Z, cross-drawing conflicts and architectural reasonableness. Do not move
-walls merely to match another floor; wall-band matching remains outside this iteration.
+walls manually merely to match another floor. Assembly performs thickness-aware matching
+and records adopted anchors; inspect genuine cross-view conflicts using that audit.
 
 assemble_from_readers builds accepted floors, resolves levels, carries uses and located
 safe heights. Audited regularization needs no confirmation. Inspect the assembled building:

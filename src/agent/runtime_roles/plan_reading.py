@@ -79,7 +79,7 @@ def _wall_view_geometry(plan, metadata):
         return tuple(p0 + (point[i] - v0) * slope
                      for i, (p0, v0, slope) in enumerate(transforms))
 
-    bands, lines, known_faces = [], [], 0
+    bands, lines, reference_lines, known_faces = [], [], [], 0
     for wall in reading["walls"]:
         thickness, side = wall["thickness_m"], wall["reference_side"]
         offsets = None if thickness is None or side == "unknown" else {
@@ -113,31 +113,34 @@ def _wall_view_geometry(plan, metadata):
                 def point(distance, offset=0):
                     return pixel([position + offset, distance] if normal == 0
                                  else [distance, position + offset])
+                reference_lines.append([point(lo), point(hi)])
                 if offsets is None:
                     lines.append([point(lo), point(hi)])
                 else:
                     bands.append([point(lo, offsets[0]), point(hi, offsets[0]),
                                   point(hi, offsets[1]), point(lo, offsets[1])])
-    return {"bands": bands, "lines": lines, "summary": {
+    return {"bands": bands, "lines": lines, "reference_lines": reference_lines, "summary": {
         "walls_with_known_faces": known_faces,
         "walls_shown_as_lines": len(reading["walls"]) - known_faces,
         "solid_band_segments": len(bands),
         "note": "Overlay key: gray is the original drawing; colors are adopted results. "
+                "Overlay emphasizes adopted reference lines; clean plan shows thickness. "
                 "Bands show declared thickness and reference side, not code-measured wall faces. "
                 "Unknown thickness or side stays a single line; hosted opening spans are left clear.",
     }}
 
 
-def _views(plan, metadata, original, *, wall_views=None):
+def _views(plan, metadata, original, *, wall_views=None, overlay_thickness=False):
     """Render adopted coordinates through the original calibration, without refitting."""
     wall_views = wall_views if wall_views is not None else _wall_view_geometry(plan, metadata)
     pictures = [original.convert("L").convert("RGB"), Image.new("RGB", original.size, "white")]
-    # One transparent adopted-geometry layer, composited over two backgrounds.
-    # Coordinates, bands, IDs, opening colours and calibration are identical.
-    layer = Image.new("RGBA", original.size)
-    bands = ImageDraw.Draw(layer)
+    # One geometry, two review styles. The overlay keeps the original ink clear;
+    # the clean plan exposes thickness. The optional overlay band uses the same faces.
+    band_layer = Image.new("RGBA", original.size)
+    bands = ImageDraw.Draw(band_layer)
     for polygon in wall_views['bands']:
         bands.polygon(polygon, fill=(15, 110, 195, 42), outline=(15, 110, 195, 255), width=1)
+    layer = Image.new("RGBA", original.size)
     picture = layer
     draw = ImageDraw.Draw(picture)
     wall = (15, 110, 195)
@@ -164,7 +167,16 @@ def _views(plan, metadata, original, *, wall_views=None):
             else:
                 draw.line([(0, px), (picture.width, px)], fill=(205, 110, 180), width=1)
                 draw.text((12, px + 3), f"y {px:g}px = {metres:g}m", font=_font(14), fill=(125, 30, 105))
-    return [Image.alpha_composite(p.convert('RGBA'), layer).convert('RGB') for p in pictures]
+    overlay = pictures[0].convert('RGBA')
+    if overlay_thickness:
+        overlay = Image.alpha_composite(overlay, band_layer)
+    reference_layer = Image.new('RGBA', original.size)
+    reference_draw = ImageDraw.Draw(reference_layer)
+    for points in wall_views['reference_lines']:
+        reference_draw.line(points, fill=(*wall, 255), width=1)
+    overlay = Image.alpha_composite(overlay, reference_layer)
+    clean = Image.alpha_composite(pictures[1].convert('RGBA'), band_layer)
+    return [Image.alpha_composite(p, layer).convert('RGB') for p in (overlay, clean)]
 
 
 def build_reading(plan, *, workspace, image_name, number):
@@ -193,7 +205,7 @@ def build_reading(plan, *, workspace, image_name, number):
                    "defaulted_unknown": sum(row["target"] not in supplied_wall_targets for row in walls)},
         "scope": "Wall metadata for this floor; counts do not establish drawing completeness.",
         "note": "Every adopted wall has a 1 cm thickness. Inferred batch values remain labelled inferred; "
-                "clean plan and overlay use the same adopted geometry layer.",
+                "clean plan and overlay use the same adopted coordinates and wall attributes.",
         "rendering": wall_views["summary"],
     }
     product = {"schema": "plan_reading_v1", "image": image_name,
@@ -216,6 +228,20 @@ def build_reading(plan, *, workspace, image_name, number):
         raw = path.read_bytes()
         contents.append({"type": "image", "mimeType": "image/png", "data": base64.b64encode(raw).decode()})
         views.append({"file": path.relative_to(workspace).as_posix(), "sha256": hashlib.sha256(raw).hexdigest()})
+    # Human review can switch the band on without generating another model image
+    # on every trial. The model receives the line overlay and thickness-bearing plan.
+    thick_overlay, _ = _views(plan, metadata, original, wall_views=wall_views, overlay_thickness=True)
+    thick_overlay.save(folder / 'overlay_thickness.png', 'PNG')
+    (folder / 'review.html').write_text('''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+<title>读图检视</title><style>body{margin:20px;font:16px system-ui;background:#f4f5f6;color:#243746}
+nav{position:sticky;top:0;padding:12px;background:white}label{margin-right:24px}
+main{display:flex;gap:16px;align-items:flex-start}figure{margin:0;flex:1;min-width:0}img{width:100%}
+figcaption{padding:10px 0}</style><nav><label><input id="thickness" type="checkbox">回叠显示墙厚</label>
+采用参考线及门窗位置不变；净图始终显示墙厚。</nav><main><figure><figcaption>回叠：灰色原图＋彩色采用结果</figcaption>
+<img id="overlay" src="overlay.png"></figure><figure><figcaption>净图：采用墙厚及展开方向</figcaption>
+<img src="plan.png"></figure></main><script>document.getElementById('thickness').onchange=function(){
+document.getElementById('overlay').src=this.checked?'overlay_thickness.png':'overlay.png';};</script></html>''', encoding='utf-8')
+    wall_summary['rendering']['review_file'] = (folder / 'review.html').relative_to(workspace).as_posix()
     result = {"status": "passed", "source_geometry_ready": False, "reading_geometry_ready": True,
               "candidate": folder.name,
               "reading_product_file": product_path.relative_to(workspace).as_posix(),

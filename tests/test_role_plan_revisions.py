@@ -112,7 +112,10 @@ def test_all_rows_and_nested_formats_reported_in_one_response_without_compiler_c
                 assert any(row["path"].startswith(f"plan.{collection}[{index}]") for row in errors)
         assert all(row["message"] in envelope["content"][-1]["text"] for row in errors)
         assert trial.baseline() == (None, None)
-        assert (await reader.call_tool("trial_plan_bim", {"plan": plan()}))["structuredContent"]["status"] == "passed"
+        repaired = plan()
+        repaired["wall_metadata"] = copy.deepcopy(READER_PLAN_EXAMPLE["wall_metadata"])
+        outcome = await reader.call_tool("trial_plan_bim", {"plan": repaired})
+        assert outcome["structuredContent"]["status"] == "passed", outcome
     asyncio.run(scenario())
 
 

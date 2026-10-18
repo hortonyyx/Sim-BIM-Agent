@@ -16,6 +16,7 @@ from src.agent.geometry.wall_reference import resolve_wall_references
 
 
 _FIELDS = {"target", "thickness_m", "reference_side", "evidence_status", "basis", "source_refs"}
+_INPUT_FIELDS = _FIELDS | {'expand_direction'}
 _SIDES = {"centerline", "negative_face", "positive_face", "unknown"}
 _EPS = 1e-7  # Floating-point identity only; never a fitting or snapping tolerance.
 
@@ -93,7 +94,7 @@ def validate_wall_metadata(plan: dict, *, resolve_reference_sides: bool = True) 
         raise ValueError("wall_metadata must be a list")
     supplied = {}
     for record in records:
-        if not isinstance(record, dict) or set(record) - _FIELDS:
+        if not isinstance(record, dict) or set(record) - _INPUT_FIELDS:
             raise ValueError("unknown wall_metadata fields")
         target = record.get("target")
         if not isinstance(target, str) or target not in {*targets, 'footprint:*', 'partition:*'}:
@@ -110,6 +111,17 @@ def validate_wall_metadata(plan: dict, *, resolve_reference_sides: bool = True) 
                 raise ValueError("a null thickness must have unknown evidence_status")
         elif _number(thickness, "thickness_m") <= 0 or status == "unknown":
             raise ValueError("a known thickness must be positive with observed or inferred evidence_status")
+        # A category-wide default extrapolates to walls that were not individually
+        # observed. Keep the declaration intact; exact target overrides may be observed.
+        batch_inference = target.endswith(':*') and status == 'observed'
+        if batch_inference:
+            status = 'inferred'
+        expansion = row.get('expand_direction')
+        if 'expand_direction' in row:
+            if expansion not in {'up', 'down', 'left', 'right'}:
+                raise ValueError('expand_direction must be up, down, left or right in the ORIGINAL image')
+            if 'reference_side' in row:
+                raise ValueError('Use expand_direction or reference_side, not both')
         side = row.get("reference_side", "outer_face" if target.startswith('footprint:') else "centerline")
         if side in {"outer_face", "inner_face"}:
             if not target.startswith("footprint:"):
@@ -128,9 +140,12 @@ def validate_wall_metadata(plan: dict, *, resolve_reference_sides: bool = True) 
             raise ValueError("wall_metadata source_refs must be a list of nonempty strings")
         if thickness is not None and ("basis" not in row or not refs):
             raise ValueError("a known thickness requires explicit basis and source_refs")
+        if batch_inference:
+            basis += ' Batch default extrapolated to covered walls; adopted as inferred.'
         supplied[target] = {"target": target, "thickness_m": thickness,
                             "reference_side": side, "evidence_status": status,
-                            "basis": basis, "source_refs": list(dict.fromkeys(refs))}
+                            "basis": basis, "source_refs": list(dict.fromkeys(refs)),
+                            **({'expand_direction': expansion} if expansion is not None else {})}
     complete = []
     for target in defaults:
         segments = partitions.get(target, [])
@@ -143,10 +158,25 @@ def validate_wall_metadata(plan: dict, *, resolve_reference_sides: bool = True) 
                 "source_refs": [],
             })
             row['target'] = key
-            if resolve_reference_sides and row['reference_side'] in {'outer_face', 'inner_face'}:
+            if resolve_reference_sides and 'expand_direction' in row:
+                row['reference_side'] = _image_expansion_side(plan, targets[key], row.pop('expand_direction'))
+            elif resolve_reference_sides and row['reference_side'] in {'outer_face', 'inner_face'}:
                 row['reference_side'] = _footprint_face_side(plan, key, row['reference_side'])
             complete.append(row)
     return copy.deepcopy(complete)
+
+
+def _image_expansion_side(plan, segments, direction):
+    """Convert a reader's image direction to the material side, without moving it."""
+    axis = 0 if direction in {'left', 'right'} else 1
+    world = _world_converter(plan, None)
+    if any(_span(world(a), world(b))[0] != axis for a, b in segments):
+        raise ValueError('expand_direction must be perpendicular to every selected wall segment; '
+                         'use an exact segment target for a turning polyline')
+    anchors = plan['x_anchors' if axis == 0 else 'y_anchors']
+    (p0, v0), (p1, v1) = anchors
+    positive = ((v1 - v0) / (p1 - p0)) * (1 if direction in {'right', 'down'} else -1) > 0
+    return 'negative_face' if positive else 'positive_face'
 
 
 def _world_converter(plan, metadata):
