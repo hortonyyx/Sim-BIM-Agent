@@ -19,6 +19,34 @@ _FIELDS = {"target", "thickness_m", "reference_side", "evidence_status", "basis"
 _SIDES = {"centerline", "negative_face", "positive_face", "unknown"}
 _EPS = 1e-7  # Floating-point identity only; never a fitting or snapping tolerance.
 
+# Modelling candidates, not a regional building-code restriction. Explicit
+# dimensions may use any positive centimetre value, including thicker walls.
+WALL_THICKNESS_PRESETS_CM = (
+    6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18, 19, 20, 22, 24, 25, 26, 28,
+    29, 30, 35, 36, 37, 40, 45, 49, 50, 55, 60, 62, 65, 70, 75, 80, 85,
+    90, 95, 100, 110, 120, 130, 140, 150, 160, 180, 200,
+)
+
+
+def require_wall_thickness(plan: dict) -> dict:
+    """Expand reader batches and adopt 1 cm values on every final wall."""
+    from src.agent.geometry.lite_bim_regularization import quantize_m
+    result = copy.deepcopy(plan)
+    rows = validate_wall_metadata(result)
+    missing = [r['target'] for r in rows
+               if r['thickness_m'] is None or r['reference_side'] == 'unknown']
+    if missing:
+        raise ValueError('Every wall needs thickness and reference side; use footprint:* and '
+                         'partition:* batches with inferred evidence when necessary. Missing: '
+                         + ', '.join(missing))
+    for row in rows:
+        adopted = quantize_m(row['thickness_m'], .01)
+        if adopted <= 0:
+            raise ValueError('Wall thickness must remain positive on the 1 cm grid')
+        row['thickness_m'] = adopted
+    result['wall_metadata'] = rows
+    return result
+
 
 def _number(value, name):
     if type(value) not in (int, float) or not math.isfinite(value):
@@ -68,7 +96,7 @@ def validate_wall_metadata(plan: dict, *, resolve_reference_sides: bool = True) 
         if not isinstance(record, dict) or set(record) - _FIELDS:
             raise ValueError("unknown wall_metadata fields")
         target = record.get("target")
-        if not isinstance(target, str) or target not in targets:
+        if not isinstance(target, str) or target not in {*targets, 'footprint:*', 'partition:*'}:
             raise ValueError(f"unknown wall_metadata target {target!r}")
         if target in supplied:
             raise ValueError(f"duplicate wall_metadata target {target}")
@@ -82,12 +110,12 @@ def validate_wall_metadata(plan: dict, *, resolve_reference_sides: bool = True) 
                 raise ValueError("a null thickness must have unknown evidence_status")
         elif _number(thickness, "thickness_m") <= 0 or status == "unknown":
             raise ValueError("a known thickness must be positive with observed or inferred evidence_status")
-        side = row.get("reference_side", "unknown")
+        side = row.get("reference_side", "outer_face" if target.startswith('footprint:') else "centerline")
         if side in {"outer_face", "inner_face"}:
             if not target.startswith("footprint:"):
                 raise ValueError("outer_face and inner_face require a footprint target; "
                                  "partition walls have no unique building interior side")
-            if resolve_reference_sides:
+            if resolve_reference_sides and target != 'footprint:*':
                 side = _footprint_face_side(plan, target, side)
         elif side not in _SIDES:
             raise ValueError("reference_side must be centerline, negative_face, positive_face or unknown; "
@@ -107,14 +135,17 @@ def validate_wall_metadata(plan: dict, *, resolve_reference_sides: bool = True) 
     for target in defaults:
         segments = partitions.get(target, [])
         has_segments = any(key in supplied for key in segments)
-        if target in supplied and has_segments:
-            raise ValueError(f"wall_metadata cannot mix {target} with its segment records")
         for key in segments if has_segments else [target]:
-            complete.append(supplied.get(key, {
+            fallback = supplied.get(target, supplied.get(target.split(':')[0] + ':*'))
+            row = copy.deepcopy(supplied.get(key, fallback) or {
                 "target": key, "thickness_m": None, "reference_side": "unknown",
                 "evidence_status": "unknown", "basis": "No wall thickness was supplied for this line.",
                 "source_refs": [],
-            }))
+            })
+            row['target'] = key
+            if resolve_reference_sides and row['reference_side'] in {'outer_face', 'inner_face'}:
+                row['reference_side'] = _footprint_face_side(plan, key, row['reference_side'])
+            complete.append(row)
     return copy.deepcopy(complete)
 
 
@@ -209,6 +240,31 @@ def wall_reading_input(plan: dict, metadata: dict | None = None) -> dict:
         [[position if axis == 0 else start, start if axis == 0 else position],
          [position if axis == 0 else end, end if axis == 0 else position]]
         for axis, position, start, end in segments[row["target"]]]) for row in rows]}
+
+
+def thickness_breakpoints(readings):
+    """Only attribute changes split source walls; same-valued fragments coalesce."""
+    by_floor = {}
+    for reading in readings:
+        segments = []
+        for row in reading['walls']:
+            for a, b in row['segments_m']:
+                normal, coordinate, lo, hi = _span(a, b)
+                segments.append((normal, coordinate, lo, hi,
+                                 (row['thickness_m'], row['reference_side'], row['evidence_status'])))
+        points = set()
+        for i, (axis, coordinate, lo, hi, attrs) in enumerate(segments):
+            for axis2, coordinate2, lo2, hi2, attrs2 in segments[i + 1:]:
+                if axis != axis2 or abs(coordinate-coordinate2) > _EPS or attrs == attrs2:
+                    continue
+                for value in (lo, hi):
+                    if lo2 - _EPS <= value <= hi2 + _EPS:
+                        points.add((coordinate, value) if axis == 0 else (value, coordinate))
+                for value in (lo2, hi2):
+                    if lo - _EPS <= value <= hi + _EPS:
+                        points.add((coordinate, value) if axis == 0 else (value, coordinate))
+        by_floor[reading['floor_id']] = sorted(points)
+    return by_floor
 
 
 def _bind_wall_reading(source, reading):

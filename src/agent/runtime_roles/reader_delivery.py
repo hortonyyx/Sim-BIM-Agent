@@ -92,6 +92,8 @@ def require_observed_plan_trial(store, trial, receipt):
             # decision and coordinate; only its derived identity may differ.
             value.get("regularization_inputs", {}).get("reading_alignment", {}).get(
                 "lite_bim", {}).pop("adopted_plan_sha256", None)
+            value.get('regularization_inputs', {}).get('reading_alignment', {}).get(
+                'lite_bim', {}).get('wall_merging', {}).pop('plan_sha256', None)
             return value
 
         def product_facts(row):

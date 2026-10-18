@@ -139,9 +139,9 @@ def test_plan_reader_reference_uses_initial_2d_contract_and_other_references_sta
         assert example == READER_PLAN_EXAMPLE and not plan_format_errors(example)
         assert "z_floor" not in example and "ceiling_height" not in example
         assert all("z" not in row for row in example["openings"])
-        assert {row["evidence_status"] for row in example["wall_metadata"]} == {"observed", "unknown"}
+        assert {row["evidence_status"] for row in example["wall_metadata"]} == {"inferred"}
         known = next(row for row in example["wall_metadata"] if row["thickness_m"] is not None)
-        assert known["reference_side"] == "unknown" and known["source_refs"]
+        assert "reference_side" not in known and known["source_refs"]
         other = await reader.call_tool("get_bim_reference", {"topic": "room_types"})
         assert other["content"][0]["text"] == REFERENCES["room_types"]
         elevation = ReaderTools(frozen, role_id="elevation_reader", image_name="plan.png")

@@ -90,7 +90,7 @@ def revalidate_saved_review(parent: dict, source: dict, saved: dict, images: dic
     return report
 
 
-def _source_index(source: dict) -> tuple[str, dict, dict, dict]:
+def _source_index(source: dict, *, logical=True) -> tuple[str, dict, dict, dict]:
     """Return immutable-source indexes needed by both public functions."""
     source_hash = _source_hash(source)
     if not isinstance(source.get("floors"), list) or not isinstance(source.get("spaces"), list):
@@ -114,7 +114,8 @@ def _source_index(source: dict) -> tuple[str, dict, dict, dict]:
         spaces[row["id"]] = row
 
     openings: dict[str, dict] = {}
-    for row in source["openings"]:
+    from src.agent.geometry.opening_segments import logical_openings
+    for row in logical_openings(source) if logical else source['openings']:
         if not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"]:
             raise ValueError("source opening requires a nonempty id")
         if row["id"] in openings or row.get("kind") not in _SOURCE_TO_REVIEW_KIND:
@@ -161,6 +162,7 @@ def _source_index(source: dict) -> tuple[str, dict, dict, dict]:
                 raise ValueError(f"source opening {row['id']} has invalid cross-instance heights: {error}") from error
         openings[row["id"]] = {
             "id": row["id"],
+            **({'segment_ids': row['segment_ids']} if 'segment_ids' in row else {}),
             "kind": _SOURCE_TO_REVIEW_KIND[row["kind"]],
             "space_ids": list(row["space_ids"]),
             "floor_id": spaces[space_ids[0]]["floor_id"],
@@ -337,7 +339,9 @@ def facade_inventory(source: dict) -> dict:
     empty-facade review necessary before a collection of facade reviews can
     describe a whole floor/kind scope.
     """
-    source_hash, floors, spaces, openings = _source_index(source)
+    source_hash, floors, spaces, openings = _source_index(source, logical=False)
+    from src.agent.geometry.opening_segments import logical_openings
+    logical_openings(source)  # Check group geometry before aggregating individual host checks.
     raw_boundaries = source.get("boundaries", [])
     if not isinstance(raw_boundaries, list):
         raw_boundaries = []
@@ -433,6 +437,12 @@ def facade_inventory(source: dict) -> dict:
                             result["facade"] = facade
         classifications[opening_id] = result
 
+    for identity, ids in source.get('opening_segment_groups', {}).items():
+        parts = [classifications.pop(key) for key in ids]
+        result = {**parts[0], 'opening_id': identity, 'segment_ids': list(ids)}
+        if len({p.get('facade') for p in parts}) != 1 or any(p.get('reason') for p in parts):
+            result.update(facade=None, reason='fragment_hosts_do_not_share_one_exterior_facade')
+        classifications[identity] = result
     by_floor = []
     for floor_id in sorted(floors):
         facades = []

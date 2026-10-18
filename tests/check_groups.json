@@ -1713,6 +1713,10 @@
     "tests/test_zone_agent.py": {
       "group": "targeted",
       "reason": "Offline module checks selected when changing src.agent.nodes.zone, src.agent.state"
+    },
+    "tests/test_wall_thickness_policy.py": {
+      "group": "targeted",
+      "reason": "Thickness-aware same-floor and cross-floor Lite BIM, mandatory coverage and unified views"
     }
   }
 }

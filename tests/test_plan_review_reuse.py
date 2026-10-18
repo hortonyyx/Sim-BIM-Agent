@@ -28,7 +28,7 @@ def two_trials(tmp_path, *, edit="metadata"):
     plan, trial = setup(tmp_path)
     before = asyncio.run(trial.run(plan))
     changed = copy.deepcopy(plan)
-    changed["wall_metadata"][0]["thickness_m"] = .2
+    changed["wall_metadata"][0]["basis"] = "Revised construction explanation"
     if edit == "geometry":
         # Subpixel input change can quantize to the exact same adopted drawing.
         changed["openings"][0]["p1"][1] += .001
@@ -48,7 +48,7 @@ def test_observed_wall_metadata_edit_reuses_proof_after_reload(tmp_path):
     proof = require_observed_plan_trial(journal(before, after), restored, after)
     assert proof["observed_plan_sha256"] == before["plan_sha256"]
     assert proof["plan_sha256"] == after["plan_sha256"]
-    assert trial.numeric_plan(after)["wall_metadata"][0]["thickness_m"] == .2
+    assert trial.numeric_plan(after)["wall_metadata"][0]["basis"] == "Revised construction explanation"
 
 
 @pytest.mark.parametrize("edit", ["metadata", "geometry", "evidence"])

@@ -25,7 +25,6 @@ def setup(tmp_path):
 
 def test_planar_reading_has_no_bim_or_fabricated_heights_and_survives_reload(tmp_path):
     plan, trial = setup(tmp_path)
-    plan.pop("wall_metadata")
     receipt = asyncio.run(trial.run(plan))
     assert receipt["status"] == "passed", receipt.get("reason")
     assert receipt["reading_geometry_ready"] and receipt["source_geometry_ready"] is False
@@ -33,7 +32,7 @@ def test_planar_reading_has_no_bim_or_fabricated_heights_and_survives_reload(tmp
     product = json.loads((tmp_path / receipt["reading_product_file"]).read_bytes())
     assert "z_floor" not in product["geometry"]["floors"][0]
     assert all("z" not in row for row in product["geometry"]["openings"] + product["geometry"]["windows"])
-    assert product["walls"] and all(row["thickness_m"] is None for row in product["walls"])
+    assert product["walls"] and all(row["thickness_m"] > 0 for row in product["walls"])
     restored = PlanTrial(None, image_name="plan.png", workspace=tmp_path, receipt_directory=tmp_path / "trial_receipts")
     _, validated = restored.verified_plan(receipt["plan_sha256"])
     assert len(validated["returned_images"]) == 2
@@ -48,52 +47,42 @@ def test_planar_reading_has_no_bim_or_fabricated_heights_and_survives_reload(tmp
 
 
 @pytest.mark.parametrize("provide_local_thickness", [False, True])
-def test_same_trial_reports_wall_coverage_and_accepts_unknown_wall_note_without_new_reading(
-        tmp_path, provide_local_thickness):
+def test_required_wall_coverage_and_batch_defaults_need_no_extra_reading(tmp_path, provide_local_thickness):
     plan, trial = setup(tmp_path)
     if not provide_local_thickness:
         plan.pop("wall_metadata")
     result = asyncio.run(trial.call(plan))
-    assert not result["isError"] and len(trial.receipts) == 1
+    if not provide_local_thickness:
+        assert result['isError']
+        assert 'Every wall needs thickness' in trial.receipts[0]['reason']
+        return
+    assert not result['isError'] and len(trial.receipts) == 1
     receipt = trial.receipts[0]
-    counts = result["structuredContent"]["wall_metadata_summary"]["counts"]
-    assert counts == {"total": 5, "supplied": 2 if provide_local_thickness else 0,
-                      "known": int(provide_local_thickness),
-                      "unknown": 4 if provide_local_thickness else 5,
-                      "defaulted_unknown": 3 if provide_local_thickness else 5}
-    assert receipt["wall_metadata_summary"] == result["structuredContent"]["wall_metadata_summary"]
-    product_path = tmp_path / receipt["reading_product_file"]
+    assert receipt['wall_metadata_summary']['counts'] == {
+        'total': 5, 'supplied': 5, 'known': 5, 'unknown': 0, 'defaulted_unknown': 0}
+    product_path = tmp_path / receipt['reading_product_file']
     before = product_path.read_bytes()
     product = json.loads(before)
-    known = [row for row in product["walls"] if row["thickness_m"] is not None]
-    assert len(known) == int(provide_local_thickness)
-    if known:
-        assert known[0]["thickness_m"] == .18 and known[0]["reference_side"] == "unknown"
-        assert known[0]["basis"] and known[0]["source_refs"]
-    submission = ReaderSubmission(role_id="plan_reader", image_name="plan.png", directory=tmp_path,
-                                  trial=trial, target=plan["floor_id"])
-    accepted = submission.submit({"trial_id": "latest", "local_review": {
-        "summary": "Offline fixture checked; unmeasured wall attributes remain unknown."},
-        "notes": [{"item": "wall_metadata", "kind": "unresolved",
-                   "basis": "Only the localized supplied observations are known; remaining thicknesses are unreadable."}]})
-    assert accepted["status"] == "accepted" and len(trial.receipts) == 1
-    saved = submission.read()
-    assert saved["validation"]["notes"][0]["item"] == "plan.wall_metadata"
-    assert saved["artifact"]["plan"] == trial.numeric_plan(receipt)
-    assert ("wall_metadata" in saved["artifact"]["plan"]) == provide_local_thickness
+    assert all(row['thickness_m'] > 0 and row['reference_side'] != 'unknown' for row in product['walls'])
+    assert all(row['evidence_status'] == 'inferred' for row in product['walls'])
+    submission = ReaderSubmission(role_id='plan_reader', image_name='plan.png', directory=tmp_path,
+                                  trial=trial, target=plan['floor_id'])
+    accepted = submission.submit({'trial_id': 'latest', 'local_review': {
+        'summary': 'Offline fixture checked; inferred thickness retained as inferred.'},
+        'notes': [{'item': 'wall_metadata', 'kind': 'assumption',
+                   'basis': 'Construction estimates adopted for Lite BIM.'}]})
+    assert accepted['status'] == 'accepted' and len(trial.receipts) == 1
     assert product_path.read_bytes() == before
-    assert not any(row["item"] == "plan.wall_metadata" for row in saved["artifact"]["evidence"])
 
 
 def test_omitted_2d_contract_fields_accept_notes_without_values_or_product_changes(tmp_path):
     plan, trial = setup(tmp_path)
-    plan.pop("wall_metadata")
     original = copy.deepcopy(plan)
     receipt = asyncio.run(trial.run(plan))
     assert receipt["status"] == "passed", receipt.get("reason")
     numeric = trial.numeric_plan(receipt)
     omitted = sorted(set(PLAN_FORMAT["properties"]) - set(plan) - set(numeric))
-    assert {"z_floor", "ceiling_height", "wall_metadata"} <= set(omitted)
+    assert {"z_floor", "ceiling_height"} <= set(omitted)
     evidence = validate_plan_artifact({"plan": numeric, "unresolved": numeric["unresolved"],
         "evidence": automatic_plan_evidence(numeric, image_name="plan.png", image_size=(800, 600))},
         image_name="plan.png")["evidence"]
@@ -177,7 +166,7 @@ def test_reader_unit_accepts_reviewed_planar_delivery_without_bim(tmp_path, monk
         calls = []
         if metadata_update:
             changed = copy.deepcopy(READER_PLAN_EXAMPLE)
-            changed["wall_metadata"][0]["thickness_m"] = .2
+            changed["wall_metadata"][0]["basis"] = "Revised construction explanation"
             calls.append(("metadata", "trial_plan_bim", {"plan": changed}))
         calls.append(("accept", "submit_plan_reading", {"trial_id": "latest", "local_review": {
             "summary": "Offline scripted fixture inspects its actual returned 2D views."}}))

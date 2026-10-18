@@ -17,6 +17,10 @@ from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import polygonize, unary_union
 
 from src.agent.geometry.source_image_overlay import _axis_anchors
+from src.agent.geometry.wall_merge_policy import (
+    decorate_segments, within_wall_tolerance, remember_merge,
+    retain_remainder_metadata, prune_removed_metadata,
+)
 
 
 RULE_VERSION = "plan_regularization_v1"
@@ -112,7 +116,7 @@ def _segments(plan: dict, calibration: dict) -> list[dict]:
                 "points_pixel": [list(first), list(second)],
                 "length_m": line["span_m"][1] - line["span_m"][0],
             })
-    return rows
+    return decorate_segments(plan, rows)
 
 
 def _footprint_segments(plan: dict, calibration: dict) -> list[dict]:
@@ -129,7 +133,7 @@ def _footprint_segments(plan: dict, calibration: dict) -> list[dict]:
                      "points_pixel": [list(first), list(second)],
                      "length_m": line["span_m"][1] - line["span_m"][0],
                      "fixed_exterior": True})
-    return rows
+    return decorate_segments(plan, rows)
 
 
 def _overlap(first: dict, second: dict) -> float:
@@ -191,7 +195,7 @@ def _regularization_inputs(plan: dict) -> tuple[dict[str, list[dict]], list[dict
     audit = raw.get("reading_alignment")
     if audit is not None:
         if (not isinstance(audit, dict)
-                or set(audit) - {"schema_version", "ink", "dimensions", "lite_bim"}
+                or set(audit) - {"schema_version", "ink", "dimensions", "lite_bim", "wall_merging"}
                 or not {"schema_version", "ink", "dimensions"}.issubset(audit)
                 or not isinstance(audit["schema_version"], str)
                 or not audit["schema_version"].strip()):
@@ -270,6 +274,8 @@ def _line_public(segment: dict) -> dict:
     }
     if "floor_id" in segment:
         result["floor_id"] = segment["floor_id"]
+    if segment.get('thickness_m'):
+        result.update(thickness_m=segment['thickness_m'], reference_side=segment['reference_side'])
     return result
 
 
@@ -985,6 +991,7 @@ def _partition_remainders(plan: dict, segment: dict, overlap_lo: float, overlap_
         ranges.append((overlap_hi, span_hi))
     if not ranges:
         plan["partitions"].remove(partition)
+        retain_remainder_metadata(plan, partition['id'], [])
         return []
     axis = segment["axis"]
     normal_axis = axis
@@ -1012,6 +1019,7 @@ def _partition_remainders(plan: dict, segment: dict, overlap_lo: float, overlap_
         remainder["points"] = points_for(bounds)
         plan["partitions"].append(remainder)
         ids.append(identity)
+    retain_remainder_metadata(plan, partition['id'], ids)
     return ids
 
 
@@ -1146,6 +1154,7 @@ def _merge_parallel_lines(plan: dict, first: dict, second: dict, calibration: di
         [*target_partition.get("source_refs", []), *source_partition.get("source_refs", [])]
     ))
     source_id = source_partition.get("id")
+    remember_merge(plan, source, target)
     remainder_ids = _partition_remainders(
         plan, source, overlap_lo, overlap_hi, calibration)
     content_changes = changes[content_change_start:]
@@ -1178,7 +1187,7 @@ def _merge_parallel_lines(plan: dict, first: dict, second: dict, calibration: di
         "basis": ("more_collinear_wall_segments_then_line_priority"
                   if target_support > source_support and p_first[:2] == p_second[:2]
                   else "dimension_then_ink_then_existing_line_priority"),
-        "reason": "mandatory sub-0.30 m duplicate-wall overlap merge; strip seeds and openings were migrated with explicit audit",
+        "reason": "wall-tolerance duplicate overlap merge; strip seeds and openings were migrated with explicit audit",
     })
     return True
 
@@ -1274,6 +1283,7 @@ def _merge_partition_to_footprint(plan: dict, source: dict, target: dict, calibr
                         "points_before": points_before,
                         "point_after": copy.deepcopy(other["points"][0]),
                     })
+    remember_merge(plan, source, target)
     # Resolve the source remainder while its captured partition_index still
     # refers to the same object.  Removing a collapsed neighbour first can
     # shift list indexes and accidentally trim an unrelated partition.
@@ -1322,7 +1332,7 @@ def _merge_partition_to_footprint(plan: dict, source: dict, target: dict, calibr
         "retained_partition_id": target["partition_id"],
         "adjusted_endpoint_ids": moved_endpoints,
         "basis": "fixed_exterior_footprint",
-        "reason": "outer footprint stayed fixed; only the duplicate sub-0.30 m overlap was removed and its contents were audited",
+        "reason": "outer footprint stayed fixed; only the thickness-qualified duplicate overlap was removed and its contents were audited",
     })
     return True
 
@@ -1367,7 +1377,7 @@ def _align_head_to_tail(plan: dict, calibration: dict, line_refs: dict[str, list
                     or (first.get("fixed_exterior") and second.get("fixed_exterior"))):
                 continue
             distance = abs(first["coordinate_m"] - second["coordinate_m"])
-            if not _strictly_under(distance, ALIGNMENT_THRESHOLD_M):
+            if not within_wall_tolerance(first, second):
                 continue
             if _overlap(first, second) > _EPS or _span_gap(first, second) > _EPS:
                 continue
@@ -1407,6 +1417,7 @@ def _align_head_to_tail(plan: dict, calibration: dict, line_refs: dict[str, list
                   basis=("fixed_exterior_footprint" if target.get("fixed_exterior")
                          else "locked_cross_storey_target_coordinate"
                          if first_locked != second_locked else "existing_line"))
+    remember_merge(plan, source, target, keep_source=True)
     return True
 
 
@@ -1562,14 +1573,14 @@ def validate_regularized_plan(plan: dict, *, image_size: tuple[int, int], image_
                 continue
             distance = abs(first["coordinate_m"] - second["coordinate_m"])
             overlap = _overlap(first, second)
-            if _strictly_under(distance, ALIGNMENT_THRESHOLD_M) and overlap > _EPS:
+            if within_wall_tolerance(first, second) and overlap > _EPS:
                 violations.append({
                     "type": "parallel_wall_lines_under_0_30m",
                     "objects": [_line_public(first), _line_public(second)],
                     "distance_m": round(distance, 9), "overlap_m": round(overlap, 9),
                     "fix": "Draw one wall line, or confirm two walls and move them at least 0.30 m apart.",
                 })
-            elif (_strictly_under(distance, ALIGNMENT_THRESHOLD_M)
+            elif (within_wall_tolerance(first, second)
                   and overlap <= _EPS and _span_gap(first, second) <= _EPS):
                 violations.append({
                     "type": "small_wall_step_under_0_30m",
@@ -1884,6 +1895,7 @@ def _junction_cleanup(plan: dict, changes: list[dict]) -> None:
             kept.append(item)
             survivors.append(identity)
         replacements[row["id"]] = list(dict.fromkeys([*survivors, *reference_targets]))
+        retain_remainder_metadata(plan, row['id'], survivors)
         changes.append(dict(type="remove_redundant_partition_segments", partition_id=row["id"],
                             before=copy.deepcopy(points),
                             after=[copy.deepcopy(p["points"]) for p in kept if p["id"] in survivors],
@@ -2117,7 +2129,8 @@ def prepare_plan_junctions(plan: dict, *, image_size: tuple[int, int],
 
 def regularize_plan(plan: dict, *, image_size: tuple[int, int], image_name: str,
                     rule_version: str = RULE_VERSION,
-                    grid_step_m: float | None = None) -> tuple[dict, dict]:
+                    grid_step_m: float | None = None,
+                    _before_lite_grid: bool = False) -> tuple[dict, dict]:
     """Regularise one floor draft and return it with a persistent full report."""
     if rule_version != RULE_VERSION:
         raise ValueError(f"unsupported regularization rule version {rule_version!r}")
@@ -2127,7 +2140,7 @@ def regularize_plan(plan: dict, *, image_size: tuple[int, int], image_name: str,
     # A trusted run policy overrides model-supplied audit metadata. The default
     # retains the existing opt-in contract for historical/offline callers.
     lite_step = grid_step_m if grid_step_m is not None else lite_grid_step(plan)
-    if lite_step is not None:
+    if lite_step is not None and not _before_lite_grid:
         result, lite_report = regularize_lite_plan(
             plan, image_size=image_size, image_name=image_name, grid_step_m=lite_step)
         report = {
@@ -2139,12 +2152,13 @@ def regularize_plan(plan: dict, *, image_size: tuple[int, int], image_name: str,
             "reading_alignment": copy.deepcopy(result["regularization_inputs"]["reading_alignment"]),
             "summary": lite_report["summary"],
             "method": {"edits_plan_draft_only": True, "edits_source_bim_polygons": False,
-                       "grid_step_m": lite_step, "room_or_opening_deletion_allowed": False},
+                       "grid_step_m": lite_step, "audited_strip_simplification_allowed": bool(result.get("wall_metadata"))},
         }
         result["regularization"] = copy.deepcopy(report)
         return result, report
     existing = plan.get("regularization")
     if (isinstance(existing, dict) and existing.get("rule_version") == rule_version
+            and not (_before_lite_grid and 'lite_bim' in existing)
             and existing.get("status") == "pass"
             and existing.get("plan_sha256") == _plan_digest(plan)):
         # A plan can carry caller-supplied metadata.  The digest makes replay
@@ -2185,7 +2199,7 @@ def regularize_plan(plan: dict, *, image_size: tuple[int, int], image_name: str,
                     continue
                 distance = abs(source["coordinate_m"] - target["coordinate_m"])
                 overlap = _overlap(source, target)
-                if ((distance <= _EPS or _strictly_under(distance, ALIGNMENT_THRESHOLD_M))
+                if (within_wall_tolerance(source, target, allow_equal=True)
                         and overlap > _EPS):
                     candidates.append((distance, -overlap, source, target))
         if not candidates:
@@ -2215,7 +2229,7 @@ def regularize_plan(plan: dict, *, image_size: tuple[int, int], image_name: str,
                     continue
                 distance = abs(first["coordinate_m"] - second["coordinate_m"])
                 overlap = _overlap(first, second)
-                if ((distance <= _EPS or _strictly_under(distance, ALIGNMENT_THRESHOLD_M))
+                if (within_wall_tolerance(first, second, allow_equal=True)
                         and overlap > _EPS):
                     candidates.append((distance, -overlap, first, second))
         if not candidates:
@@ -2252,6 +2266,7 @@ def regularize_plan(plan: dict, *, image_size: tuple[int, int], image_name: str,
         result = endpoint_before
         rejections[-1]["attempted_changes"] = attempted
 
+    prune_removed_metadata(result)
     after, compile_error = _compile(result, image_size, image_name)
     semantic_mapping = {"opening_id_map": [], "removed_space_seeds": [],
                         "affected_opening_ids": [], "status": "not_applicable"}
@@ -2440,7 +2455,7 @@ def _stack_offset_pairs(lower: dict, upper: dict) -> list[tuple[dict, dict]]:
             if first["axis"] != second["axis"]:
                 continue
             distance = abs(first["coordinate_m"] - second["coordinate_m"])
-            if not _strictly_under(distance, ALIGNMENT_THRESHOLD_M) or _overlap(first, second) <= _EPS:
+            if not within_wall_tolerance(first, second) or _overlap(first, second) <= _EPS:
                 continue
             start = max(first["span_m"][0], second["span_m"][0])
             end = min(first["span_m"][1], second["span_m"][1])
@@ -2989,6 +3004,8 @@ def regularize_plan_stack(
             if not attempt_footprint_alignment(source, target, basis=basis):
                 blocked_footprint_pairs.add(pair_key)
                 continue
+            remember_merge(source["item"]["plan"], source, target,
+                           target_plan=target["item"]["plan"], keep_source=True)
             moved_footprint_sources.add(source_key)
             footprint_locked_coordinates.add((
                 source["floor_id"], source["axis"], target["coordinate_m"]))
@@ -3206,6 +3223,8 @@ def regularize_plan_stack(
             # A source segment moves at most once in this adjacent-storey pass,
             # while one trusted target line may receive several disjoint source
             # segments.  Locking both sides leaves real residual offsets.
+            remember_merge(affected["plan"], source, target,
+                           target_plan=target["item"]["plan"], keep_source=True)
             moved_sources.add(source_key)
             if source_exterior is not None:
                 footprint_locked_coordinates.add((
@@ -3222,6 +3241,8 @@ def regularize_plan_stack(
         lite_step = lite_grid_step(item["plan"])
         if lite_step is not None:
             try:
+                from src.agent.geometry.wall_merge_policy import stamp_wall_state
+                stamp_wall_state(item['plan'])  # Accepted internal moves preserve observed membership.
                 before_grid = copy.deepcopy(item["plan"])
                 item["plan"], lite_report = regularize_lite_plan(
                     item["plan"], image_size=tuple(item["image_size"]),

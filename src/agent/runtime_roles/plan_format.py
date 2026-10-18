@@ -51,13 +51,12 @@ def _reader_example(example):
     for row in value["partitions"]:
         row.pop("source_refs", None)
     value["wall_metadata"] = [
-        {"target": "partition:" + value["partitions"][0]["id"], "thickness_m": 0.18,
-         "reference_side": "unknown", "evidence_status": "observed",
-         "basis": "Synthetic paired faces establish thickness; the chosen line's face is uncertain.",
-         "source_refs": ["plan.png: synthetic local paired wall faces"]},
-        {"target": "footprint:0", "thickness_m": None, "reference_side": "unknown",
-         "evidence_status": "unknown", "basis": "Synthetic example: this edge's second face is unreadable.",
-         "source_refs": []},
+        {"target": "footprint:*", "thickness_m": 0.24,
+         "evidence_status": "inferred", "basis": "Synthetic example exterior construction estimate.",
+         "source_refs": ["plan.png: exterior wall band"]},
+        {"target": "partition:*", "thickness_m": 0.12,
+         "evidence_status": "inferred", "basis": "Synthetic example partition construction estimate.",
+         "source_refs": ["plan.png: interior wall bands"]},
     ]
     value["assumptions"] = ["Synthetic dimensions only; replace example observations with this task's evidence."]
     return value

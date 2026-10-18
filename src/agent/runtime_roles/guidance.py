@@ -62,25 +62,28 @@ room topology merely to make a trial pass.
 source_refs on partitions/openings may be omitted: code records the admitted image and object ID.
 Keep explicit annotation references when they add useful evidence. Room role_evidence is optional;
 if supplied for an inferred role it must include assumptions. Use unknown for unclear use.
-wall_metadata rows: target=footprint:0 (original edge index) or partition:<id>, thickness_m
-(positive metres or null), reference_side=centerline/negative_face/positive_face/unknown,
-evidence_status=observed/inferred/unknown, basis, source_refs. Negative/positive means world
--X/+X for vertical walls, -Y/+Y for horizontal walls, independent of vertex order.
-For footprint edges only, outer_face/inner_face are also accepted; code maps each to
-the appropriate signed face; partitions still use the canonical sides above. Read
-thickness from annotated dimensions or visible paired wall faces and state that local basis.
-reference_side identifies the chosen line's position within the wall; it cannot establish
-an unknown thickness. Thickness and reference_side are independent: retain a readable
-thickness even when its reference_side is unknown. Do not wait for every wall to be known, spread one label to
-unrelated walls, or discard local readings because other walls are unclear. Record these
-in the same reading pass; no separate thickness survey is required. Truly unreadable
-thickness stays null, and omitted walls are recorded as unknown. The trial's
-wall_metadata_summary distinguishes supplied readings from default unknowns; it does not
-certify complete measurement. Metadata never moves a wall or establishes cross-floor identity.
-The saved plan/overlay shows two faces only where thickness and side are known; compare
-that declared band and any local wall-metadata hints with the original paired faces during
-the same local review. Unknowns
-remain single lines, and a band is not a code measurement or an extra inspection pass.
+Every wall MUST have positive thickness, adopted at 1 cm resolution. Reduce work by
+submitting wall_metadata batches target="footprint:*" and target="partition:*", then
+exact target overrides footprint:<edge>, partition:<id>, or partition:<id>:<segment>.
+Each row needs thickness_m, evidence_status=observed/inferred, short basis and source_refs.
+Use annotated dimensions when clear. Otherwise choose a plausible common thickness for
+the visible construction and mark inferred; no separate per-wall measurement pass.
+Candidates in cm: 6,7,8,9,10,12,13,14,15,16,18,19,20,22,24,25,26,28,29,30,
+35,36,37,40,45,49,50,55,60,62,65,70,75,80,85,90,95,100,110,120,130,140,150,160,180,200.
+Other explicit positive 1 cm values are allowed; this list is not a code restriction.
+Default trace: exterior outer face, thickness inward; interior centerline, half on each
+side. Omit reference_side to use these defaults. For a deliberately different chosen
+line state centerline/negative_face/positive_face (world -X/+X or -Y/+Y, independent of
+point order); perimeter additionally allows outer_face/inner_face. No null thickness
+or unknown side in an accepted plan. Batch defaults are inferred unless directly evidenced.
+The geometry tool merges overlapping or connected parallel wall representatives within
+2 * the larger thickness, including tiny real gaps, selecting an existing supported
+anchor then snapping it to the shared 10 cm grid; it never averages wall coordinates.
+Thickness changes remain segment attributes. Openings follow the host. Cross-floor
+matching is assembly work, not a reader task. Clean plan and overlay share the same
+adopted wall-band geometry, opening colours, labels and calibration; overlay adds gray
+original ink. Review missing/wrong walls, rooms and openings, not every small deliberate
+thickness/grid offset. Original declarations and applied movements remain in the audit.
 Failed geometry remains a saved declaration, not an accepted reading. Use read_plan_draft()
 to see editability, the current operations base and the last passed plan separately.
 Read field plus optional object_id for one object; field="plan" browses the saved
@@ -101,8 +104,8 @@ _PLAN_REVIEW = """Review trial drawing_differences, hard-rule failures and the s
 gray is original ink and color is adopted geometry. Compare the opening sequence and spans
 on each wall with the original symbols, including exterior windows outside the ink report's
 scope; a zero-item report or matching count does not establish their locations. Rework missing,
-extra or misconnected rooms/walls/openings and deviations over 0.30 m. A wrong wall face or
-opening endpoint still needs correction below 0.30 m; that is not a quantization tail.
+extra or misconnected rooms/walls/openings and deviations over 0.30 m. A selection outside the intended wall band or a wrong opening endpoint still needs
+correction. Audited thickness merges and grid displacement are permitted simplifications.
 Keep adopted 0.1 m values for finer tails only when the correct physical feature was read;
 the report retains original readings. Revisit the specific inconsistency on the existing
 overlay, without restarting a whole-plan point-by-point measurement loop. Use a targeted
@@ -128,8 +131,8 @@ object ID/collection alias, or an existing latest trial receipt field as trial.<
 Short names must identify exactly one plan object or trial field; ambiguous and unknown
 items are rejected, never discarded. Trial notes annotate a report, not observed geometry.
 For a verified 2D reading, omitted top-level contract fields such as z_floor, ceiling_height
-or wall_metadata are also addressable. Notes add no values or observations and do not
-change the passed plan; an omitted height or unknown thickness remains unknown.
+are also addressable. Notes add no values or observations and do not
+change the passed plan; an omitted height remains unknown; thickness is required.
 unresolved lists delivery questions.
 wall_metadata carries per-wall thickness and reference side. Legacy wall_reference defaults
 (perimeter outer_face, partitions centerline) are broad conventions only, not measured thickness; no geometry move.

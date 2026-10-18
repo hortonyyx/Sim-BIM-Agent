@@ -127,6 +127,9 @@ def _reading_align(
     """
 
     result = copy.deepcopy(dict(numeric))
+    if result.get('reading_type') == 'plan':
+        from src.agent.geometry.reader_wall_metadata import require_wall_thickness
+        result = require_wall_thickness(result)
     reading_alignment: dict[str, Any] = {"ink": {
         "status": "not_applied",
         "reason": "Original-image ink is reviewed on the overlay; it does not overwrite declared pixels or calibration.",

@@ -83,27 +83,38 @@ def compiled_grid_report(proposal: dict, grid_step_m: float = DEFAULT_LITE_GRID_
 
 def regularize_lite_plan(plan: dict, *, image_size: tuple[int, int], image_name: str = "plan",
                         grid_step_m: float = DEFAULT_LITE_GRID_M) -> tuple[dict, dict]:
-    """Atomically quantize a plan and prove room/opening relationships survive.
+    """Merge thickness-qualified wall duplicates, then quantize shared geometry.
 
-Invalid input is reported with its literal compiler error. No unregularized plan
-is returned as success. The existing hard checks remain active; unlike legacy
-Q1 this path never resolves a narrow strip by deleting/merging a source room.
-"""
+    Only explicitly audited strips may disappear in the merge transaction.
+    The following grid transaction must preserve its resulting relationships.
+    """
     from src.agent.geometry.plan_ink_alignment import _set_reading_alignment
     from src.agent.geometry.plan_partition import compile_plan_partition
     from src.agent.geometry.plan_regularization import (
         PlanRegularizationError, _calibration, _pixel_coordinate, _relationship_signature,
-        _world, prepare_plan_junctions, validate_regularized_plan,
+        _world, prepare_plan_junctions, validate_regularized_plan, regularize_plan,
     )
 
     quantize_m(0, grid_step_m)
-    result, preparation = prepare_plan_junctions(copy.deepcopy(plan), image_size=image_size, image_name=image_name)
+    merge_report = None
+    if plan.get('wall_metadata'):
+        from src.agent.geometry.wall_merge_policy import prepare_thickness_plan
+        prepared = prepare_thickness_plan(plan)
+        result, merge_report = regularize_plan(prepared, image_size=image_size,
+                                               image_name=image_name, _before_lite_grid=True)
+        preparation = merge_report['junction_preparation']
+    else:
+        result, preparation = prepare_plan_junctions(copy.deepcopy(plan), image_size=image_size, image_name=image_name)
     result.pop("regularization", None)
     report = {"schema": "lite_bim_regularization_v1", "status": "pending",
               "grid_step_m": grid_step_m,
               "selection_basis": "configured whole-building Lite BIM grid; explicit dimensions may be simplified",
               "rounding": "shared absolute cumulative coordinates; symmetric nearest grid",
               "junction_preparation": preparation, "items": [], "rejections": []}
+    if merge_report is not None:
+        report['wall_merging'] = merge_report
+        report['wall_policy'] = {'thickness_step_m': .01, 'merge_tolerance': '2 * max(thickness)',
+                                 'anchor': 'existing evidence-supported line; never average'}
 
     def reject(message, **details):
         report.update(status="rejected")
@@ -198,7 +209,7 @@ Q1 this path never resolves a narrow strip by deleting/merging a source room.
             if prior and abs(prior["adopted_m"] - row["original_m"]) < 1e-7:
                 row["original_m"] = prior["original_m"]
                 row["movement_m"] = round(row["adopted_m"] - row["original_m"], 12)
-    report["changes"] = copy.deepcopy(preparation["changes"])
+    report["changes"] = copy.deepcopy((merge_report or preparation)["changes"])
     world_footprint = [_world(calibration, p) for p in result["footprint_pixels"]]
     for axis in ("x", "y"):
         index, along = (0, 1) if axis == "x" else (1, 0)
@@ -223,6 +234,8 @@ Q1 this path never resolves a narrow strip by deleting/merging a source room.
                                       "path": row["path"], "from_m": row["original_m"], "to_m": row["adopted_m"],
                                       "movement_m": row["movement_m"], "grid_step_m": grid_step_m,
                                       "before_relationships": before_sig, "after_relationships": after_sig})
+    from src.agent.geometry.wall_merge_policy import stamp_wall_state
+    stamp_wall_state(result)
     report["adopted_plan_sha256"] = _geometry_digest(result)
     result["regularization_inputs"]["reading_alignment"]["lite_bim"] = copy.deepcopy(report)
     return result, report

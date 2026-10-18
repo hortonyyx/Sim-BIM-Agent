@@ -39,7 +39,7 @@ def _digest(value: dict) -> str:
     ).encode()).hexdigest()
 
 
-def source_primitives(geom: CorrectedGeometry, *, polygon_builder=_cell_polygon):
+def source_primitives(geom: CorrectedGeometry, *, polygon_builder=_cell_polygon, wall_breakpoints=None):
     """Build source identities and full room boundaries, without derived faces."""
     spaces: list[SourceSpace] = []
     boundaries: dict[str, SourceBoundary] = {}
@@ -53,6 +53,16 @@ def source_primitives(geom: CorrectedGeometry, *, polygon_builder=_cell_polygon)
             poly = polygon_builder(cell)
             polygons[cell.id] = poly
             ring = _ring(poly)
+            breaks = (wall_breakpoints or {}).get(floor_id, [])
+            if breaks:
+                split_ring = []
+                for a, b in zip(ring, ring[1:] + ring[:1]):
+                    line = LineString([a, b])
+                    interior = [p for p in breaks if line.distance(Point(p)) < 1e-7
+                                and 1e-7 < line.project(Point(p)) < line.length - 1e-7]
+                    split_ring.extend([a, *[list(p) for p in sorted(
+                        interior, key=lambda p: line.project(Point(p)))]])
+                ring = split_ring
             z0 = float(floor.z_floor)
             z1 = z0 + float(floor.ceiling_height)
             ref = f"correction:floor/{quote(floor_id, safe='')}/cell/{quote(cell.id, safe='')}"

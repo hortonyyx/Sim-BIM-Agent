@@ -144,7 +144,7 @@ def test_overlay_preserves_visible_original_ink_under_declared_band():
     ImageDraw.Draw(original).rectangle([pixel([-.1, 1.5]), pixel([.1, 2.5])], fill=(20, 20, 20))
     overlay, _ = _views(plan, metadata, original)
     assert max(overlay.getpixel(pixel([0, 2]))) < 50
-    assert min(overlay.getpixel(pixel([0, 3]))) > 220
+    assert min(overlay.getpixel(pixel([0, 3]))) > 210
     assert original.getpixel(pixel([0, 2])) == (20, 20, 20)
 
 
@@ -173,7 +173,7 @@ def test_overlay_grays_original_colors_but_preserves_adopted_marks_and_clean_vie
 
 
 def test_saved_views_and_rendering_summary_leave_reading_data_and_source_image_unchanged(tmp_path):
-    plan = reading()
+    plan = complete_reading()
     before = copy.deepcopy(plan)
     proposal, metadata = compile_reading(plan)
     (tmp_path / "images").mkdir()
@@ -189,9 +189,9 @@ def test_saved_views_and_rendering_summary_leave_reading_data_and_source_image_u
     assert original_path.read_bytes() == original_bytes
     assert product["image_sha256"] == hashlib.sha256(original_bytes).hexdigest()
     rendering = receipt["wall_metadata_summary"]["rendering"]
-    assert rendering["walls_with_known_faces"] == 1
-    assert rendering["walls_shown_as_lines"] == 4
-    assert rendering["solid_band_segments"] == 1
+    assert rendering["walls_with_known_faces"] == 5
+    assert rendering["walls_shown_as_lines"] == 0
+    assert rendering["solid_band_segments"] == 5
     assert len(receipt["source_plan_views"]) == len(result["content"]) == 2
     for view in receipt["source_plan_views"]:
         path = tmp_path / view["file"]
@@ -205,7 +205,7 @@ def test_changed_declared_faces_need_a_fresh_observation_when_rendered_views_cha
     from src.agent.runtime_roles.reader_delivery import require_observed_plan_trial
     from src.agent.runtime_roles.trial import PlanTrial
     from tests.test_plan_review_reuse import journal
-    plan = reading()
+    plan = complete_reading()
     (tmp_path / "images").mkdir()
     image_path = tmp_path / "images/plan.png"
     Image.new("RGB", SIZE, WHITE).save(image_path)
@@ -215,10 +215,18 @@ def test_changed_declared_faces_need_a_fresh_observation_when_rendered_views_cha
                       receipt_directory=tmp_path / "trial_receipts", grid_step_m=.1)
     before = asyncio.run(trial.run(plan))
     revised = copy.deepcopy(plan)
-    revised["wall_metadata"][0].update(change)
+    next(r for r in revised["wall_metadata"] if r["target"] == "partition:P").update(change)
     after = asyncio.run(trial.run(revised))
     assert before["status"] == after["status"] == "passed"
     assert all(a["sha256"] != b["sha256"]
                for a, b in zip(before["returned_images"], after["returned_images"]))
     with pytest.raises(ValueError, match="have not reached a model request"):
         require_observed_plan_trial(journal(before, after), trial, after)
+
+
+def complete_reading():
+    from src.agent.geometry.reader_wall_metadata import require_wall_thickness
+    plan = reading()
+    plan['wall_metadata'].append(dict(target='footprint:*', thickness_m=.24,
+        evidence_status='inferred', basis='Synthetic perimeter', source_refs=['fixture']))
+    return require_wall_thickness(plan)

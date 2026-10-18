@@ -14,7 +14,7 @@ from src.agent.geometry.component_attributes import thickness_record, validate_c
 from src.agent.geometry.plan_assembly import assemble_plan_proposals
 from src.agent.geometry.plan_partition import compile_plan_partition
 from src.agent.geometry.reader_wall_metadata import (
-    bind_wall_metadata, bind_wall_readings, validate_wall_metadata, wall_reading_input,
+    bind_wall_metadata, bind_wall_readings, validate_wall_metadata, wall_reading_input, require_wall_thickness,
 )
 from src.agent.geometry.source_bim import build_source_bim, source_view_geometry
 from src.agent.geometry.source_model import _digest
@@ -61,15 +61,15 @@ def test_invalid_thickness_or_unlocatable_wall_is_rejected(change):
         validate_wall_metadata(plan)
 
 
-def test_segment_scope_is_explicit_and_cannot_overlap_whole_partition():
+def test_segment_override_inherits_remaining_whole_partition_values():
     plan = _plan()
     plan["wall_metadata"] = [_known("partition:P_vertical:0")]
     rows = validate_wall_metadata(plan)
     assert next(r for r in rows if r["target"] == "partition:P_vertical:1")["thickness_m"] is None
     assert all(r["target"] != "partition:P_vertical" for r in rows)
     plan["wall_metadata"].append(_known())
-    with pytest.raises(ValueError, match="cannot mix"):
-        validate_wall_metadata(plan)
+    rows = validate_wall_metadata(plan)
+    assert all(r["thickness_m"] == .2 for r in rows if r["target"].startswith("partition:P_vertical"))
 
 
 def test_t_junction_binds_each_partial_side_without_changing_geometry(example):
@@ -176,7 +176,8 @@ def test_perimeter_alias_retains_raw_observation_beside_canonical_product_and_so
     from src.agent.runtime_roles.plan_reading import build_reading
     plan, _, _, source = example
     # The existing fixture has a repeated closing vertex and downward pixel Y.
-    plan["wall_metadata"] = [dict(_known("footprint:0", .3), reference_side="outer_face")]
+    plan["wall_metadata"] = [dict(_known("footprint:0", .3), reference_side="outer_face"),
+        dict(_known("footprint:*", .24), reference_side="outer_face"), _known("partition:*", .12)]
     before = copy.deepcopy(plan)
     assert plan_format_errors(plan) == []
     (tmp_path / "images").mkdir()
@@ -189,12 +190,12 @@ def test_perimeter_alias_retains_raw_observation_beside_canonical_product_and_so
     patch = bind_wall_readings(source, [reading])
 
     assert result["structuredContent"]["status"] == "passed"
-    assert plan == saved == before
-    assert product["mapping"]["wall_metadata"] == before["wall_metadata"]
+    assert plan == before and saved == require_wall_thickness(before)
+    assert product["mapping"]["wall_metadata"] == require_wall_thickness(before)["wall_metadata"]
     adopted = next(row for row in product["walls"] if row["target"] == "footprint:0")
     assert adopted == {**before["wall_metadata"][0], "reference_side": "positive_face"}
     assert next(row for row in reading["walls"] if row["target"] == "footprint:0")["reference_side"] == "positive_face"
-    known = [row for row in patch["wall_references"] if row["thickness_m"] is not None]
+    known = [row for row in patch["wall_references"] if row["thickness_m"] == .3]
     assert known and all(row["reference_side"] == "positive_face" for row in known)
     assert all(row["thickness_m"] == .3 and row["evidence_status"] == "observed" for row in known)
     assert all(row["reference_basis"] == before["wall_metadata"][0]["basis"] for row in known)
@@ -207,7 +208,7 @@ def test_face_alias_waits_for_actual_trial_quantity_and_profile_resolution(tmp_p
     from src.agent.runtime_roles.plan_format import READER_PLAN_EXAMPLE, plan_format_errors
     from src.agent.runtime_roles.trial import PlanTrial
     plan = copy.deepcopy(READER_PLAN_EXAMPLE)
-    plan["wall_metadata"] = [dict(_known("footprint:0"), reference_side=alias)]
+    plan["wall_metadata"].insert(0, dict(_known("footprint:0"), reference_side=alias))
     numeric = copy.deepcopy(plan)
     expected_side = next(row["reference_side"] for row in validate_wall_metadata(numeric)
                          if row["target"] == "footprint:0")
@@ -248,7 +249,7 @@ def test_face_alias_waits_for_actual_trial_quantity_and_profile_resolution(tmp_p
         assert resolved[field] == numeric[field]
     assert bool(receipt["length_bindings"]) == (declaration in {"quantity", "both"})
     assert bool(receipt["measurement_bindings"]) == (declaration in {"profile", "both"})
-    assert product["mapping"]["wall_metadata"] == numeric["wall_metadata"]
+    assert product["mapping"]["wall_metadata"] == require_wall_thickness(numeric)["wall_metadata"]
     adopted = next(row for row in product["walls"] if row["target"] == "footprint:0")
     assert adopted == {**numeric["wall_metadata"][0], "reference_side": expected_side}
 

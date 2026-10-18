@@ -132,51 +132,45 @@ def _views(plan, metadata, original, *, wall_views=None):
     """Render adopted coordinates through the original calibration, without refitting."""
     wall_views = wall_views if wall_views is not None else _wall_view_geometry(plan, metadata)
     pictures = [original.convert("L").convert("RGB"), Image.new("RGB", original.size, "white")]
-    for index, picture in enumerate(pictures):
-        if index:
-            bands = ImageDraw.Draw(picture)
-            for polygon in wall_views["bands"]:
-                bands.polygon(polygon, fill=(234, 237, 240), outline=(83, 92, 105), width=1)
-        else:
-            layer = Image.new("RGBA", original.size)
-            bands = ImageDraw.Draw(layer)
-            for polygon in wall_views["bands"]:
-                bands.polygon(polygon, fill=(15, 110, 195, 20), outline=(15, 110, 195, 170), width=1)
-            picture = Image.alpha_composite(picture.convert("RGBA"), layer).convert("RGB")
-            pictures[index] = picture
-        draw = ImageDraw.Draw(picture)
-        wall = (15, 110, 195) if index == 0 else (42, 49, 61)
-        def line(points, color, width):
-            draw.line([tuple(p) for p in points], fill=color, width=width, joint="curve")
-        for points in wall_views["lines"]:
-            line(points, wall, 3)
-        for row in plan["openings"]:
-            color = (10, 167, 151) if row["kind"] == "window" else (214, 83, 32)
-            line([row["p1"], row["p2"]], color, 5)
-            if index:
-                middle = [(a + b) / 2 for a, b in zip(row["p1"], row["p2"])]
-                draw.text((middle[0] + 5, middle[1] + 4), row["id"], font=_font(13), fill=color)
-        if index:
-            for row in metadata["space_mapping"]:
-                from shapely.geometry import Polygon
-                p = Polygon(row["pixel_polygon"]).representative_point()
-                draw.text((p.x, p.y), row["space_id"], font=_font(16), fill=(65, 65, 65), anchor="mm")
-        # The anchor marker lies on its declared original pixel, never on a
-        # freshly fitted ink bbox. This makes global calibration drift visible.
-        for axis in ("x", "y"):
-            for px, metres in plan[f"{axis}_anchors"]:
-                if axis == "x":
-                    draw.line([(px, 0), (px, picture.height)], fill=(205, 110, 180), width=1)
-                    draw.text((px + 3, 12), f"x {px:g}px = {metres:g}m", font=_font(14), fill=(125, 30, 105))
-                else:
-                    draw.line([(0, px), (picture.width, px)], fill=(205, 110, 180), width=1)
-                    draw.text((12, px + 3), f"y {px:g}px = {metres:g}m", font=_font(14), fill=(125, 30, 105))
-    return pictures
+    # One transparent adopted-geometry layer, composited over two backgrounds.
+    # Coordinates, bands, IDs, opening colours and calibration are identical.
+    layer = Image.new("RGBA", original.size)
+    bands = ImageDraw.Draw(layer)
+    for polygon in wall_views['bands']:
+        bands.polygon(polygon, fill=(15, 110, 195, 42), outline=(15, 110, 195, 255), width=1)
+    picture = layer
+    draw = ImageDraw.Draw(picture)
+    wall = (15, 110, 195)
+    def line(points, color, width):
+        draw.line([tuple(p) for p in points], fill=color, width=width, joint="curve")
+    for points in wall_views["lines"]:
+        line(points, wall, 3)
+    for row in plan["openings"]:
+        color = (10, 167, 151) if row["kind"] == "window" else (214, 83, 32)
+        line([row["p1"], row["p2"]], color, 5)
+        middle = [(a + b) / 2 for a, b in zip(row["p1"], row["p2"])]
+        draw.text((middle[0] + 5, middle[1] + 4), row["id"], font=_font(13), fill=color)
+    for row in metadata["space_mapping"]:
+        from shapely.geometry import Polygon
+        p = Polygon(row["pixel_polygon"]).representative_point()
+        draw.text((p.x, p.y), row["space_id"], font=_font(16), fill=(65, 65, 65), anchor="mm")
+    # The anchor marker lies on its declared original pixel, never on a
+    # freshly fitted ink bbox. This makes global calibration drift visible.
+    for axis in ("x", "y"):
+        for px, metres in plan[f"{axis}_anchors"]:
+            if axis == "x":
+                draw.line([(px, 0), (px, picture.height)], fill=(205, 110, 180), width=1)
+                draw.text((px + 3, 12), f"x {px:g}px = {metres:g}m", font=_font(14), fill=(125, 30, 105))
+            else:
+                draw.line([(0, px), (picture.width, px)], fill=(205, 110, 180), width=1)
+                draw.text((12, px + 3), f"y {px:g}px = {metres:g}m", font=_font(14), fill=(125, 30, 105))
+    return [Image.alpha_composite(p.convert('RGBA'), layer).convert('RGB') for p in pictures]
 
 
 def build_reading(plan, *, workspace, image_name, number):
     from src.agent.geometry.plan_partition import compile_plan_partition
-    from src.agent.geometry.reader_wall_metadata import validate_wall_metadata
+    from src.agent.geometry.reader_wall_metadata import validate_wall_metadata, require_wall_thickness
+    plan = require_wall_thickness(plan)
     workspace = Path(workspace)
     image_path = workspace / "images" / image_name
     raw_image = image_path.read_bytes()
@@ -198,8 +192,8 @@ def build_reading(plan, *, workspace, image_name, number):
                    "known": known_wall_count, "unknown": len(walls) - known_wall_count,
                    "defaulted_unknown": sum(row["target"] not in supplied_wall_targets for row in walls)},
         "scope": "Wall metadata for this floor; counts do not establish drawing completeness.",
-        "note": "Unknown includes omitted readings. Preserve locally readable thickness with its basis even "
-                "when the reference side or other walls are unknown; keep genuinely unreadable values null.",
+        "note": "Every adopted wall has a 1 cm thickness. Inferred batch values remain labelled inferred; "
+                "clean plan and overlay use the same adopted geometry layer.",
         "rendering": wall_views["summary"],
     }
     product = {"schema": "plan_reading_v1", "image": image_name,

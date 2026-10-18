@@ -48,6 +48,8 @@ def derive_ep_geometry(source: dict, zone_names: dict[str, str], *, opening_poli
         raise ValueError("EP branch requires source_bim_v2")
     if source.get("source_model_sha256") != _digest({k: v for k, v in source.items() if k != "source_model_sha256"}):
         raise ValueError("source BIM digest mismatch")
+    from src.agent.geometry.opening_segments import expand_opening_policy
+    opening_policy = expand_opening_policy(source, opening_policy)
     if source.get("validation", {}).get("status") != "pass" or any(source.get(k) for k in ("unbuilt_openings", "unsupported")):
         raise ValueError("source BIM has unresolved geometry; EP branch blocked")
     if source["coordinate_system"]["units"] != "m" or source["coordinate_system"]["up_axis"] != "Z":

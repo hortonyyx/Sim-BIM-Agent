@@ -10,7 +10,7 @@ import math
 from itertools import combinations
 from urllib.parse import quote
 
-from shapely.geometry import Polygon, box
+from shapely.geometry import Polygon, box, LineString, Point
 from shapely.ops import unary_union
 
 from src.agent.correction.schema import CorrectedGeometry, SourceOpening
@@ -128,7 +128,7 @@ def _contacts(boundaries):
 
 
 def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular", window_host_proof=None,
-                     enclosure_declaration: dict | None = None) -> dict:
+                     enclosure_declaration: dict | None = None, wall_readings=None) -> dict:
     """Generate geometric source objects without cut/pair, physics or IDF calls.
 
     Invalid base space geometry fails explicitly. Unresolved openings remain in
@@ -170,7 +170,11 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
 
     # Reuse polygon validity/bounds checks, without the legacy EP kernel's
     # configurable minimum edge length. Small valid source spaces stay present.
-    spaces, boundaries, polygons, by_space = source_primitives(geom, polygon_builder=cell_polygon)
+    from src.agent.geometry.reader_wall_metadata import thickness_breakpoints
+    wall_breakpoints = thickness_breakpoints(wall_readings or [])
+    spaces, boundaries, polygons, by_space = source_primitives(
+        geom, polygon_builder=cell_polygon,
+        wall_breakpoints=wall_breakpoints)
     from src.agent.roles import require_role
     for space in spaces:
         space.role = require_role(space.role)
@@ -233,6 +237,8 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
              **({"height_host_diagnostic": diagnostic} if diagnostic is not None else {}))
 
     resolutions = {r.window_id: r for r in proof_artifact.claims.resolutions} if proof_artifact else {}
+    opening_segment_groups = {}
+    used_aperture_ids = {o.id for o in geom.openings} | {str(w.id) for w in geom.windows}
     for window in geom.windows:
         wid = str(window.id)
         if wid in seen_ids:
@@ -249,7 +255,7 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
                 window.span[0] >= window.span[1] or window.z[0] >= window.z[1]):
             reject(window, "window span/height must be positive finite intervals")
             continue
-        candidates = []
+        candidates, partials = [], []
         resolution = resolutions.get(wid)
         want = resolution.segment_outward_normal if resolution else _FACADE_NORMAL[window.facade.lower()]
         for bid in by_space.get(window.room, []):
@@ -265,16 +271,71 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
                 vertices = _legacy_cardinal_window_verts(window, Surface(bid, boundary.space_id, "Wall", boundary.vertices, "Outdoors"))
             if _contained(vertices, boundary) and exterior(vertices, boundary):
                 candidates.append((boundary, vertices))
-        if len(candidates) != 1:
+            elif wall_breakpoints.get(owner.floor_id):
+                shape = _on_wall(vertices, boundary)
+                if shape is not None:
+                    overlap = shape.intersection(_on_wall(boundary.vertices, boundary))
+                    origin = boundary.vertices[0][:2]
+                    direction, _ = _frame(origin, boundary.vertices[1][:2])
+                    for part in _parts(overlap):
+                        clipped = _lift(list(part.exterior.coords)[:-1], origin, direction)
+                        if exterior(clipped, boundary):
+                            partials.append((boundary, clipped, vertices))
+        if not candidates and partials:
+            # Several thickness-uniform hosts may cover one logical window.
+            # Accept exactly one complete coplanar cover, with no omitted area.
+            covers = []
+            for boundary, _, expected in partials:
+                parts = [(b, v) for b, v, _ in partials if _on_wall(v, boundary) is not None]
+                actual = unary_union([_on_wall(v, boundary) for _, v in parts])
+                wanted = _on_wall(expected, boundary)
+                if actual.symmetric_difference(wanted).area <= EPS ** 2:
+                    identities = frozenset(b.id for b, _ in parts)
+                    if not any(ids == identities for ids, _ in covers):
+                        covers.append((identities, parts))
+            if len(covers) == 1:
+                candidates = covers[0][1]
+                opening_segment_groups[wid] = []
+        if len(candidates) != 1 and wid not in opening_segment_groups:
             reject(window, f"expected one complete exterior host; found {len(candidates)}")
             continue
-        boundary, vertices = candidates[0]
-        openings.append(SourceOpening(id=wid, kind="window", host_boundary_id=boundary.id,
-                        space_ids=[boundary.space_id], exterior=True, vertices=vertices,
-                        source_refs=[f"correction:window/{quote(wid, safe='')}"]))
-        bindings[wid] = [boundary.id]
+        for index, (boundary, vertices) in enumerate(candidates):
+            identity = wid if index == 0 else wid + f'::thickness-{index + 1}'
+            while index and identity in used_aperture_ids:
+                identity += '-2'
+            used_aperture_ids.add(identity)
+            openings.append(SourceOpening(id=identity, kind="window", host_boundary_id=boundary.id,
+                            space_ids=[boundary.space_id], exterior=True, vertices=vertices,
+                            source_refs=[f"correction:window/{quote(wid, safe='')}"]))
+            bindings[identity] = [boundary.id]
+            if wid in opening_segment_groups:
+                opening_segment_groups[wid].append(identity)
 
+    source_apertures = []
     for aperture in geom.openings:
+        owner = spaces_by_id.get(aperture.space_id)
+        line = LineString([aperture.p1, aperture.p2])
+        breaks = wall_breakpoints.get(owner.floor_id, []) if owner else []
+        cuts = sorted({line.project(Point(p)) for p in breaks
+                       if line.distance(Point(p)) < EPS and EPS < line.project(Point(p)) < line.length-EPS})
+        if not cuts:
+            source_apertures.append(aperture)
+            continue
+        positions, ids = [0, *cuts, line.length], []
+        for index, (lo, hi) in enumerate(zip(positions, positions[1:])):
+            identity = aperture.id if index == 0 else aperture.id + f'::thickness-{index + 1}'
+            while index and identity in used_aperture_ids:
+                identity += '-2'
+            used_aperture_ids.add(identity)
+            ids.append(identity)
+            source_apertures.append(aperture.model_copy(update={
+                'id': identity, 'p1': tuple(line.interpolate(lo).coords[0]),
+                'p2': tuple(line.interpolate(hi).coords[0]),
+                'source_refs': [*aperture.source_refs, f'opening:{aperture.id}'],
+            }))
+        opening_segment_groups[aperture.id] = ids
+
+    for aperture in source_apertures:
         if aperture.id in seen_ids:
             reject(aperture, "duplicate source opening identity")
             continue
@@ -346,6 +407,8 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
                        "not_evaluated": ["drawing partition fidelity and completeness", "unobserved openings",
                                          "voids and false slabs", "thermal properties and solver acceptance"]},
     }
+    if opening_segment_groups:
+        payload['opening_segment_groups'] = opening_segment_groups
     from src.agent.geometry.source_naming import build_public_names
     from src.agent.roles import CATALOG, CATALOG_PATH
     payload["public_names"] = build_public_names(payload)

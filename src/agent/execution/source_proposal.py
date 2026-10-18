@@ -164,6 +164,7 @@ def export_source_proposal(proposal: dict, out_dir: Path, *, provenance: dict | 
             geom,
             capability_profile="orthogonal_polygon",
             enclosure_declaration=enclosure,
+            wall_readings=proposal.get('wall_readings'),
         )
         if "wall_readings" in proposal:
             from src.agent.geometry.reader_wall_metadata import bind_wall_readings
