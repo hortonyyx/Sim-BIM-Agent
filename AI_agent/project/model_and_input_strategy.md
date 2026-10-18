@@ -1,6 +1,6 @@
 # Work model 与输入能力策略
 
-2026-10-18 收工更新：6 Sol→Haiku→27B一平一立小批结束，读图员、27B和整案迭代暂存，下一轮转向搭建textured mesh harness。国产模型先调研，之后再尝试，候选不局限本地级，优先更快、更低档位和整任务成本；本轮不新增推理或生成调用。保留调度员完整信息权限、runtime默认8并发、缓存参数及既定Lite精度。运行现状见 [roadmap](roadmap.md)，候选与下一轮入口见[收工交接](../reports/2026-10-18_closeout_model_candidates_and_mesh.md)。
+2026-10-19 收工更新：用户追加授权的Qwen/DeepSeek/GLM/MiMo一平一立粗测已结束。DeepSeek/Qwen北立面单张通过，平面未得到可替代6 Sol的成功结果；MiMo新Go接线在规范参数后进入工具循环，工具返回图片的请求仍因传输中断未取得响应。读图员、27B和整案迭代暂存，下一轮转向搭建textured mesh harness。候选不局限本地级，优先更快、更低档位和整任务成本；当前不再追加调用。保留调度员完整信息权限、runtime默认8并发、缓存参数及既定Lite精度。运行现状见 [roadmap](roadmap.md)，完整边界与下一轮入口见[收工交接](../reports/2026-10-19_cn_reader_smoke.md)。
 
 ## Work model：按任务表现选型
 
@@ -25,7 +25,7 @@
 
 ## 开发顺序
 
-1. 本轮保留图纸开发版runtime24/domain113与固定桌面runtime24/domain110，不为收工追加测试、发布或27B修补；国产候选只登记后续小测顺序。
+1. 本轮保留图纸开发版runtime27/domain113与固定桌面runtime24/domain110；新增runtime仅为MiMo协议接线及合入后的LF封印登记，domain不变。粗测结果已保存，不为收工追加测试、发布或27B修补。
 2. 下一轮搭建textured mesh harness，先以一个已有自包含GLB串起输入、贴图观察、坐标/尺度、几何处理、推断与源BIM交付。复用已有工具、runtime和数据模型，先盘点实际缺口再实施。
 3. 有代表案例证据后，再收敛进domain的methods/tools/guidance；必要时按证据扩展角色，随后尝试网格加平面等混合输入。图纸全图、整案与国产候选批次待恢复该线时另定范围。
 4. 纯照片路线保留已有有监督原型，入口与证据见 [照片→mesh→BIM](../design/photo_to_mesh_bim.md)；下一轮mesh输入不自动包含新图像/mesh生成调用。细度政策、未知尺度与不可见内部的表达先明确，不默认一层一区或编造房间级还原。

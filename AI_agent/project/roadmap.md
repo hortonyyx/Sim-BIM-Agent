@@ -1,5 +1,14 @@
 # 当前任务
 
+## 2026-10-19 国产Flash一平一立粗测完成，收工
+
+- 用户在前次收工后授权先测已有候选，并明确加入最新DeepSeek Flash；已完成Qwen/DeepSeek/GLM及新增Go MiMo的一平一立粗测，所有节点终止。domain113固定、0人工修稿、无整案；下一轮仍转textured mesh。
+- DeepSeek North 172.350秒/307,235tokens、Qwen North 408.455秒/448,368tokens通过本张数值及实际图核对；DeepSeek F1 403.340秒但误封室外、漏入口/错宿主；Qwen F1 864.622秒工具JSON格式失败无稿。GLM North错层，平面传输失败；MiMo规范参数后原图请求和工具调用可用，但工具图片回传请求中断，质量未评。不替代6 Sol主线，不将单样本通过称稳定。
+- 全批12节点67请求/60响应/105工具、已知3,100,997tokens；另2诊断请求，共9请求usage未知。原入口400/额度错误、格式失败、传输失败、质量失败分别保留。豆包Lite/Step Flash未配置，HY3/LongCat当前文本入口不作为读图候选。
+- 开发版runtime27/domain113，仅新增MiMo Go准入及文档化协议映射；runtime27另登记合入后profile的LF字节，行为与测试用runtime26相同。定向29通过，相邻runtime61通过/3失败，3项在未改基线同样失败并记录。无完整独审、无桌面发布；固定桌面仍runtime24/domain110。主助手数值/图像核对不等于独立审阅者整案验收。
+
+**当前交接：** [国产Flash粗测与收工交接](../reports/2026-10-19_cn_reader_smoke.md)。
+
 ## 2026-10-18 本轮收工与下一轮textured mesh
 
 - 用户决定不再纠结27B，读图员与整案线暂存；下一轮转向搭建textured mesh harness。本次只调研国产模型、保存交接，不新增推理、测试、生成服务或程序变更。
@@ -7,7 +16,7 @@
 - 开发版仍runtime24/domain113，固定桌面仍runtime24/domain110；上一轮6 Sol/Haiku/27B结果和质量边界不变。保留8并发、缓存参数、墙厚/10cm/回叠契约与调度完整信息权限。
 - Mesh下一轮先盘点现有GLB载入、贴图视图、像素量测和mesh/BIM坐标映射，搭通一个已有GLB到源BIM及查看器的自主闭环。照片生成原型已有监督介入与外部标定，不能当作自主质量基线；细度、未知尺度及不可见内部先明确。
 
-**当前交接：** [国产模型候选与textured mesh收工交接](../reports/2026-10-18_closeout_model_candidates_and_mesh.md)。
+**前次交接：** [国产模型候选与textured mesh收工交接](../reports/2026-10-18_closeout_model_candidates_and_mesh.md)。
 
 ## 2026-10-18：读图员减负与一平一立小模型上限测试完成
 
