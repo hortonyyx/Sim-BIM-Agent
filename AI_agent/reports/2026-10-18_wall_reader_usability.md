@@ -77,4 +77,8 @@ F2四次trial：首稿最终拒绝原因是连续走廊被放入多个空间种�
 
 ## 最终交接
 
-实现、离线检查、独立代码审阅、两个真实节点独评和执行者复盘均完成。Git及固定桌面发布信息在发布核验后登记。
+实现、离线检查、独立代码审阅、两个真实节点独评和执行者复盘均完成。实现提交`873fb37f1b83256a8c4eb7ece8a3cc86261e5d72`已推送；提交后逐项核对两次启动的530个程序文件，均与实测冻结字节一致，见[提交核验](D:/Sim-BIM-Agent/cache/wall-usability-20261018/tested-commit-verification.json)。
+
+固定桌面`C:/Users/Horton/Desktop/Sim BIM Agent`已从`69b5ceb5`原位更新为`873fb37f`、runtime24/domain103，519个清单文件SHA一致。依赖未变，Offline更新；原路径安装验收36.938秒通过，0真实模型请求。上一版`previous.zip`为5,036,289字节，SHA匹配，备份源提交`69b5ceb5`；更新工作目录已清空。[桌面核验](D:/Sim-BIM-Agent/cache/wall-usability-20261018/desktop-verification.json)
+
+自动审批审查拒绝删除本轮临时发布目录`D:/Sim-BIM-Agent/releases/20261018-wall-usability-v103`，原因只返回`blocked by policy`。约22MB副本保留，没有换方式重试；上一轮被拒的发布目录也未动。不影响桌面安装及可恢复备份。本轮没有新建工作树，既有OpenCode Go工作树保持原状。收尾时C/D剩余49.81/126.87GiB。
