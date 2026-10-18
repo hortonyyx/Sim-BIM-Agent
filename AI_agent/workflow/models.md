@@ -14,7 +14,7 @@ Work model 不设国别、规模或型号上限。当前主线使用 GPT-6 Sol�
 
 配置见 [model_configuration](../design/model_configuration.md)。同一型号在不同服务上的模态、工具协议、限流、思考与计费可能不同；以明确 profile 和真实回执为准。历史价格、余额与目录不作为当前事实。
 
-OpenCode Go现以独立`opencode-go`订阅路由接入，可用于单模型和图纸分工；明确协议/参数的七个型号与凭据文件说明见 [Go接入](opencode_go.md)。2026-10-19新增MiMo Flash协议准入，实际图片回传闭环及交付仍受传输中断影响，不能宣称建筑能力通过。它与Paratera的按量线路分别记录，不共用价格表或自动互相回退。目录暴露、协议接线、工具/图片闭环和建筑质量分别报告。
+OpenCode Go现以独立`opencode-go`订阅路由接入，可用于单模型和图纸分工；明确协议/参数的七个型号与凭据文件说明见 [Go接入](opencode_go.md)。2026-10-19新增MiMo Flash协议准入，runtime28另修复工具图片呈现审计；离线通过不代表真实读图完成。用户指定串行、Go失败后转Paratera的复测已结束，两线路仍有服务失败，MiMo未出现在Paratera目录。两条路由分别记账，不共用价格表；切换以用户当前授权为准。目录暴露、协议接线、工具/图片闭环和建筑质量分别报告。
 
 用户已完成 Sim BIM Agent 独立 ChatGPT 授权，开发与桌面产品已读取模型目录；本地严格 profile 已包含 `gpt-6-astra`、`gpt-6.1-sol`、`gpt-6-sol`。6 Sol已完成一次sm25自主分工整案，不能据此宣称稳定成熟；账号当前可用性以实际服务回执为准。历史授权核验见 [授权记录](../reports/2026-10-11_repository_subscription_auth.md) 与 [接入说明](chatgpt_subscription_runtime.md)。
 

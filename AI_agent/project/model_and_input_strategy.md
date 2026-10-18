@@ -1,6 +1,6 @@
 # Work model 与输入能力策略
 
-2026-10-19 收工更新：用户追加授权的Qwen/DeepSeek/GLM/MiMo一平一立粗测已结束。DeepSeek/Qwen北立面单张通过，平面未得到可替代6 Sol的成功结果；MiMo新Go接线在规范参数后进入工具循环，工具返回图片的请求仍因传输中断未取得响应。读图员、27B和整案迭代暂存，下一轮转向搭建textured mesh harness。候选不局限本地级，优先更快、更低档位和整任务成本；当前不再追加调用。保留调度员完整信息权限、runtime默认8并发、缓存参数及既定Lite精度。运行现状见 [roadmap](roadmap.md)，完整边界与下一轮入口见[收工交接](../reports/2026-10-19_cn_reader_smoke.md)。
+2026-10-19 收工更新：国产Flash粗测及用户追加的中断复测已结束。DeepSeek/Qwen北立面原单张通过，平面仍无6 Sol替代成功结果。按新指令串行后Go仍断开，同名GLM Paratera另有400和超时，MiMo目录无对应Paratera型号；新增8节点及1诊断无有效稿。MiMo一次工具图片后响应触发本地呈现审计缺陷，已离线复现并在runtime28修复，修后真实节点受传输影响未完成。读图员、27B和整案线暂存，下一轮转textured mesh。候选仍优先更快、更低档位和整任务成本；不追加调用。保留调度完整信息权限、产品runtime默认8并发、缓存参数及既定Lite精度。运行现状见[roadmap](roadmap.md)，完整边界见[最新交接](../reports/2026-10-19_reader_transport_retry.md)。
 
 ## Work model：按任务表现选型
 
@@ -25,7 +25,7 @@
 
 ## 开发顺序
 
-1. 本轮保留图纸开发版runtime27/domain113与固定桌面runtime24/domain110；新增runtime仅为MiMo协议接线及合入后的LF封印登记，domain不变。粗测结果已保存，不为收工追加测试、发布或27B修补。
+1. 本轮保留图纸开发版runtime28/domain113与固定桌面runtime24/domain110；新增runtime为MiMo协议接线、合入后的LF封印登记及工具图片呈现修复，domain不变。粗测和中断复测证据均保存，不为收工追加测试、发布或27B修补。
 2. 下一轮搭建textured mesh harness，先以一个已有自包含GLB串起输入、贴图观察、坐标/尺度、几何处理、推断与源BIM交付。复用已有工具、runtime和数据模型，先盘点实际缺口再实施。
 3. 有代表案例证据后，再收敛进domain的methods/tools/guidance；必要时按证据扩展角色，随后尝试网格加平面等混合输入。图纸全图、整案与国产候选批次待恢复该线时另定范围。
 4. 纯照片路线保留已有有监督原型，入口与证据见 [照片→mesh→BIM](../design/photo_to_mesh_bim.md)；下一轮mesh输入不自动包含新图像/mesh生成调用。细度政策、未知尺度与不可见内部的表达先明确，不默认一层一区或编造房间级还原。

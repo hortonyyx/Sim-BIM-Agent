@@ -20,7 +20,7 @@ Haiku整案采用独立的 [流程贯通配置](../../product/config.opencode-go
 
 这七个ID有明确协议、参数和预算profile；2026-10-19实时Go目录返回37个型号，不代表全部已接线。其他ID在模型请求前拒绝，不猜协议或接受未知实验型号。GPT-6 Sol不在已配置Go目录中。
 
-MiMo于2026-10-19补入，使用服务默认思考，不传温度或未登记effort。按[官方图片请求格式](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/multimodal-understanding/image-understanding)发送`max_completion_tokens`；图片保留原字节，发送前去掉本地`detail`显示提示并登记来源投影。1,048,576上下文来自当日模型元数据；Go图片预算仍为未独立校准的proxy。离线接线通过不代表读图质量通过，实际工具图片回传请求中断，结果见[粗测报告](../reports/2026-10-19_cn_reader_smoke.md)。
+MiMo于2026-10-19补入，使用服务默认思考，不传温度或未登记effort。按[官方图片请求格式](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/multimodal-understanding/image-understanding)发送`max_completion_tokens`；图片保留原字节，发送前去掉本地`detail`显示提示并登记来源投影。runtime28在保存工具呈现前准备模型可接受的图片格式，保留原MCP、图片hash及省略hint，修复响应到达后把hint变化误判为丢图的审计故障。1,048,576上下文来自当日模型元数据；Go图片预算仍为未独立校准的proxy。串行复测仍有传输失败，真实读图质量未评，见[复测报告](../reports/2026-10-19_reader_transport_retry.md)。
 
 运行请求携带自身`User-Agent: Sim-BIM-Agent/work-model`及`x-opencode-session`。会话ID由运行目录与任务ID派生为UUID，同一任务恢复时稳定，不同并发reader各有自己的ID；不发送本机原始路径。没有伪装成OpenCode或Claude客户端。
 
