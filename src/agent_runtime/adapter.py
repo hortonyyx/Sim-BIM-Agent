@@ -143,6 +143,9 @@ def prepare_request(*, store: EventStore, model: str, messages: list[dict],
             "removed_fields": sorted(set(message) - set(selected[i]))})
         for i, (message, source) in enumerate(zip(messages, message_sources))]
     messages = selected
+    if versions.remote_model.route_id == "opencode-go":
+        from .opencode_go import chat_messages
+        messages, message_sources = chat_messages(store, model, messages, message_sources)
     body = {"model": model, "messages": copy.deepcopy(messages),
             "stream": False, "n": 1, **copy.deepcopy(parameters)}
     if versions.remote_model.route_id == "deepseek":
@@ -151,9 +154,12 @@ def prepare_request(*, store: EventStore, model: str, messages: list[dict],
         # No unverified sampling count on the Coding Plan endpoint. Capture the
         # resulting body below so the journal remains identical to wire bytes.
         body.pop("n")
-        unsupported = set(parameters) - {"max_tokens", "temperature", "reasoning_effort"}
+        allowed = ({"max_completion_tokens"}
+                   if versions.remote_model.route_id == "opencode-go" and model == "mimo-v2.6-flash"
+                   else {"max_tokens", "temperature", "reasoning_effort"})
+        unsupported = set(parameters) - allowed
         if unsupported:
-            raise ValueError("unreviewed GLM subscription parameters: " + ", ".join(sorted(unsupported)))
+            raise ValueError("unreviewed subscription chat parameters: " + ", ".join(sorted(unsupported)))
     if tools:
         body["tools"] = copy.deepcopy(tools)
         body.setdefault("tool_choice", "auto")

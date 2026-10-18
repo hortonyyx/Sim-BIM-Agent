@@ -67,9 +67,10 @@ def parameters(model, *, output_tokens, temperature=None, thinking=True, reasoni
         raise ValueError("OpenCode Go uses service reasoning defaults; disabling thinking is not admitted")
     if reasoning_effort is not None and reasoning_effort not in efforts:
         raise ValueError("unreviewed OpenCode Go reasoning_effort for " + model)
-    if temperature is not None and (protocol != "openai_chat_completions" or model == "kimi-k3"):
+    if temperature is not None and (protocol != "openai_chat_completions" or model in {"kimi-k3", "mimo-v2.6-flash"}):
         raise ValueError("OpenCode Go model uses service sampling defaults")
-    result = {"max_tokens": output_tokens}
+    output_key = "max_completion_tokens" if model == "mimo-v2.6-flash" else "max_tokens"
+    result = {output_key: output_tokens}
     if temperature is not None:
         result["temperature"] = temperature
     if reasoning_effort is not None:
@@ -78,6 +79,33 @@ def parameters(model, *, output_tokens, temperature=None, thinking=True, reasoni
         else:
             result["reasoning_effort"] = reasoning_effort
     return result
+
+
+def chat_messages(store, model, messages, sources):
+    """Use MiMo's documented image URL shape without changing pixels/history.
+
+    https://mimo.mi.com/docs/en-US/quick-start/usage-guide/multimodal-understanding/image-understanding
+    The local 'original' display hint is not a documented MiMo request field.
+    Keep each original source in the projection record; capture projected messages
+    before computing wire bytes, estimates and image transmission hashes.
+    """
+    if model != "mimo-v2.6-flash":
+        return messages, sources
+    projected, projected_sources = copy.deepcopy(messages), list(sources)
+    for i, message in enumerate(projected):
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        removed = []
+        for j, block in enumerate(content):
+            if block.get("type") == "image_url" and "detail" in block["image_url"]:
+                removed.append({"path": f"/content/{j}/image_url/detail",
+                                "value": block["image_url"].pop("detail")})
+        if removed:
+            projected_sources[i] = store.source("go-mimo-image-projection", {
+                "original_source": sources[i].model_dump(mode="json"),
+                "removed_display_hints": removed, "image_bytes_changed": False})
+    return projected, projected_sources
 
 
 def model_profile(model):

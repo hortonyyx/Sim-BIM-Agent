@@ -1,6 +1,8 @@
 """Go subscription isolation and real runtime protocol/tool-image round trips."""
 import asyncio
+import base64
 import copy
+import io
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -103,8 +105,18 @@ def test_go_real_runtime_preserves_tool_images_native_history_usage_and_subscrip
     engine.strict_model_profile=True
     engine.versions=engine.versions.model_copy(update={'remote_model':engine.versions.remote_model.model_copy(
         update={'route_id':'opencode-go','remote_alias':model})})
+    messages = copy.deepcopy(MESSAGES)
+    if model == 'mimo-v2.6-flash':
+        from PIL import Image
+        stream = io.BytesIO()
+        Image.new('RGB', (8, 8), (0, 255, 0)).save(stream, format='PNG')
+        messages[-1]['content'] = [{'type': 'text', 'text': messages[-1]['content']},
+            {'type': 'image_url', 'image_url': {'detail': 'original',
+             'url': 'data:image/png;base64,' + base64.b64encode(stream.getvalue()).decode()}}]
+    original_messages = copy.deepcopy(messages)
     with engine.store:
-        result=asyncio.run(engine.run(MESSAGES))
+        result=asyncio.run(engine.run(messages))
+        assert messages == original_messages
         assert result['status']=='completed' and result['model_calls']==2
         assert result['usage_accounting']['billing_modes']==['subscription']
         assert result['billing_usd'] is None and result['estimated_cost_cny'] is None
@@ -112,14 +124,25 @@ def test_go_real_runtime_preserves_tool_images_native_history_usage_and_subscrip
         assert profile['text_safety_factor']==2.0 and 'unverified_endpoint' in profile['profile_status']
         assert profile['context_window_tokens']=={'gpt-6-luna':1050000,'mimo-v2.6-flash':1048576}.get(model,1000000)
         requests=[event.payload for event in engine.store.events if event.payload.event_type=='adapter_request']
-        assert len(requests[1].images)==1
+        assert len(requests[1].images)==(2 if model == 'mimo-v2.6-flash' else 1)
         for wire,event in zip(engine.adapter.requests,requests):
             assert wire==engine.store.capture_bytes(event.final_request_body)
             body=json.loads(wire)
             assert body['model']==model and body['stream'] is False
             if chat_model:
                 assert 'n' not in body and 'enable_thinking' not in body
-                assert body['max_tokens']==32000
+                output_key = 'max_completion_tokens' if model == 'mimo-v2.6-flash' else 'max_tokens'
+                assert body[output_key]==32000 and event.parameters.requested[output_key]==32000
+                assert ('max_tokens' in body) == (model != 'mimo-v2.6-flash')
+                if model == 'mimo-v2.6-flash':
+                    for message in body['messages']:
+                        content = message.get('content')
+                        for block in content if isinstance(content, list) else []:
+                            if block.get('type') == 'image_url':
+                                assert set(block['image_url']) == {'url'}
+                    if event.images:
+                        assert any(item.source.source_id == 'go-mimo-image-projection'
+                                   for item in event.injected_content)
             elif model=='minimax-m3':
                 assert body['max_tokens']==32000 and 'context_management' not in body
                 assert all(message['role'] in {'user','assistant'} for message in body['messages'])

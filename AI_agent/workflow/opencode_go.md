@@ -14,11 +14,13 @@ Haiku整案采用独立的 [流程贯通配置](../../product/config.opencode-go
 
 | 精确model ID | API |
 |---|---|
-| `glm-5.3-flash`、`kimi-k3` | `/chat/completions` |
+| `glm-5.3-flash`、`kimi-k3`、`mimo-v2.6-flash` | `/chat/completions` |
 | `minimax-m3`、`qwen3.8-max`、`claude-haiku-5-5` | `/messages` |
 | `gpt-6-luna` | `/responses` |
 
-这六个ID有明确协议、参数和预算profile；Go目录暴露40个型号不代表40个都已接线。其他ID在模型请求前拒绝，不猜协议或接受未知实验型号。Google原生协议及DeepSeek调用不在本轮范围。GPT-6 Sol不在本次Go目录中。
+这七个ID有明确协议、参数和预算profile；2026-10-19实时Go目录返回37个型号，不代表全部已接线。其他ID在模型请求前拒绝，不猜协议或接受未知实验型号。GPT-6 Sol不在已配置Go目录中。
+
+MiMo于2026-10-19补入，使用服务默认思考，不传温度或未登记effort。按[官方图片请求格式](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/multimodal-understanding/image-understanding)发送`max_completion_tokens`；图片保留原字节，发送前去掉本地`detail`显示提示并登记来源投影。1,048,576上下文来自当日模型元数据；Go图片预算仍为未独立校准的proxy。离线接线通过不代表读图质量通过，真实粗测结果见本轮报告。
 
 运行请求携带自身`User-Agent: Sim-BIM-Agent/work-model`及`x-opencode-session`。会话ID由运行目录与任务ID派生为UUID，同一任务恢复时稳定，不同并发reader各有自己的ID；不发送本机原始路径。没有伪装成OpenCode或Claude客户端。
 
