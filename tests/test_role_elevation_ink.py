@@ -454,6 +454,40 @@ def _node_tools(root, picture=None):
     return ElevationReaderTools(Frozen(root), role_id="elevation_reader", image_name="North.png", target="North/F1")
 
 
+def test_reversed_vertical_anchor_pairs_preserve_trial_geometry_and_input(tmp_path):
+    async def scenario():
+        from src.agent.runtime_roles.elevation_trial import load_trial
+        tools = _node_tools(tmp_path)
+        forward = _node_arguments()
+        reverse = copy.deepcopy(forward)
+        reverse["z_calibration"] = {"pixel_start": 110, "pixel_end": 10,
+                                    "world_start_m": 0, "world_end_m": 10}
+        saved = copy.deepcopy(reverse)
+        trials = []
+        for arguments in (forward, reverse):
+            result = await tools.call_tool("trial_elevation_reading", arguments)
+            assert not result["isError"], result
+            trials.append(load_trial(tools.submission, result["structuredContent"]["trial_id"]))
+        assert reverse == saved
+        assert trials[0]["geometry"] == trials[1]["geometry"]
+        assert [v["sha256"] for v in trials[0]["views"]] == [v["sha256"] for v in trials[1]["views"]]
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("calibration", [
+    {"pixel_start": 110, "pixel_end": 110, "world_start_m": 0, "world_end_m": 10},
+    {"pixel_start": 110, "pixel_end": 10, "world_start_m": 10, "world_end_m": 0},
+    {"pixel_start": 110, "pixel_end": 10, "world_start_m": 0, "world_end_m": 0},
+    {"pixel_start": 110, "pixel_end": -10, "world_start_m": 0, "world_end_m": 10},
+    {"pixel_start": 110, "pixel_end": 10, "world_start_m": float("nan"), "world_end_m": 10},
+])
+def test_anchor_order_normalization_still_rejects_invalid_vertical_frames(calibration):
+    arguments = _node_arguments()
+    arguments["z_calibration"] = calibration
+    with pytest.raises(ValueError):
+        validate_elevation_artifact(expand_elevation_submission(arguments, "North/F1"), image_name="North.png")
+
+
 def test_annotated_opening_box_supplies_pixels_without_inventing_annotated_dimensions():
     arguments = _node_arguments()
     arguments["openings"] = [{"id": "W1", "floor_id": "F1", "kind": "window",

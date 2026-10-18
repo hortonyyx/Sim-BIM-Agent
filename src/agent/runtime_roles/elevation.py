@@ -224,6 +224,7 @@ def elevation_submission_tool():
     }
     schema["properties"]["z_calibration"] = {
         "type": "object", "additionalProperties": False,
+        "description": "Paired pixel/absolute-Z anchors may be supplied in either order; image top must map to higher Z.",
         "properties": {name: {"type": "number"} for name in
                        ("pixel_start", "pixel_end", "world_start_m", "world_end_m")},
         "required": ["pixel_start", "pixel_end", "world_start_m", "world_end_m"],
@@ -280,6 +281,12 @@ def expand_elevation_submission(arguments, target):
         return row
     import jsonschema
     jsonschema.validate(row, elevation_submission_tool()["inputSchema"])
+    z = row.get("z_calibration")
+    if z is not None and z["pixel_start"] > z["pixel_end"]:
+        # Equivalent paired anchors are a reader input convention, not a
+        # geometry correction. The downstream finite/span/direction checks stay.
+        z["pixel_start"], z["pixel_end"] = z["pixel_end"], z["pixel_start"]
+        z["world_start_m"], z["world_end_m"] = z["world_end_m"], z["world_start_m"]
     low = _number(calibration["distance_start_m"], "distance_start_m", minimum=0)
     high = _number(calibration["distance_end_m"], "distance_end_m", minimum=0)
     length = _number(calibration["facade_length_m"], "facade_length_m", minimum=0)
