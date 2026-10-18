@@ -9,7 +9,7 @@ import re
 from PIL import Image
 
 from .elevation_views import reading_views
-from .reader_delivery import LOCAL_REVIEW_SCHEMA, local_review, verify_views
+from .reader_delivery import READER_REVIEW_SCHEMA, local_review, verify_views
 from .submission import _bytes
 
 
@@ -18,7 +18,7 @@ DELIVERY_TOOL = {
     "description": "After inspecting the trial's adopted elevation diagram and original overlay, accept its exact trial_id with a short local_review.summary. Fix concrete errors by another trial first. Unresolved evidence stays in the trial. This ends the reader task without another reply.",
     "inputSchema": {"type": "object", "additionalProperties": False,
         "properties": {"trial_id": {"type": "string", "pattern": "^elevation_[a-f0-9]{16}$"},
-                       "local_review": LOCAL_REVIEW_SCHEMA},
+                       "local_review": READER_REVIEW_SCHEMA},
         "required": ["trial_id", "local_review"]},
 }
 

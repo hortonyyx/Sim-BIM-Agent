@@ -116,7 +116,7 @@ def test_reader_tools_filter_catalog_enforce_one_image_and_reference_provenance(
     asyncio.run(scenario())
 
 
-def test_plan_reader_reference_uses_initial_2d_contract_and_other_references_stay_frozen():
+def test_references_follow_reader_role_without_changing_parent_references():
     from scripts.tool_scripts.bim_agent_guidance import REFERENCES
     from src.agent.runtime_roles.guidance import PLAN_READER_GUIDANCE, PLAN_READER_REFERENCE
     from src.agent.runtime_roles.plan_format import READER_PLAN_EXAMPLE, plan_format_errors
@@ -132,7 +132,7 @@ def test_plan_reader_reference_uses_initial_2d_contract_and_other_references_sta
         result = await reader.call_tool("get_bim_reference", {"topic": "plan_partition"})
         text = result["content"][0]["text"]
         assert not frozen.calls
-        assert text == PLAN_READER_REFERENCE and text in PLAN_READER_GUIDANCE
+        assert text == PLAN_READER_REFERENCE
         assert "reading_type" in text and "wall_metadata" in text
         assert "build_plan_bim" not in text and "assemble_plan_bim" not in text
         example, _ = json.JSONDecoder().raw_decode(text[text.index('{"floor_id"'):])
@@ -145,11 +145,20 @@ def test_plan_reader_reference_uses_initial_2d_contract_and_other_references_sta
         other = await reader.call_tool("get_bim_reference", {"topic": "room_types"})
         assert other["content"][0]["text"] == REFERENCES["room_types"]
         elevation = ReaderTools(frozen, role_id="elevation_reader", image_name="plan.png")
-        legacy = await elevation.call_tool("get_bim_reference", {"topic": "plan_partition"})
-        assert legacy["content"][0]["text"] == REFERENCES["plan_partition"]
-        assert "build_plan_bim" in legacy["content"][0]["text"]
-        assert frozen.calls == [("get_bim_reference", {"topic": "room_types"}),
-                                ("get_bim_reference", {"topic": "plan_partition"})]
+        for topic in ("plan_partition", "facade_correspondence"):
+            rejected = await elevation.call_tool("get_bim_reference", {"topic": topic})
+            assert rejected["isError"]
+            assert json.loads(rejected["content"][0]["text"])["available_topics"] == ["elevation_reading"]
+        reference = await elevation.call_tool("get_bim_reference", {"topic": "elevation_reading"})
+        assert not reference["isError"]
+        assert "trial_elevation_reading" in reference["content"][0]["text"]
+        assert "compare_facade_spans" not in reference["content"][0]["text"]
+        catalog = await elevation.list_tools()
+        schema = next(t["inputSchema"] for t in catalog if t["name"] == "get_bim_reference")
+        assert schema["properties"]["topic"]["enum"] == ["elevation_reading"]
+        assert not frozen.calls
+        assert "build_plan_bim" in REFERENCES["plan_partition"]
+        assert "compare_facade_spans" in REFERENCES["facade_correspondence"]
 
     asyncio.run(scenario())
 

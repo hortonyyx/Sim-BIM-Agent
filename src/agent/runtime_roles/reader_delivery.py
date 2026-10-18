@@ -12,10 +12,20 @@ LOCAL_REVIEW_SCHEMA = {
     "required": ["summary"],
 }
 
+READER_REVIEW_SCHEMA = {
+    "description": "Your check of the actual saved drawing and overlay, as text or {summary: text}.",
+    "anyOf": [
+        {"type": "string", "minLength": 1},
+        LOCAL_REVIEW_SCHEMA,
+    ],
+}
+
 
 def local_review(review, *, artifact_sha256, views, image_sha256=None):
     import jsonschema
-    jsonschema.validate(review, LOCAL_REVIEW_SCHEMA)
+    jsonschema.validate(review, READER_REVIEW_SCHEMA)
+    if isinstance(review, str):
+        review = {"summary": review}
     if not review["summary"].strip():
         raise ValueError("local_review.summary must describe the drawing/overlay check")
     if not views:

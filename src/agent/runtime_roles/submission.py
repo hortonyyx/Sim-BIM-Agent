@@ -10,7 +10,7 @@ from pathlib import Path
 import jsonschema
 from PIL import Image
 
-from .reader_delivery import LOCAL_REVIEW_SCHEMA, local_review, verify_views
+from .reader_delivery import READER_REVIEW_SCHEMA, local_review, verify_views
 from .plan_review import box, opening_hosts, topology_issues, validate_topology, validate_wall_reference
 
 
@@ -45,7 +45,7 @@ OPERATION_SCHEMA = {"oneOf": [
     }.items()
 ]}
 PLAN_SCHEMA = obj({
-    "local_review": LOCAL_REVIEW_SCHEMA,
+    "local_review": READER_REVIEW_SCHEMA,
     "trial_id": {"type": "string", "pattern": "^(latest|trial_[0-9]{3,})$"},
     "plan_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "notes": {"type": "array", "items": obj({"item": TEXT,

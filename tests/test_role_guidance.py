@@ -57,3 +57,17 @@ def test_catalog_reports_exact_character_counts_and_unchanged_single_model():
     for role_id, row in catalog["roles"].items():
         assert row["character_count"] == len(get_role_guide(role_id))
         assert row["character_count"] > 0
+
+
+def test_task_coordinates_keep_elevation_separate_from_plan_orientation():
+    from src.agent.runtime_roles.coordinates import task_coordinates
+    task = {"role_id": "elevation_reader", "target": "North/F1,F2", "origin": "survey datum"}
+    elevation = task_coordinates(task)
+    assert elevation["drawing_type"] == "elevation"
+    assert elevation["floors"] == ["F1", "F2"]
+    assert elevation["origin"] == "survey datum"
+    assert "north arrow" not in elevation["directions"]
+    assert "plan points" not in elevation["directions"]
+    plan = task_coordinates({**task, "role_id": "plan_reader", "target": "F1"})
+    assert plan["drawing_type"] == "plan"
+    assert "north arrow" in plan["directions"]

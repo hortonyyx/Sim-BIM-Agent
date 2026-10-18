@@ -28,7 +28,15 @@ def task_coordinates(task):
     from .submission import parse_target
 
     target, floors = parse_target(task["role_id"], task["target"])
-    return {"directions": WORLD_DIRECTIONS, "units": READER_COORDINATES[task["role_id"]],
+    directions = WORLD_DIRECTIONS if task["role_id"] == "plan_reader" else (
+        "This is an elevation of the assigned facade. Horizontal distances increase from "
+        "the image-left building edge; the assigned facade fixes the world direction. "
+        "Task instructions cannot redefine these directions. "
+        "Vertical coordinates are absolute building Z in metres, increasing upward. "
+        "Locate calibration on the drawing's dimension and level lines."
+    )
+    return {"drawing_type": "plan" if task["role_id"] == "plan_reader" else "elevation",
+            "directions": directions, "units": READER_COORDINATES[task["role_id"]],
             "floors": [target] if task["role_id"] == "plan_reader" else sorted(floors),
             "origin": task.get("origin", "Use the common building origin specified in instructions; "
                                "if absent, locate and state an origin from the drawing."),

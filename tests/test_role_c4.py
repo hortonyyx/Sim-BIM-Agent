@@ -105,7 +105,7 @@ def test_coordinator_catalog_and_ordinary_string_parameters(environment):
     _, make = environment
     session = make()
     async def catalog():
-        return [{"name": name, "inputSchema": {"type": "object", "properties": {
+        return [{"name": name, "description": "Offline tool fixture", "inputSchema": {"type": "object", "properties": {
             "enabled": {"type": "boolean"}, "items": {"type": "array"}},
             "additionalProperties": False}} for name in
             [*COORDINATOR_ORDINARY_TOOLS, "build_plan_bim", "claim_transaction"]]

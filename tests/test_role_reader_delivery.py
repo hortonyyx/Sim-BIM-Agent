@@ -34,7 +34,8 @@ def tools_at(root):
     return ElevationReaderTools(Frozen(root), role_id="elevation_reader", image_name="North.png", target="North/F1")
 
 
-def test_prepared_elevation_is_not_delivered_and_only_latest_view_can_be_accepted(tmp_path):
+@pytest.mark.parametrize("review", [REVIEW, REVIEW["summary"]])
+def test_prepared_elevation_is_not_delivered_and_only_latest_view_can_be_accepted(tmp_path, review):
     async def scenario():
         tools = tools_at(tmp_path)
         first = await tools.call_tool("trial_elevation_reading", COMPACT_ELEVATION_EXAMPLE)
@@ -49,13 +50,15 @@ def test_prepared_elevation_is_not_delivered_and_only_latest_view_can_be_accepte
         stale = await tools.call_tool("submit_elevation_reading", {
             "trial_id": first["structuredContent"]["trial_id"], "local_review": REVIEW})
         assert stale["isError"]
-        current = {"trial_id": second["structuredContent"]["trial_id"], "local_review": REVIEW}
+        current = {"trial_id": second["structuredContent"]["trial_id"], "local_review": review}
         assert (await tools.call_tool("submit_elevation_reading", {**current, "local_review": {"summary": " "}}))["isError"]
+        assert (await tools.call_tool("submit_elevation_reading", {**current, "local_review": " "}))["isError"]
         accepted = await tools.call_tool("submit_elevation_reading", current)
         assert not accepted["isError"], accepted
         saved = tools.submission.read()
         assert saved["validation"]["local_review"]["artifact_sha256"] == saved["artifact_sha256"]
         assert saved["validation"]["local_review"]["independently_verified"] is False
+        assert saved["validation"]["local_review"]["summary"] == REVIEW["summary"]
         view = tmp_path / second["structuredContent"]["views"][1]["file"]
         view.write_bytes(b"tampered")
         with pytest.raises(ValueError, match="view hash"):

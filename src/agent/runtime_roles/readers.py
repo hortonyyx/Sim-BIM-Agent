@@ -481,11 +481,16 @@ class ReaderTools:
         if missing:
             raise ValueError(f"frozen reader catalog missing tools: {missing}")
         tools = [copy.deepcopy(by_name[name]) for name in wanted if name not in local]
+        from .guidance import reader_references
+        references = reader_references(self.role_id)
+        reference = next(row for row in tools if row["name"] == "get_bim_reference")
+        reference["description"] = (
+            "Read this drawing role's contract when a detail needs clarification; "
+            "the main workflow and example are already in the initial guide.")
+        reference["inputSchema"] = {"type": "object", "additionalProperties": False,
+            "properties": {"topic": {"type": "string", "enum": list(references)}},
+            "required": ["topic"]}
         if self.role_id == "plan_reader":
-            reference = next(row for row in tools if row["name"] == "get_bim_reference")
-            reference["description"] += (
-                " For plan_partition, returns this reader's 2D plan contract, already included in the "
-                "initial guide; request it only when a contract detail needs clarification.")
             from .plan_views import PLAN_VIEWS_TOOL
             tools.append(copy.deepcopy(PLAN_VIEWS_TOOL))
             tools.append({"name": "read_plan_draft", "description": (
@@ -690,10 +695,16 @@ class ReaderTools:
             if name == "pixel_profile":
                 delegated_name = "view_pixel_profile"
                 delegated_arguments["include_image"] = False
-            if (self.role_id == "plan_reader" and name == "get_bim_reference"
-                    and arguments.get("topic") == "plan_partition"):
-                from .guidance import PLAN_READER_REFERENCE
-                result = {"content": [{"type": "text", "text": PLAN_READER_REFERENCE}], "isError": False}
+            if name == "get_bim_reference":
+                from .guidance import reader_references
+                references = reader_references(self.role_id)
+                topic = arguments.get("topic")
+                if topic in references:
+                    result = {"content": [{"type": "text", "text": references[topic]}], "isError": False}
+                else:
+                    result = {"content": [{"type": "text", "text": json.dumps({
+                        "status": "unknown_reader_topic", "available_topics": list(references)},
+                        ensure_ascii=False)}], "isError": True}
             elif name == "view_plan_blocks":
                 from .plan_views import view_plan_blocks
                 result = await view_plan_blocks(self.frozen, self.image_name)
@@ -703,7 +714,7 @@ class ReaderTools:
             self._remember_references(result)
         count = self._progress["observation_calls_before_first_trial"]
         if (self.role_id == "plan_reader" and name in PLAN_OBSERVATION_TOOLS
-                and self._progress["first_trial_epoch"] is None and count >= PRETRIAL_REMINDER_THRESHOLD):
+                and self._progress["first_trial_epoch"] is None and count == PRETRIAL_REMINDER_THRESHOLD):
             result = dict(result)
             result["content"] = [*result.get("content", []), {"type": "text", "text":
                 f"You have made {count} observation calls without a trial; try the whole floor now, then use trial differences and its overlay for details."}]
