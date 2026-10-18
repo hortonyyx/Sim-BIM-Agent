@@ -1443,7 +1443,12 @@ class Runtime:
                 "basis": "local monotonic wall time awaiting tool, including any child tasks"})
             self._fault("after_tool")
             try:
-                _, _, shown, _ = convert_tool_result(call.call_id, raw, self.store)
+                # Prepare the accepted wire shape before recording the result,
+                # so a display-hint projection cannot look like a missing image.
+                image_detail_supported = not (self.versions.remote_model.route_id == "opencode-go"
+                    and self.model == "mimo-v2.6-flash")
+                _, _, shown, _ = convert_tool_result(call.call_id, raw, self.store,
+                    image_detail_supported=image_detail_supported)
             except Exception:
                 self.store.append(ToolExecutionPayload(call_id=call.call_id,
                     tool_name=call.tool_name, full_arguments=call.full_arguments,

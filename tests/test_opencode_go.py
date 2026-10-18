@@ -105,6 +105,14 @@ def test_go_real_runtime_preserves_tool_images_native_history_usage_and_subscrip
     engine.strict_model_profile=True
     engine.versions=engine.versions.model_copy(update={'remote_model':engine.versions.remote_model.model_copy(
         update={'route_id':'opencode-go','remote_alias':model})})
+    call_tool = engine.tools.call_tool
+    async def hinted_tool(name, arguments):
+        raw = await call_tool(name, arguments)
+        for part in raw.get('content', []):
+            if part.get('type') == 'image':
+                part['_meta'] = {'codex/imageDetail': 'original'}
+        return raw
+    engine.tools.call_tool = hinted_tool
     messages = copy.deepcopy(MESSAGES)
     if model == 'mimo-v2.6-flash':
         from PIL import Image
@@ -125,6 +133,17 @@ def test_go_real_runtime_preserves_tool_images_native_history_usage_and_subscrip
         assert profile['context_window_tokens']=={'gpt-6-luna':1050000,'mimo-v2.6-flash':1048576}.get(model,1000000)
         requests=[event.payload for event in engine.store.events if event.payload.event_type=='adapter_request']
         assert len(requests[1].images)==(2 if model == 'mimo-v2.6-flash' else 1)
+        execution = next(e.payload for e in engine.store.events if e.payload.event_type == 'tool_execution')
+        presentation = next(e.payload for e in engine.store.events if e.payload.event_type == 'tool_presentation')
+        raw = engine.store.resolve(execution.raw_result)
+        assert raw['content'][0]['_meta']['codex/imageDetail'] == 'original'
+        shown = engine.store.resolve(execution.shown_result)
+        if model == 'mimo-v2.6-flash':
+            assert presentation.shown_result == execution.shown_result
+            assert shown['omitted_image_display_hints'] == [{'image_index': 0, 'detail': 'original'}]
+            assert all('detail' not in block['image_url'] for block in shown['image_blocks']
+                       if block.get('type') == 'image_url')
+        assert shown['images'][0]['sha256'] == requests[1].images[-1].sent.sha256
         for wire,event in zip(engine.adapter.requests,requests):
             assert wire==engine.store.capture_bytes(event.final_request_body)
             body=json.loads(wire)

@@ -356,13 +356,13 @@ def parse_response(raw: Any, request_event_id: str, store: EventStore,
     return ParsedResponse(payload, assistant, finish, error)
 
 
-def convert_tool_result(call_id: str, raw: dict, store: EventStore):
+def convert_tool_result(call_id: str, raw: dict, store: EventStore, *, image_detail_supported=True):
     """Chat tool messages hold text; exact images follow all ID acknowledgements.
 
     Return the full presentation including image blocks, not just a summary.
     Unsupported MCP content is a visible protocol error, never silently dropped.
     """
-    texts, pictures, image_refs = [], [], []
+    texts, pictures, image_refs, omitted_hints = [], [], [], []
     for part in raw.get("content", []):
         if part.get("type") == "text":
             texts.append(part["text"])
@@ -375,7 +375,10 @@ def convert_tool_result(call_id: str, raw: dict, store: EventStore):
             if detail is not None:
                 if not isinstance(detail, str) or detail not in {"auto", "low", "high", "original"}:
                     raise ValueError("unsupported MCP image detail")
-                image_url["detail"] = detail
+                if image_detail_supported:
+                    image_url["detail"] = detail
+                else:
+                    omitted_hints.append({"image_index": len(image_refs) - 1, "detail": detail})
             pictures += [{"type": "text", "text": f"Tool image: tool_call_id={call_id}."},
                 {"type": "image_url", "image_url": image_url}]
         else:
@@ -404,6 +407,8 @@ def convert_tool_result(call_id: str, raw: dict, store: EventStore):
     presentation = {"tool_message": message, "image_blocks": pictures,
         "images": [ref.model_dump(mode="json") for ref in image_refs],
         "conversion": "MCP image blocks moved to a user message after all tool-call replies; bytes unchanged"}
+    if omitted_hints:
+        presentation["omitted_image_display_hints"] = omitted_hints
     return message, pictures, presentation, image_refs
 
 
