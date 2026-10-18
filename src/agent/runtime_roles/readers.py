@@ -699,7 +699,7 @@ class ReaderTools:
                 from .guidance import reader_references
                 references = reader_references(self.role_id)
                 topic = arguments.get("topic")
-                if topic in references:
+                if isinstance(topic, str) and topic in references:
                     result = {"content": [{"type": "text", "text": references[topic]}], "isError": False}
                 else:
                     result = {"content": [{"type": "text", "text": json.dumps({

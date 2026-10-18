@@ -32,8 +32,8 @@ Replace synthetic values with observations. Use partitions[].points, openings[].
 space_seeds[].point. One seed labels one connected room, including a continuous corridor;
 labels never create boundaries. Do not duplicate the footprint as partitions.
 
-Prefer exterior OUTER faces, including recesses, and interior centerlines when first tracing.
-One physical wall band has one representative line. Reuse shared wall junctions and put each
+Trace exterior OUTER faces, including recesses, and interior centerlines. One physical wall
+band has one representative line. Reuse coordinates at shared wall junctions and put each
 opening wholly on its host segment, without crossing a T-junction. Exterior openings lie
 on footprint, interior doors/passages on partitions that continue through the aperture.
 One aperture includes both jambs: a double-leaf door is one opening. Wall piers, swing arcs
@@ -72,11 +72,8 @@ _PLAN_REVIEW = """Inspect the returned clean plan and gray-original/color-adopte
 The clean plan shows thickness and a dashed reference line; the overlay exposes placement.
 Check missing/extra walls, room connectivity, opening sequence, both jambs and clear widths,
 plus thickness/direction exceptions. drawing_differences and topology_issues locate possible
-conflicts; no hint or matching counts do not prove correct identity. Keep a correctly
-identified line within its wall band, including an audited grid shift, when room relations
-and opening spans/hosts are correct. Do not recenter it merely to match the preferred face;
-use thickness/expand_direction metadata for a visible thickness or side exception. Correct
-wrong walls, junctions and jambs; small permitted normal offsets need no geometry revision.
+conflicts; no hint or matching counts do not prove correct identity. Accept audited grid and
+thickness-normal shifts for correctly read features; do not polish small permitted offsets.
 Use a targeted crop/profile only for a specific conflict unclear in these views.
 
 Batch visible corrections in one trial using operations against the latest editable draft

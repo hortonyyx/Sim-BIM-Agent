@@ -145,7 +145,8 @@ def test_references_follow_reader_role_without_changing_parent_references():
         other = await reader.call_tool("get_bim_reference", {"topic": "room_types"})
         assert other["content"][0]["text"] == REFERENCES["room_types"]
         elevation = ReaderTools(frozen, role_id="elevation_reader", image_name="plan.png")
-        for topic in ("plan_partition", "facade_correspondence"):
+        for topic in ("plan_partition", "facade_correspondence", ["elevation_reading"],
+                      {"topic": "elevation_reading"}, None, 1, True):
             rejected = await elevation.call_tool("get_bim_reference", {"topic": topic})
             assert rejected["isError"]
             assert json.loads(rejected["content"][0]["text"])["available_topics"] == ["elevation_reading"]
