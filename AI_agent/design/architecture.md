@@ -6,6 +6,8 @@ Sim BIM Agent = work model + harness；harness = runtime + domain。单模型与
 
 `src/agent_runtime` 负责模型适配、请求与工具循环、上下文、事件/产物、用量/预算、暂停/恢复、委派与连接；公共类型在 `src/harness_contracts`。它不定义建筑判断，也不要求任务经过固定编号阶段。
 
+模型、角色职责/权限与工具适配分别组织；2026-10-19用户确认后续由调度员按拆分任务选择模型、角色及工具包。当前产品仍为预设组合：mesh子任务继承主模型，使用固定只读角色和工具集合，调度员只动态选择问题、证据与预算；按任务动态选型、角色切换和工具包组合尚未实施。图纸既有平面/立面分工与mesh通用worker分开描述，具体方向见[模型与输入策略](../project/model_and_input_strategy.md)。
+
 每次运行记录模型配置、runtime/domain 版本及提交，持久化事件、产物与恢复点。服务连接、目录访问和真实推理分别验收；缺失 usage 不由估算补成供应商实报。
 
 ## Domain

@@ -18,7 +18,7 @@
 |---|---|---|
 | `inputs/building.glb`，5,017,904 bytes | 完整原件封装、全楼外形/立面 | `6ed1c026d7dcab9c65cd8fa77c304bfb1b6fc55ca2ca0e7b727bc0504c455061` |
 | `inputs/auxiliary/23f.png`，251,879 bytes | 明确23/F的局部平面依据 | `23c5335eaf309a4f7cf27d68b3021e6badeb64ab20ff7010688b710302188d8f` |
-| `inputs/building.json`，2,609 bytes | 用户范围、来源事实和不确定性 | `24b03ae278316d3a15be2fcc2ef5b947104447b3c13a4d23f31a39073e62dba4` |
+| `inputs/building.json`，3,651 bytes | 助手按用户授权代拟的中文任务说明、原用户范围、来源事实和不确定性 | `dfa1fc9f8af47bbeb348b6f8c0e6bd714093db38539a456b9bde6869fcde8f10` |
 
 审计在独立的 `audit/`，含原图、来源、转换记录、正式九视图与像素缓冲、独立代码/原件/native审查、冻结清单、普通运行配置和实际预检结果。仅上表3个文件进入模型输入；观察图、人工比对与独审记录不预先作为模型答案提供。
 
@@ -60,6 +60,22 @@
 
 ## 收尾
 
-独立审查无剩余P1/P2；原件和正式native输入均获接受，代码与案例预检边界分开。最终独审再次执行预检通过，3输入/11审图PNG/33审计文件绑定有效，输出目录不存在；`audit/final_integration_review.json`绑定最终manifest哈希 `6fa9f33a21b07eaad0b257e2e8c61fa2a9081a12e180142f7dcbbbdbaa47c36f`，作为事后审查单独保存，避免哈希循环。
+首版独立审查无剩余P1/P2；原件和正式native输入均获接受，代码与案例预检边界分开。首版独审再次执行预检通过，3输入/11审图PNG/33审计文件绑定有效，输出目录不存在；首版manifest哈希 `6fa9f33a21b07eaad0b257e2e8c61fa2a9081a12e180142f7dcbbbdbaa47c36f`。随后追加任务说明时，首版输入、manifest、preflight和独审报告原样归档到 `audit/revisions/before-user-brief-20261019/`，当前状态见下面补充。
 
 版本验证及暂存区497个封印文件逐一真实字节核验全部通过，历史runtime/domain登记未改写；证据 `D:/Sim-BIM-Agent/cache/lee-garden-mixed-staged-seal-20261019.json`。本批只扩展已分类测试模块，无新增模块遗漏；`git diff --check`通过。Git保存程序、小报告及证据索引，外部模型/图片/缓存仍在本机D盘，未宣称远端备份。无新工作树，既有Go工作树未动；桌面仍runtime24/domain110，未发布。收尾磁盘剩余C 35.14 GiB、D 120.12 GiB。
+
+## 同日补充：简单任务说明与后续解耦方向
+
+用户要求助手先代拟简单文字输入，后续再设计供多研究线、多输入形式共用的说明方式。既有building_input入口已接收UTF-8 JSON对象；本次只在本案声明前置 `task_brief` 和 `task_brief_origin`，明确是助手根据本次用户授权代拟，原字段逐项保持。说明涵盖整栋轻量BIM、外形/楼层/外窗优先、23F适用范围、未知内部合理简化及有标注的量测/推断；无房间坐标、GT、预拆立面任务、硬性房间数或精度阈值。原mesh、PNG和运行配置字节保持。
+
+当前manifest为 `88d744c92a1a6bf6abab5efe2e2c3b23b56f842f472cb3a040792c5f78b9104d`，增加 `input-brief-change.json` 绑定新旧声明，预检仍ready。程序未改、domain121/runtime31保持，仅做案例配置/哈希预检与说明审查，不重复pytest或原件渲染，真实模型0。新说明被保留在实际已配置的building.json内，未单独增加一个不会加载的文本附件。
+
+| 补充验证 | 结果 | 范围与未覆盖 |
+|---|---|---|
+| 普通配置及实际readiness预检 | ready；3输入、11审图PNG、34审计文件绑定有效 | 无模型、无新BIM；沿用既有代码验证，不覆盖真实理解效果 |
+| 原声明字段、mesh/PNG与运行配置 | 原字段全部相同，mesh/PNG/config哈希保持 | 仅前置助手代拟brief，不将其标成用户逐字确认或实测事实 |
+| 独立说明审查及单次预检 | 通过，无额外硬性条件或答案注入，输出目录不存在 | `audit/final_integration_review.json`绑定当前manifest；0pytest、0真实模型，预检耗时未单独记录 |
+
+用户确认长期方向为调度员按任务选择模型、角色和工具包；当前仅底层职责分开，mesh worker继承主模型/参数并使用固定只读角色/工具集合。调度员可拆问题、选证据和预算，尚不能逐任务动态改模型或工具包；专门分立面角色/产物合同留待后续设计。图纸线原有平面/立面角色及模型配置不等于mesh已完成同样分工。该方向已同步到模型与输入策略和当前交接，本轮不实施编排扩展。
+
+补充收尾：只有案例文字/审计与项目文档变化，程序和版本未变；diff检查通过，无新增工作树。磁盘剩余C 32.89 GiB、D 120.12 GiB。
