@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import hashlib
 import json
 
@@ -225,7 +226,7 @@ def test_generated_evidence_change_after_tool_return_is_rejected(prepared, chang
             value = json.loads(path.read_bytes())
             value["camera"]["eye"][0] += 1
             _write(path, value)
-        with pytest.raises(ValueError, match="changed after"):
+        with pytest.raises(ValueError, match="changed after|creation-time"):
             hydrate_mesh_worker_answer(_answer(), packet, store, child)
 
 
@@ -279,5 +280,58 @@ def test_returned_png_must_match_saved_mesh_view(prepared):
     _, child, packet = _packet(prepared)
     _, _, raw = _render(child)
     Image.new("RGB", (24, 24), "red").save(child / "mesh_observations/mesh_001.png")
-    with pytest.raises(ValueError, match="image bytes differ"):
+    with pytest.raises(ValueError, match="image bytes differ|creation-time"):
         bind_mesh_worker_tool_result(packet, child, "view_mesh", {}, raw)
+
+
+def test_readonly_section_and_comparison_bind_actual_tools_and_support_packet_copy(prepared):
+    from tests.test_bim_agent_tools import _server_session
+    parent = prepared[0].run
+    child = parent.parent / "child"
+    packet = prepare_mesh_worker_packet(parent, child, task_id="worker-a", question="Inspect actual readonly query tools.",
+        candidate="candidate_01", observation_ids=["mesh_001"])
+    source_path = child / "candidate_01/source_model.json"
+    source_sha = _sha(source_path)
+
+    async def scenario():
+        async with _server_session(child, readonly=True) as session:
+            names = {tool.name for tool in (await session.list_tools()).tools}
+            assert {"view_mesh_section", "compare_mesh_source_pixels"} <= names
+            assert not {"build_bim", "finish_bim", "set_candidate_mesh_frame"} & names
+            section = await session.call_tool("view_mesh_section", {"height_m": 1.5, "candidate": "candidate_01"})
+            assert not section.isError, section
+            comparison = await session.call_tool("compare_mesh_source_pixels", {
+                "candidate": "candidate_01", "observation": "mesh_001", "grid": [3, 3]})
+            assert not comparison.isError, comparison
+            return section.model_dump(mode="json", exclude_none=True), comparison.model_dump(mode="json", exclude_none=True)
+
+    section, comparison = asyncio.run(scenario())
+    with _store(child) as store:
+        _record(store, packet, child, "view_mesh_section", {"height_m": 1.5, "candidate": "candidate_01"},
+                section, call_id="section-call")
+        _record(store, packet, child, "compare_mesh_source_pixels", {
+            "candidate": "candidate_01", "observation": "mesh_001", "grid": [3, 3]}, comparison, call_id="compare-call")
+        section_answer = _answer(kind="mesh_section", identity="section_001", measurement_call_id="section-call")
+        result = hydrate_mesh_worker_answer(section_answer, packet, store, child)
+        assert result["directly_seen"][0]["computed_measurement"]["status"] == "computed"
+        assert result["directly_seen"][0]["evidence"]["origin"] == "original_mesh_plane_intersection"
+        assert mesh_worker_view_blocks(["section_001"], packet, store, child)[1]["type"] == "image"
+        measured = hydrate_mesh_worker_answer(_answer(measurement_call_id="compare-call"), packet, store, child)
+        actual = measured["directly_seen"][0]["computed_measurement"]["result"]
+        assert actual["sample_count"] == 9 and actual["fidelity"] == "not_evaluated"
+        copied = child.parent / "copy-section"
+        copy_packet = prepare_mesh_worker_packet(child, copied, task_id="worker-b", question="Inspect saved cut.",
+            candidate="candidate_01", observation_ids=["section_001", "mesh_001"])
+        assert copy_packet["observations"]["section_001"]["kind"] == "mesh_section"
+        assert _sha(copied / "mesh_sections/section_001.png") == _sha(child / "mesh_sections/section_001.png")
+        verify_mesh_worker_packet(copy_packet, child, copied)
+        report = child / "mesh_evidence/correspondence_001.json"
+        report.write_bytes(report.read_bytes() + b" ")
+        with pytest.raises(ValueError, match="result bytes"):
+            hydrate_mesh_worker_answer(_answer(measurement_call_id="compare-call"), packet, store, child)
+        record = child / "mesh_sections/section_001.json"
+        record.write_bytes(record.read_bytes() + b" ")
+        with pytest.raises(ValueError, match="changed after"):
+            hydrate_mesh_worker_answer(section_answer, packet, store, child)
+    assert _sha(source_path) == source_sha
+    verify_mesh_worker_packet(packet, parent, child)

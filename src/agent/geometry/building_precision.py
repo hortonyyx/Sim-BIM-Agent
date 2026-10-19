@@ -1,8 +1,8 @@
 """Post-regularisation source hard rules for a candidate save gate.
 
 The source is inspected directly in x, y and z; no EP slicing or GT is used.
-The report never edits geometry.  Orthogonal violations are deterministic save
-failures.  Unsupported nonorthogonal walls remain explicit coverage limits.
+The report never edits geometry. Axis-strip rules require axis-orthogonal space
+rings; other plan shapes remain explicit coverage limits. Z gaps are independent.
 """
 from __future__ import annotations
 
@@ -30,6 +30,12 @@ def _axis_line(points):
 
 def _overlap(a, b):
     return max(0., min(a[3], b[3]) - max(a[2], b[2]))
+
+
+def _orthogonal_ring(points):
+    """The axis-strip rules require every real edge, not just a schema label."""
+    return bool(points) and all(_axis_line([a, b]) is not None
+                               for a, b in zip(points, points[1:] + points[:1]))
 
 
 def _line(row):
@@ -64,6 +70,14 @@ def precision_report(source, *, floor_evidence=(), wall_references=()):
     """
     spaces = {s['id']: s for s in source['spaces']}
     floors = {f['id']: f for f in source['floors']}
+    orthogonal_spaces = {sid for sid, space in spaces.items() if _orthogonal_ring(space['polygon'])}
+    excluded_spaces = sorted(spaces.keys() - orthogonal_spaces)
+    excluded_floors = {fid for fid, floor in floors.items()
+                       if not _orthogonal_ring(floor['footprint'])
+                       or any(not _orthogonal_ring(hole) for hole in floor.get('footprint_holes', []))
+                       or any(space['floor_id'] == fid and sid not in orthogonal_spaces
+                              for sid, space in spaces.items())
+                       or any(sid not in orthogonal_spaces for sid in floor.get('spanning_space_ids', []))}
     evidence = {r['floor_id']: r for r in floor_evidence}
     dimensions = {r['boundary_id'] for r in wall_references
                   if r.get('evidence_status') == 'observed' and r.get('reference_basis') == 'dimensioned'}
@@ -87,13 +101,17 @@ def precision_report(source, *, floor_evidence=(), wall_references=()):
 
     # Merge only exactly collinear overlapping source sides. This does not move a vertex.
     grouped = defaultdict(list)
-    nonorthogonal = 0
+    nonorthogonal = excluded_walls = 0
     for boundary in source['boundaries']:
         if boundary['geometry_type'] != 'wall' or boundary.get('kind') != 'physical':
             continue
         line = _axis_line(boundary['vertices'])
         if line is None:
             nonorthogonal += 1
+        if boundary['space_id'] not in orthogonal_spaces:
+            excluded_walls += 1
+            continue
+        if line is None:
             continue
         floor = spaces[boundary['space_id']]['floor_id']
         grouped[(floor, line[0], line[1])].append(dict(floor=floor, line=line,
@@ -147,7 +165,8 @@ def precision_report(source, *, floor_evidence=(), wall_references=()):
     ordered = sorted(floors.values(), key=lambda f: (f['z_floor'], f['id']))
     for lower, upper in zip(ordered, ordered[1:]):
         if (upper['z_floor'] <= lower['z_floor']
-                or Polygon(lower['footprint']).intersection(Polygon(upper['footprint'])).area <= .25):
+                or Polygon(lower['footprint'], lower.get('footprint_holes', [])).intersection(
+                    Polygon(upper['footprint'], upper.get('footprint_holes', []))).area <= .25):
             continue
         lf, uf = lower['id'], upper['id']
         pairs.append([lf, uf])
@@ -218,6 +237,8 @@ def precision_report(source, *, floor_evidence=(), wall_references=()):
         hosts = [boundaries[bid] for bid in relation['boundary_ids']]
         if {b['geometry_type'] for b in hosts} != {'floor', 'ceiling'}:
             continue
+        if any(b['space_id'] not in orthogonal_spaces for b in hosts):
+            continue
         fids = list(dict.fromkeys(spaces[b['space_id']]['floor_id'] for b in hosts))
         limit = tolerance(*fids)
         if limit is None:
@@ -238,6 +259,8 @@ def precision_report(source, *, floor_evidence=(), wall_references=()):
     # room edge alone is insufficient (narrow rooms/shafts are not automatically errors).
     seen_steps = set()
     for space in spaces.values():
+        if space['id'] not in orthogonal_spaces:
+            continue
         fid = space['floor_id']
         limit = tolerance(fid)
         if limit is None:
@@ -272,11 +295,13 @@ def precision_report(source, *, floor_evidence=(), wall_references=()):
                 align_to_options=[dict(axis=line[0], coordinate_m=line[1], span_m=list(line[2:])) for line in (a, b)],
                 decision='choose_existing_line_with_evidence; preserve rooms, openings and connections'))
     for fid, floor in floors.items():
+        if fid in excluded_floors:
+            continue
         limit = tolerance(fid)
         polygons = [Polygon(s['polygon']) for s in spaces.values() if s['floor_id'] == fid]
         if limit is None or not polygons or not floor.get('footprint'):
             continue
-        gap = Polygon(floor['footprint']).difference(unary_union(polygons))
+        gap = Polygon(floor['footprint'], floor.get('footprint_holes', [])).difference(unary_union(polygons))
         for polygon in _polygons(gap):
             width, length = _width(polygon)
             if NUMERICAL_M < width < limit - NUMERICAL_M and length > NUMERICAL_M:
@@ -292,10 +317,22 @@ def precision_report(source, *, floor_evidence=(), wall_references=()):
     items.sort(key=lambda r: (priority[r['type']], -r.get('deviation_m', r.get('width_m',0))))
     return dict(schema='building_precision_v2', status='pass' if not items else 'rejected', source_model_sha256=source.get('source_model_sha256'),
         total=len(items), counts=dict(Counter(r['type'] for r in items)), items=items, tolerances=tolerances,
+        axis_rule_applicability=dict(
+            status=('partially_applicable' if orthogonal_spaces else 'not_applicable')
+                   if excluded_spaces or excluded_floors else 'applicable',
+            checked_space_ids=sorted(orthogonal_spaces), not_applicable_space_ids=excluded_spaces,
+            not_applicable_coverage_floor_ids=sorted(excluded_floors),
+            basis='Plan strip/width rules require complete axis-orthogonal footprints; inferred schema labels cannot opt out. '
+                  'Nonorthogonal-space boundaries and contacts are excluded from axis matching; their minimum room width is not evaluated. '
+                  'Vertical gaps, source coverage, true spatial overlaps and opening hosts retain their independent checks.'),
         coverage=dict(floors=list(floors), adjacent_storey_pairs=pairs, orthogonal_wall_lines=len(walls),
             nonorthogonal_walls_not_checked=nonorthogonal,
+            walls_excluded_with_nonorthogonal_space=excluded_walls,
+            nonorthogonal_space_ids_not_checked=excluded_spaces,
             floors_without_tolerance=[]),
-        meaning='Post-regularisation hard audit; this report changes no geometry. A save gate must reject each item. '
+        meaning='Post-regularisation hard audit of applicable orthogonal plan rules and independent vertical gaps; '
+                'pass only covers the evaluated scopes. This report changes no geometry. A save gate must reject each item. '
                 'Align to an existing line; only sub-0.30 m duplicate-wall strips may remove seeds or merge openings, with complete identity and connectivity audit.',
-        not_checked=['nonorthogonal wall alignment', 'non-overlapping storeys', 'opening positions/heights',
+        not_checked=['nonorthogonal room minimum width and axis-strip/step/contact/coverage rules',
+                     'nonorthogonal wall alignment', 'non-overlapping storeys', 'opening positions/heights',
                      'drawing fidelity', 'user fineness cap (not configured)'])

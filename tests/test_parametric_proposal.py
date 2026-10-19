@@ -143,3 +143,123 @@ def test_invalid_spanning_core_references_are_rejected_by_source_validation(tmp_
     report = export_source_proposal(proposal, tmp_path/change)
     assert not report['source_geometry_ready']
     assert message in report['error']
+
+
+def oblique_plan():
+    polygon = [[0, 0], [6, 0], [8, 4], [2, 4]]
+    return {
+        'schema_version': 'source_polygon_v1',
+        'templates': {'typical': {
+            'footprint': polygon,
+            'spaces': [{'id': 'office', 'role': 'office', 'polygon': polygon,
+                        'source_refs': ['synthetic exterior; interior inferred']}],
+            'opening_rows': [{'id': 'oblique', 'space': 'office', 'kind': 'window',
+                              'p1': [6, 0], 'p2': [8, 4], 'spans': [[0.5, 1.5], [2, 3]],
+                              'z': [1, 2], 'source_refs': ['synthetic oblique facade']}]}},
+        'instances': [{'id': 'F1', 'template': 'typical', 'z': 0, 'height': 3},
+                      {'id': 'F2', 'template': 'typical', 'z': 3, 'height': 3}],
+        'assumptions': ['Synthetic geometry'], 'unresolved': []}
+
+
+def test_oblique_templates_keep_hosts_heights_and_individual_openings(tmp_path):
+    value = oblique_plan()
+    before = copy.deepcopy(value)
+    proposal = expand_parametric_proposal(value)
+    assert value == before
+    assert proposal['geometry']['openings'][2]['z'] == [4, 5]
+    report = export_source_proposal(proposal, tmp_path / 'oblique')
+    assert report['source_geometry_ready'], report
+    source = json.loads((tmp_path / 'oblique/source_model.json').read_text())
+    assert len(source['spaces']) == 2
+    assert len(source['openings']) == 4
+    assert {opening['kind'] for opening in source['openings']} == {'window'}
+    assert {opening['id'] for opening in source['openings']} == {
+        f'{floor}:row:oblique:{index}' for floor in ['F1', 'F2'] for index in [1, 2]}
+
+
+def test_parametric_triangle_requires_explicit_source_profile(tmp_path):
+    value = oblique_plan()
+    template = value['templates']['typical']
+    template['footprint'] = template['spaces'][0]['polygon'] = [[0, 0], [6, 0], [3, 4]]
+    template['opening_rows'] = []
+    proposal = expand_parametric_proposal(value)
+    assert export_source_proposal(proposal, tmp_path / 'triangle')['source_geometry_ready']
+    del value['schema_version']
+    with pytest.raises(ValueError):
+        expand_parametric_proposal(value)
+
+
+@pytest.mark.parametrize('change', ['clipped', 'unknown_host', 'wrong_host', 'wrong_height'])
+def test_oblique_apertures_are_not_silently_repaired(tmp_path, change):
+    value = oblique_plan()
+    row = value['templates']['typical']['opening_rows'][0]
+    if change == 'clipped':
+        row['spans'] = [[3, 8]]
+    elif change == 'unknown_host':
+        row['space'] = 'missing'
+    elif change == 'wrong_height':
+        row['z'] = [2, 4]
+    else:
+        row['p1'], row['p2'] = [3, 0], [5, 4]
+    if change == 'wrong_host':
+        report = export_source_proposal(expand_parametric_proposal(value), tmp_path / change)
+        assert not report['source_geometry_ready']
+    else:
+        with pytest.raises(ValueError):
+            expand_parametric_proposal(value)
+
+
+def curved_plan():
+    path = [{'curve_id': name} for name in ['arc', 'a', 'b']]
+    return {
+        'schema_version': 'source_polygon_v1',
+        'boundary_curves': {
+            'arc': {'kind': 'circular_arc', 'center': [0, 0], 'radius_m': 4,
+                    'start_degrees': 0, 'sweep_degrees': 90, 'max_chord_error_m': 0.02,
+                    'source_refs': ['synthetic quarter circle']},
+            'a': {'kind': 'line', 'p1': [0, 4], 'p2': [0, 0], 'source_refs': ['synthetic']},
+            'b': {'kind': 'line', 'p1': [0, 0], 'p2': [4, 0], 'source_refs': ['synthetic']}},
+        'templates': {'curved': {
+            'footprint': {'boundary_path': path},
+            'spaces': [{'id': 'room', 'role': 'office', 'boundary_path': path,
+                        'source_refs': ['synthetic curved room']}]}},
+        'instances': [{'id': 'L1', 'template': 'curved', 'z': 0, 'height': 3},
+                      {'id': 'L2', 'template': 'curved', 'z': 3, 'height': 4}],
+        'assumptions': ['Synthetic curve approximation'], 'unresolved': []}
+
+
+def test_curved_template_uses_one_shared_approximation_and_no_false_rooms(tmp_path):
+    value = curved_plan()
+    before = copy.deepcopy(value)
+    proposal = expand_parametric_proposal(value)
+    assert value == before
+    first, second = proposal['geometry']['floors']
+    assert first['cells'][0]['polygon'] == second['cells'][0]['polygon']
+    assert first['cells'][0]['boundary_path'] == second['cells'][0]['boundary_path']
+    report = export_source_proposal(proposal, tmp_path / 'curved')
+    assert report['source_geometry_ready'], report
+    source = json.loads((tmp_path / 'curved/source_model.json').read_text())
+    assert len(source['spaces']) == 2
+    assert source['boundary_curves']['arc']['max_chord_error_m'] == 0.02
+    assert source['curve_discretization']
+    assert any(boundary.get('curve_origins') for boundary in source['boundaries'])
+
+
+def test_parametric_courtyard_is_unfilled_and_not_a_fifth_room(tmp_path):
+    value = oblique_plan()
+    value['instances'] = value['instances'][:1]
+    template = value['templates']['typical']
+    template['footprint'] = {'vertices': [[0, 0], [6, 0], [6, 6], [0, 6]],
+                             'holes': [[[2, 2], [4, 2], [4, 4], [2, 4]]]}
+    template['spaces'] = [{'id': str(i), 'role': 'office', 'rect': rect,
+                           'source_refs': ['synthetic separate courtyard room']}
+                          for i, rect in enumerate([[0, 0, 6, 2], [0, 2, 2, 4],
+                                                    [4, 2, 6, 4], [0, 4, 6, 6]])]
+    template['opening_rows'] = []
+    report = export_source_proposal(expand_parametric_proposal(value), tmp_path / 'court')
+    assert report['source_geometry_ready'], report
+    source = json.loads((tmp_path / 'court/source_model.json').read_text())
+    assert len(source['spaces']) == 4
+    from shapely.geometry import Polygon, Point
+    assert not any(Polygon([p[:2] for p in boundary['vertices']]).contains(Point(3, 3))
+                   for boundary in source['boundaries'] if boundary['geometry_type'] == 'floor')

@@ -250,6 +250,8 @@ def summary(report):
                   or section.get("lite_bim", {}).get("grid_step_m") for section in sections]
     return {
         "rule_version": report.get("rule_version", CURRENT_RULE),
+        **({"axis_rule_applicability": report["hard_constraints"]["axis_rule_applicability"]}
+           if report.get("hard_constraints", {}).get("axis_rule_applicability") else {}),
         "grid_step_m": next((step for step in grid_steps if step is not None), None),
         "status": report.get("status", "rejected" if rejected else "passed"),
         "moved_count": len(changes),

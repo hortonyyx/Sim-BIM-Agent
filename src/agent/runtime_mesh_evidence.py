@@ -94,6 +94,9 @@ def _observation(run, observation, mesh_sha):
     size = validate_png(_path(run, names[1]))
     if metadata.get("resolution_px") != {"width": size[0], "height": size[1]}:
         raise ValueError("mesh observation image dimensions changed")
+    for key, relative in (("image_sha256", names[1]), ("pixel_buffer_sha256", names[2])):
+        if key in metadata and metadata[key] != _sha(_path(run, relative)):
+            raise ValueError("mesh observation creation-time image or buffer changed")
     # Never follow metadata.artifacts paths. Queries use this local, derived prefix.
     import numpy as np
     with np.load(_path(run, names[2]), allow_pickle=False) as data:
@@ -104,6 +107,25 @@ def _observation(run, observation, mesh_sha):
             "origin": "original_mesh_observation", "image_file": names[1],
             "resolution_px": metadata["resolution_px"],
             "file_sha256": {name: _sha(_path(run, name)) for name in names}}, names
+
+
+def _section(run, identity, mesh_sha, snapshot):
+    _id(identity, r"section_\d+", "mesh section ID")
+    names = [f"mesh_sections/{identity}{suffix}" for suffix in (".json", ".png")]
+    record = _json(_path(run, names[0]))
+    size = validate_png(_path(run, names[1]))
+    if (record.get("mesh_sha256") != mesh_sha or record.get("section_id") != identity
+            or record.get("image_file") != names[1] or record.get("image_sha256") != _sha(_path(run, names[1]))
+            or record.get("resolution_px") != {"width": size[0], "height": size[1]}):
+        raise ValueError("mesh section asset, image or dimensions changed")
+    if record.get("candidate") is not None and (snapshot is None or any(
+            record.get(key) != snapshot[key] for key in ("candidate", "source_model_sha256", "source_file_sha256", "mesh_frame"))):
+        raise ValueError("source-coordinate section requires the matching candidate snapshot")
+    return {"kind": "mesh_section", "id": identity, "origin": "original_mesh_plane_intersection",
+        "image_file": names[1], "resolution_px": record["resolution_px"],
+        "coordinate_frame": record["coordinate_frame"], "height_m": record["height_m"],
+        "source_snapshot": snapshot if record.get("candidate") is not None else None,
+        "file_sha256": {name: _sha(_path(run, name)) for name in names}}, names
 
 
 def _parent_inputs(parent_run, candidate, observations):
@@ -138,7 +160,8 @@ def _parent_inputs(parent_run, candidate, observations):
     paths += snapshot_files
     evidence = {}
     for observation in observations:
-        reference, files = _observation(parent_run, observation, mesh["sha256"])
+        reference, files = (_section(parent_run, observation, mesh["sha256"], snapshot)
+                            if observation.startswith("section_") else _observation(parent_run, observation, mesh["sha256"]))
         evidence[observation] = reference
         paths += files
     return manifest, snapshot, evidence, {name: _sha(_path(parent_run, name)) for name in paths}
@@ -154,7 +177,7 @@ def _request(task_id, question, notes, candidate, observation_ids, timing):
         raise ValueError("worker observation IDs must be a list")
     observations = list(observation_ids)
     for observation in observations:
-        _id(observation, r"mesh_\d+", "mesh observation ID")
+        _id(observation, r"(?:mesh|section)_\d+", "mesh observation or section ID")
     if len(set(observations)) != len(observations):
         raise ValueError("worker observations must be distinct")
     if candidate is not None:
@@ -249,6 +272,8 @@ def _evidence(packet, child_run, kind, identity):
                 "file_sha256": {relative: _sha(_path(child_run, relative))}}
     if kind == "mesh_observation":
         return _observation(child_run, identity, packet["mesh_sha256"])[0]
+    if kind == "mesh_section":
+        return _section(child_run, identity, packet["mesh_sha256"], packet["source_snapshot"])[0]
     if kind != "mesh_overlay":
         raise ValueError("unsupported mesh worker evidence kind")
     _id(identity, r"overlay_\d+", "mesh overlay ID")
@@ -275,6 +300,32 @@ def _evidence(packet, child_run, kind, identity):
                 relative: _sha(_path(child_run, relative)), image_file: _sha(_path(child_run, image_file))}}
 
 
+def _comparison_reference(packet, child_run, metadata):
+    identity = _id(metadata.get("evidence_id"), r"correspondence_\d+", "mesh comparison ID")
+    relative = f"mesh_evidence/{identity}.json"
+    path = _path(child_run, relative)
+    record = _json(path)
+    snapshot = packet["source_snapshot"]
+    if (snapshot is None or metadata.get("evidence_file") != relative
+            or metadata.get("evidence_sha256") != _sha(path)
+            or record.get("evidence_id") != identity or record.get("mesh_sha256") != packet["mesh_sha256"]
+            or any(record.get(key) != snapshot[key] for key in ("candidate", "source_model_sha256", "source_file_sha256", "mesh_frame"))):
+        raise ValueError("worker comparison no longer binds its source or result bytes")
+    original = _observation(child_run, record["observation"], packet["mesh_sha256"])[0]
+    hashes = {kind: original["file_sha256"][f"mesh_observations/{record['observation']}{suffix}"]
+              for kind, suffix in (("metadata", ".json"), ("image", ".png"), ("pixel_buffer", ".npz"))}
+    if record.get("observation_file_sha256") != hashes or metadata.get("observation") != record["observation"]:
+        raise ValueError("worker comparison observation bytes changed")
+    report_file = metadata.get("details_file")
+    if (not isinstance(report_file, str) or not re.fullmatch(
+            r"tool_reports/compare_mesh_source_pixels_[0-9a-f]{64}\.json", report_file)
+            or metadata.get("details_sha256") != _sha(_path(child_run, report_file))
+            or metadata["details_sha256"] != _sha(path)):
+        raise ValueError("worker comparison complete report bytes changed")
+    return {"kind": "mesh_correspondence", "id": identity, "source_snapshot": snapshot,
+            "file_sha256": {**original["file_sha256"], relative: _sha(path), report_file: metadata["details_sha256"]}}
+
+
 def bind_mesh_worker_tool_result(packet, child_run, tool_name, arguments, raw):
     """Freeze file hashes in the normal tool receipt, immediately after execution."""
     _verify_child(packet, child_run)
@@ -284,8 +335,10 @@ def bind_mesh_worker_tool_result(packet, child_run, tool_name, arguments, raw):
     kind = identity = None
     if tool_name == "view_mesh":
         kind, identity = "mesh_observation", metadata.get("observation")
-    elif tool_name in {"view_mesh_observation", "measure_mesh_pixels"}:
+    elif tool_name in {"view_mesh_observation", "measure_mesh_pixels", "compare_mesh_source_pixels"}:
         kind, identity = "mesh_observation", arguments.get("observation")
+    elif tool_name == "view_mesh_section":
+        kind, identity = "mesh_section", metadata.get("section_id")
     elif tool_name == "overlay_mesh_candidate":
         kind, identity = "mesh_overlay", metadata.get("overlay_id")
     elif tool_name == "view_image":
@@ -293,7 +346,7 @@ def bind_mesh_worker_tool_result(packet, child_run, tool_name, arguments, raw):
     if kind is None:
         return raw
     reference = _evidence(packet, child_run, kind, identity)
-    if tool_name in {"view_mesh", "view_mesh_observation", "overlay_mesh_candidate", "view_image"}:
+    if tool_name in {"view_mesh", "view_mesh_observation", "overlay_mesh_candidate", "view_mesh_section", "view_image"}:
         shown = [hashlib.sha256(base64.b64decode(block["data"], validate=True)).hexdigest()
                  for block in raw.get("content", []) if block.get("type") == "image"]
         if tool_name == "view_image":
@@ -302,10 +355,12 @@ def bind_mesh_worker_tool_result(packet, child_run, tool_name, arguments, raw):
                 raise ValueError("auxiliary image tool return does not bind its original and shown PNG")
         elif reference["file_sha256"][reference["image_file"]] not in shown:
             raise ValueError("mesh tool image bytes differ from its saved observation")
-    if tool_name == "measure_mesh_pixels" and metadata.get("mesh_sha256") != packet["mesh_sha256"]:
+    if tool_name in {"measure_mesh_pixels", "compare_mesh_source_pixels"} and metadata.get("mesh_sha256") != packet["mesh_sha256"]:
         raise ValueError("worker measurement belongs to another mesh")
     result = dict(raw)
     result["structuredContent"] = {**metadata, "mesh_worker_evidence": reference}
+    if tool_name == "compare_mesh_source_pixels":
+        result["structuredContent"]["mesh_worker_computed_evidence"] = _comparison_reference(packet, child_run, metadata)
     return result
 
 
@@ -316,10 +371,12 @@ class _AnswerModel(BaseModel):
 class MeshDirectObservation(_AnswerModel):
     observation_id: str = Field(min_length=1)
     statement: str = Field(min_length=1)
-    evidence_kind: Literal["mesh_observation", "mesh_overlay", "image"]
+    evidence_kind: Literal["mesh_observation", "mesh_overlay", "mesh_section", "image"]
     evidence_id: str = Field(min_length=1)
     box_pixels: tuple[float, float, float, float] | None = None
-    measurement_call_id: str | None = None
+    measurement_call_id: str | None = Field(default=None, description=(
+        "Actual successful measure_mesh_pixels or compare_mesh_source_pixels call ID for mesh_observation; "
+        "or actual view_mesh_section call ID for mesh_section. Trusted receipts supply the computed values."))
 
 
 class MeshInterpretation(_AnswerModel):
@@ -367,7 +424,7 @@ def _verified_reference(packet, store, child_run, kind, identity, *, allow_admit
                 raise ValueError("worker evidence changed after its tool return")
             # A numeric query is not an image delivery. It may support a computed
             # measurement below, but cannot itself prove the worker saw a view.
-            if event.payload.tool_name == "measure_mesh_pixels":
+            if event.payload.tool_name in {"measure_mesh_pixels", "compare_mesh_source_pixels"}:
                 continue
             receipt = {"tool_execution_event_id": event.event_id,
                        "tool_call_id": event.payload.call_id,
@@ -382,7 +439,7 @@ def _verified_reference(packet, store, child_run, kind, identity, *, allow_admit
     if image_views:
         return {**actual, "view_receipts": image_views}
     if ((kind == "image" and allow_admitted_image)
-            or (kind == "mesh_observation" and identity in packet["observations"])):
+            or (kind in {"mesh_observation", "mesh_section"} and identity in packet["observations"])):
         return actual
     raise ValueError("worker answer cites evidence not supplied or produced by its tools")
 
@@ -415,10 +472,16 @@ def hydrate_mesh_worker_answer(answer, packet, store, child_run):
             if row.measurement_call_id not in receipts:
                 raise ValueError("worker answer cites no successful measurement call")
             event, raw, metadata = receipts[row.measurement_call_id]
-            if (event.payload.tool_name != "measure_mesh_pixels" or row.evidence_kind != "mesh_observation"
-                    or event.payload.full_arguments.get("observation") != row.evidence_id
-                    or metadata["mesh_worker_evidence"] != _evidence(packet, child_run, row.evidence_kind, row.evidence_id)):
+            name = event.payload.tool_name
+            matching = ((name in {"measure_mesh_pixels", "compare_mesh_source_pixels"}
+                         and row.evidence_kind == "mesh_observation"
+                         and event.payload.full_arguments.get("observation") == row.evidence_id)
+                        or (name == "view_mesh_section" and row.evidence_kind == "mesh_section"
+                            and metadata.get("section_id") == row.evidence_id))
+            if (not matching or metadata["mesh_worker_evidence"] != _evidence(packet, child_run, row.evidence_kind, row.evidence_id)):
                 raise ValueError("worker computed evidence must cite the actual matching mesh measurement")
+            if name == "compare_mesh_source_pixels" and metadata.get("mesh_worker_computed_evidence") != _comparison_reference(packet, child_run, metadata):
+                raise ValueError("worker comparison changed after its tool return")
             output["computed_measurement"] = {"status": "computed", "tool_call_id": event.payload.call_id,
                 "tool_execution_event_id": event.event_id, "tool_result_sha256": hashlib.sha256(json_bytes(raw)).hexdigest(),
                 "result": {k: v for k, v in metadata.items() if k != "mesh_worker_evidence"}}
@@ -440,6 +503,7 @@ def mesh_worker_view_blocks(view_ids, packet, store, child_run):
     blocks = []
     for identity in view_ids:
         kind = ("mesh_observation" if re.fullmatch(r"mesh_\d+", identity) else
+                "mesh_section" if re.fullmatch(r"section_\d+", identity) else
                 "mesh_overlay" if re.fullmatch(r"overlay_\d+", identity) else "image")
         reference = _verified_reference(packet, store, child_run, kind, identity, allow_admitted_image=True)
         raw = _path(child_run, reference["image_file"]).read_bytes()

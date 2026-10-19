@@ -262,6 +262,9 @@ def register_mesh_tools(server, toolkit):
         data = io.BytesIO(); picture.save(data, 'PNG')
         return [Image(data=data.getvalue(), format='png'), json.dumps(summary)]
 
+    from scripts.tool_scripts.bim_agent_mesh_queries import register_mesh_query_tools
+    register_mesh_query_tools(server, toolkit, mesh, observation_path, next_record_name)
+
     # An overlay only adds observational sidecars to this run. Readonly workers
     # can inspect an admitted candidate snapshot, but cannot register or edit it.
     if toolkit.readonly:

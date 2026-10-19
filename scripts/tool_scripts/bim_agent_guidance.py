@@ -180,6 +180,12 @@ Use inspect_mesh/view_mesh for the admitted native asset, keeping its metric
 frame and camera metadata. Prepared images use their supplied projection, not
 an invented plan scale. Observe the building envelope and opening patterns;
 record missing interiors as architectural inference at the requested detail.
+view_mesh_section intersects original triangles at a declared height; use it for
+local footprints, offsets or setbacks. A section describes mesh surfaces, not
+interior rooms. compare_mesh_source_pixels reports first-surface correspondences
+and signed depth residuals in a saved camera; texture-only windows and missing
+surfaces need visual judgment. Its numerical bins are scoped samples, not a
+whole-building fidelity verdict. Select these tools when they resolve a question.
 Use record_inference for assumptions and repeated templates with exceptions;
 build_parametric_bim expands the declaration, and inspect_parametric_plan plus
 audit_inference_candidate compare the saved spaces/openings to that declaration.
@@ -735,13 +741,21 @@ Endpoints must lie on one complete actual wall host; z is world absolute height.
 Doors and unfilled passages use the same endpoints with kind door/open and the
 actual other_space_id, or null for outdoors. Windows do not create traversable
 connections. Edit these windows with update_opening, not update_window.
-This contract supports vertical prism spaces and horizontal floors/ceilings, not
-true curves, footprint holes, sloped walls or changing cross-sections within one
-space. Per-floor footprints, spanning_space_ids and explicit open enclosure regions
-use the existing shared contact mechanisms. Parametric templates and cardinal
-elevation views retain their own limits; use native mesh camera/host overlays for
-oblique facades. An explicit mesh_frame may define local XY instead of geographic
+The source contract also accepts explicit line/circular-arc boundary declarations,
+discretized with a stated maximum chord error. Read source_curves for the format
+and limits; this is an audited polygonal approximation, not exact curved faces.
+Spaces remain vertical prisms with horizontal floors/ceilings. Sloped walls and
+continuously changing cross-sections within one space are unsupported. Each floor
+can have its own outline and courtyard holes when actual member spaces cover the
+declared ring; a single space with holes is unsupported. Per-floor footprints,
+spanning_space_ids and explicit open enclosure regions use the shared contacts.
+Parametric templates may select source_polygon_v1; cardinal elevation views retain
+their limits, so use native mesh camera/host overlays for oblique facades.
+An explicit mesh_frame may define local XY instead of geographic
 east/north. Report unsupported geometry; never silently approximate it as confirmed.
+Axis-strip alignment and 0.60 m scan-width checks apply only to actually orthogonal
+spaces. Nonorthogonal minimum room width is explicitly unevaluated, not passed;
+source overlap, footprint coverage, opening hosts and vertical-gap checks still apply.
 The example numbers/counts are unrelated to the supplied building.
 """,
     'edits': """revise_bim takes candidate plus an operations_json list. Operations include:
@@ -1129,9 +1143,15 @@ may contain many rows with different heights/spans. Repetition is your explicit
 inference, never automatic evidence. Instance IDs and local IDs cannot contain ':';
 expanded space IDs are INSTANCE:SPACE, windows INSTANCE:ROW:1 (one-based),
 doors INSTANCE:door:DOOR. Only provide listed fields; no hidden variables/expressions.
-Spaces use EITHER rect:[xmin,ymin,xmax,ymax] OR polygon:[[x,y],...], with id,
-role, source_refs and optional assumptions. Footprints and spaces are single
-orthogonal rings; clockwise input is normalized without coordinate movement.
+The default schema_version is "2": spaces use EITHER rect:[xmin,ymin,xmax,ymax]
+OR polygon:[[x,y],...], with id, role, source_refs and optional assumptions.
+Default footprints and spaces are single orthogonal rings; clockwise input is
+normalized without coordinate movement. For nonorthogonal/curved source spaces,
+set top-level schema_version="source_polygon_v1". Triangles and arbitrary simple
+polygons are then allowed. Supply top-level boundary_curves and use boundary_path
+instead of a space polygon; footprint may be an object with boundary_path or
+vertices and optional holes (see source_curves). Repeated floors reuse the same
+declared XY curves and tolerance. One space with holes remains unsupported.
 Code derives bounds but never splits spaces. Local spaces plus explicitly declared
 spanning members must cover the instance footprint exactly, without overlap. An
 instance may set spanning_space_ids:["CORE:core"] using final global expanded IDs.
@@ -1148,6 +1168,17 @@ then checks exterior status, contacts, overlaps and host heights. North/South
 span along x, East/West along y; these names refer to the LOCAL frame.
 Template doors identify local space and other_space (null=outdoors), p1/p2,
 relative z and source_refs. kind defaults door; state defaults unknown.
+With source_polygon_v1, opening_rows handles any straight wall direction:
+{"id":"slant","space":"office","kind":"window","p1":[6,0],"p2":[8,4],
+ "spans":[[0.5,1.5],[2,3]],"z":[1,2],"source_refs":["actual local observation"]}.
+spans are metres along the directed p1-to-p2 baseline, not fractions or an axis.
+Every complete span must fit one actual host; no clipping or automatic splitting.
+The baseline does not move or rotate spaces. other_space defaults null; state
+defaults unknown (open for kind open). Each output ID is INSTANCE:row:ROW:1.
+For curved facades, explicitly locate windows on the chosen discretized chord;
+do not stretch one planar opening across multiple chord hosts. Different template
+instances may use different templates for exceptions without editing the repeated
+base. An optional top-level mesh_frame is preserved on the expanded candidate.
 Cross-instance connections are ordinary geometry.openings records with GLOBAL
 space_id/other_space_id and ABSOLUTE z (see geometry reference); not auto-created.
 The tool saves the compact plan and expanded proposal with each candidate. Use
@@ -1155,6 +1186,34 @@ inspect_parametric_plan(candidate) to read/edit a template and resubmit the FULL
 compact plan. Preserve all reliable IDs/geometry/evidence and explain changes.
 A failed expansion is saved as parametric_drafts; a failed source build retains
 its candidate. Return feedback is a geometric check, not input fidelity approval.
+"""
+
+REFERENCES['source_curves'] = """Explicit curves for source_polygon_v1 only; metres, one XY frame.
+Declare geometry.boundary_curves as a bank keyed by stable IDs, for example:
+{"arc":{"kind":"circular_arc","center":[0,0],"radius_m":4,
+ "start_degrees":0,"sweep_degrees":90,"max_chord_error_m":0.02,
+ "source_refs":["observed arc or declared approximation"]},
+ "a":{"kind":"line","p1":[0,4],"p2":[0,0],"source_refs":["basis"]},
+ "b":{"kind":"line","p1":[0,0],"p2":[4,0],"source_refs":["basis"]}}.
+Use boundary_path:[{"curve_id":"arc"},{"curve_id":"a"},{"curve_id":"b"}]
+on a cell instead of polygon, or on a floor footprint instead of vertices.
+reverse:true traverses a bank entry backward. Paths must connect and close within
+the reported numerical tolerance (1e-8 m);
+code never snaps, closes a gap or chooses a curve from texture. Shared curve IDs
+use the same samples in both directions, preserving coincident boundaries.
+The normal source builder validates derived polygons and actual opening hosts.
+Original declarations, generated points and per-segment provenance are retained.
+Read saved source geometry for the actual chord endpoints, bounds and error.
+An explicit opening may select one chord using
+curve_segment:{"curve_id":"arc","segment_index":0,"span_fraction":[0.1,0.9]}
+in place of p1/p2; its z is still absolute. This remains ONE planar opening.
+Cross-chord/curved glazing is not silently split or counted as multiple windows.
+Changing a curve requires an explicit revised full proposal/template, preserving
+evidence and rebuilding derived endpoints. Do not retain stale polygon/p1/p2
+values inconsistent with the changed declaration. Per-floor footprint holes use
+explicit interior rings; actual spaces must cover the remaining floor area without
+fake walls. A single room with a hole, arbitrary splines and continuously sloped
+spaces are unsupported. These limits are independent of observed mesh completeness.
 """
 
 # A2-T replaces the T1 sm25 register/adopt/confirm sequence (61/147 calls,

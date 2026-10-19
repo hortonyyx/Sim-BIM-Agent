@@ -40,8 +40,12 @@ local precision; do not automatically measure hand sketches as scaled plans.
 Do not edit or select the parent BIM, delegate further work, or claim delivery.
 Return one JSON object matching answer_schema, without markdown. Evidence IDs
 must come from supplied or actually returned views. For a computed mesh
-measurement use measurement_call_id equal to your measure_mesh_pixels tool
-call ID; never present freely written coordinates as tool measurements.
+measurement use measurement_call_id equal to your measure_mesh_pixels or
+compare_mesh_source_pixels call ID for mesh_observation evidence, or your
+view_mesh_section call ID for mesh_section evidence (section_NNN). Section cuts
+are original surface intersections, not room plans. Comparison bands are sampled
+same-ray depth residuals, not texture-window recognition or fidelity approval.
+Never present freely written coordinates as tool measurements.
 Before directly describing auxiliary PNG evidence, call view_image (optionally
 with box). Admission alone does not establish that you have viewed an image.
 You may return only uncertainty when the question cannot be established.
@@ -66,7 +70,7 @@ EXTRA_TOOLS = [
     {"name": "delegate_mesh_workers", "description": "Ask any needed read-only mesh questions concurrently and wait for this batch. All workers use the coordinator's configured model and shared root budget. Only supplied tasks run; using workers is optional. Each task needs a unique stable ID and explicit model/tool allowance. Optional candidate is a frozen read-only source snapshot; observation_ids reuse parent mesh views. All admitted auxiliary inputs and declarations remain available. Reusing identical completed IDs reads their saved results; changed arguments/configuration/evidence are rejected. Null seconds/tokens add no child limit beyond root constraints. Workers cannot modify or finish the parent BIM.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
          "tasks": {"type": "array", "minItems": 1, "items": _TASK_SCHEMA}}, "required": ["tasks"]}},
-    {"name": "read_mesh_worker", "description": "Read a saved worker result and its frozen input/source basis. Optional view_ids return actual verified PNGs cited or observed by that worker (mesh IDs, overlay IDs or admitted image names). The coordinator judges whether snapshot advice applies to its current candidate; nothing is applied automatically.",
+    {"name": "read_mesh_worker", "description": "Read a saved worker result and its frozen input/source basis. Optional view_ids return actual verified PNGs cited or observed by that worker (mesh_NNN, section_NNN, overlay_NNN or admitted image names). The coordinator judges whether snapshot advice applies to its current candidate; nothing is applied automatically.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
          "task_id": {"type": "string", "minLength": 1},
          "view_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": True}}, "required": ["task_id"]}},

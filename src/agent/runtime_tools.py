@@ -37,6 +37,7 @@ Repeatability = Literal["read_only", "idempotent_write", "non_idempotent_write"]
 MESH_OBSERVER_TOOL_NAMES = (
     "inspect_mesh", "inspect_mesh_directions", "view_mesh", "measure_mesh_pixels",
     "view_mesh_observation", "overlay_mesh_candidate",
+    "view_mesh_section", "compare_mesh_source_pixels",
 )
 MESH_COORDINATOR_ONLY_TOOL_NAMES = (
     "set_candidate_mesh_frame",

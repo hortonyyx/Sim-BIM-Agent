@@ -182,7 +182,7 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
     source_spaces_by_id = {space.id: space for space in spaces}
     for floor, fid in zip(geom.floors, floor_ids):
         footprint = getattr(floor, "footprint", None)
-        expected = Polygon(footprint.vertices) if footprint else box(geom.footprint_x[0], geom.footprint_y[0], geom.footprint_x[1], geom.footprint_y[1])
+        expected = Polygon(footprint.vertices, getattr(footprint, 'holes', [])) if footprint else box(geom.footprint_x[0], geom.footprint_y[0], geom.footprint_x[1], geom.footprint_y[1])
         if not expected.is_valid or expected.area <= EPS ** 2:
             raise ValueError(f"floor {fid}: invalid declared footprint")
         spanning = floor.spanning_space_ids
@@ -389,6 +389,10 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
                     else [[geom.footprint_x[0],geom.footprint_y[0]], [geom.footprint_x[1],geom.footprint_y[0]],
                           [geom.footprint_x[1],geom.footprint_y[1]], [geom.footprint_x[0],geom.footprint_y[1]]],
                     "footprint_basis": "per_floor_correction" if getattr(f,"footprint",None) else "legacy_common_footprint",
+                    **({"footprint_holes": [[list(point) for point in ring] for ring in f.footprint.holes]}
+                       if getattr(getattr(f, 'footprint', None), 'holes', []) else {}),
+                    **({"footprint_boundary_path": [use.model_dump(mode='json') for use in f.footprint.boundary_path]}
+                       if getattr(getattr(f, 'footprint', None), 'boundary_path', None) else {}),
                     **({"spanning_space_ids": list(f.spanning_space_ids)} if f.spanning_space_ids else {})}
                    for f,fid in zip(geom.floors,floor_ids)],
         "spaces": [s.model_dump(mode="json") for s in sorted(spaces, key=lambda s: s.id)],
@@ -414,9 +418,37 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
     if simple_polygon:
         payload['geometry_capability'] = {
             'profile': 'simple_polygon', 'input_schema': geom.schema_version,
-            'scope': 'straight-edged simple polygon prisms; vertical walls and horizontal floor/ceiling planes',
-            'not_supported': ['curved boundaries', 'footprint holes', 'sloping or height-varying spaces'],
+            'scope': 'simple polygon prisms; declared circular arcs approximated by tolerance-bound chords; floor footprints may have holes covered by the declared spaces',
+            'not_supported': ['analytic curved surfaces', 'single-space holes', 'sloping or continuously height-varying spaces',
+                              'one opening spanning multiple curve chords'],
         }
+        if geom.boundary_curves:
+            from src.agent.geometry.source_curves import source_curve_origin
+            payload['boundary_curves'] = {key: value.model_dump(mode='json') for key, value in geom.boundary_curves.items()}
+            payload['curve_discretization'] = geom.curve_discretization
+            cells = {cell.id: cell for floor in geom.floors for cell in floor.cells}
+            for space in payload['spaces']:
+                path = cells[space['id']].boundary_path
+                if path:
+                    space['boundary_path'] = [use.model_dump(mode='json') for use in path]
+            for boundary in payload['boundaries']:
+                if boundary['geometry_type'] != 'wall':
+                    continue
+                origins = source_curve_origin(boundary['vertices'], cells[boundary['space_id']].boundary_path,
+                                              geom.curve_discretization)
+                if origins:
+                    boundary['curve_origins'] = origins
+                    boundary['source_refs'] = list(dict.fromkeys([*boundary['source_refs'],
+                        *[ref for origin in origins for ref in origin['source_refs']]]))
+            explicit = {opening.id: opening.curve_segment for opening in geom.openings if opening.curve_segment}
+            for opening in payload['openings']:
+                if opening['id'] in explicit:
+                    use = explicit[opening['id']]
+                    record = geom.curve_discretization[use.curve_id]
+                    opening['curve_origin'] = {**use.model_dump(mode='json'),
+                        'curve_parameter': [(use.segment_index + v) / record['segment_count'] for v in use.span_fraction],
+                        'maximum_chord_deviation_m': record['maximum_chord_deviation_m'],
+                        'scope': 'one planar aperture on one declared curve chord; no bent or split opening'}
     from src.agent.geometry.source_naming import build_public_names
     from src.agent.roles import CATALOG, CATALOG_PATH
     payload["public_names"] = build_public_names(payload)

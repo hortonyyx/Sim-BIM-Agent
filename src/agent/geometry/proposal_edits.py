@@ -17,7 +17,7 @@ from src.agent.correction.schema import RoomRoleEvidence, Window, WallOpening
 _PROPOSAL_FIELDS = {"geometry", "assumptions", "unresolved", "enclosure_declaration",
                     "wall_references", "wall_dimensions", "mesh_frame", "component_attributes", "wall_readings"}
 _WINDOW_FIELDS = {"facade", "span", "z", "room", "floor", "assumptions"}
-_OPENING_FIELDS = {"space_id", "other_space_id", "p1", "p2", "z", "state", "assumptions"}
+_OPENING_FIELDS = {"space_id", "other_space_id", "p1", "p2", "z", "state", "assumptions", "curve_segment"}
 _FACADE_REFLECTIONS = {
     "x": {"East": "West", "West": "East", "North": "North", "South": "South"},
     "y": {"North": "South", "South": "North", "East": "East", "West": "West"},
@@ -170,6 +170,18 @@ def _update(geometry: dict, operation: dict, *, target: str) -> dict:
     row = _find(geometry[f"{target}s"], identity, operation=name)
     before = copy.deepcopy(row)
     row.update(copy.deepcopy(changes))
+    if 'curve_segment' in changes:
+        if geometry.get('schema_version') != 'source_polygon_v1':
+            raise ValueError('curve_segment requires source_polygon_v1')
+        if changes['curve_segment'] is not None:
+            for field in ('p1', 'p2'):
+                if field not in changes:
+                    row.pop(field, None)
+            from src.agent.geometry.source_curves import expand_source_polygon_geometry
+            expanded = expand_source_polygon_geometry({'schema_version': 'source_polygon_v1',
+                'boundary_curves': geometry.get('boundary_curves', {}), 'openings': [row]})['openings'][0]
+            row.clear()
+            row.update(expanded)
     # New sources replace the edited object's active basis. The complete prior
     # record, including old sources, stays in the append-only audit below.
     row["source_refs"] = refs
@@ -229,6 +241,9 @@ def _add_opening(geometry: dict, operation: dict) -> dict:
     row["source_refs"] = refs
     if geometry.get("schema_version") == "source_polygon_v1":
         from src.agent.geometry.source_schema import SourceWallOpening
+        from src.agent.geometry.source_curves import expand_source_polygon_geometry
+        row = expand_source_polygon_geometry({'schema_version': 'source_polygon_v1',
+            'boundary_curves': geometry.get('boundary_curves', {}), 'openings': [row]})['openings'][0]
         row = SourceWallOpening.model_validate(row).model_dump(mode="json")
     else:
         row = WallOpening.model_validate(row).model_dump(mode="json")
@@ -770,6 +785,9 @@ def apply_proposal_edits(proposal: dict, operations: list[dict]) -> dict:
     if not isinstance(operations, list):
         raise TypeError("operations must be a list")
     result = copy.deepcopy(proposal)
+    if result['geometry'].get('schema_version') == 'source_polygon_v1':
+        from src.agent.geometry.source_curves import expand_source_polygon_geometry
+        result['geometry'] = expand_source_polygon_geometry(result['geometry'])
     geometry = result["geometry"]
     _unique_ids(geometry)
     corrections = geometry.setdefault("corrections", [])

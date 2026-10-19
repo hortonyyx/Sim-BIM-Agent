@@ -838,6 +838,8 @@ class MeshObservation:
         description = self.describe(yaw_degrees=yaw_degrees, bounds=bounds)
         metadata = {
             **description,
+            "image_sha256": _sha256(png_path),
+            "pixel_buffer_sha256": _sha256(npz_path),
             "camera": {
                 "projection": "orthographic",
                 "eye": camera_eye.tolist(),
@@ -938,6 +940,7 @@ class MeshObservation:
         height, width = (int(image_shape[0]), int(image_shape[1]))
         results: list[dict[str, Any]] = []
         hit_points: list[np.ndarray | None] = []
+        evidence_vertices = {}
         for pixel in pixels:
             if (
                 not isinstance(pixel, (list, tuple))
@@ -967,7 +970,9 @@ class MeshObservation:
                 }
                 if operation_yaw is not None and math.isfinite(operation_yaw):
                     part, local_face_id = self._face_location(face_id)
-                    vertices = part.vertices @ _yaw_matrix(operation_yaw).T
+                    if id(part) not in evidence_vertices:
+                        evidence_vertices[id(part)] = part.vertices @ _yaw_matrix(operation_yaw).T
+                    vertices = evidence_vertices[id(part)]
                     result["triangle_surface_evidence"] = self._triangle_evidence(
                         part, local_face_id, vertices
                     )

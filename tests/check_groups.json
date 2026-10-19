@@ -2,6 +2,14 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_source_shape_gate.py": {
+      "group": "targeted",
+      "reason": "Actual Toolkit saves preserve geometric axis-rule applicability, legacy thresholds, Z gaps and source validity"
+    },
+    "tests/test_source_curves.py": {
+      "group": "targeted",
+      "reason": "Explicit arc chord error and provenance, shared source hosts, single-chord apertures and true courtyard coverage"
+    },
     "tests/test_mesh_workers.py": {
       "group": "targeted",
       "reason": "Optional native mesh delegation, shared budgets, durable task identity and recovery"
@@ -1761,6 +1769,22 @@
     "tests/test_wall_thickness_policy.py": {
       "group": "targeted",
       "reason": "Thickness-aware same-floor and cross-floor Lite BIM, mandatory coverage and unified views"
+    },
+    "tests/test_mesh_framework_entry.py": {
+      "group": "node",
+      "reason": "Offline native mesh entry through actual MCP: curved templates, original sections, geometric correspondence, readonly workers and delivery/resume"
+    },
+    "tests/test_mesh_sections.py": {
+      "group": "targeted",
+      "reason": "Original triangle plane intersections, exact segment clipping and section rendering"
+    },
+    "tests/test_mesh_correspondence.py": {
+      "group": "targeted",
+      "reason": "Same camera original mesh and source ray intersections, coverage and hash validation"
+    },
+    "tests/test_mesh_readiness.py": {
+      "group": "targeted",
+      "reason": "Offline frozen original mesh case allowlist, configuration, screening and version readiness"
     }
   }
 }

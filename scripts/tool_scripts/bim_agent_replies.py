@@ -117,7 +117,8 @@ def precision_summary(report):
     # building_precision_v1 reported; v2 (Q1 hard constraints) passes or rejects.
     if report.get('status') not in {'reported', 'pass', 'rejected'}:
         return report
-    result = pick(report, ('schema', 'status', 'source_model_sha256', 'total', 'counts', 'evidence_errors'))
+    result = pick(report, ('schema', 'status', 'source_model_sha256', 'total', 'counts', 'evidence_errors',
+                           'axis_rule_applicability'))
     placement = copy.deepcopy(report.get('wall_placement', {}))
     if placement:
         # No truncation, including serious placement findings after the fourth.

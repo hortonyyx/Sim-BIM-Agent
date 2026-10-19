@@ -8,6 +8,8 @@ EnergyPlus graph. The product model is `work model + runtime + domain`.
 |---|---|
 | BIM rules and evidence contracts | [contracts](contracts/__init__.py), [source model](geometry/source_bim.py) |
 | Deterministic geometry and relationships | [geometry](geometry/__init__.py) |
+| Declared curve approximation and courtyard footprints | [source curves](geometry/source_curves.py), [shared parametric templates](geometry/parametric_proposal.py) |
+| Original mesh sections and same-view geometry comparison | [sections](geometry/mesh_section.py), [correspondence](geometry/mesh_correspondence.py) |
 | Model-callable tools | [run_bim_agent.py](../../scripts/tool_scripts/run_bim_agent.py) and its `bim_agent_*` modules |
 | Input methods and shared guidance | [bim_agent_guidance.py](../../scripts/tool_scripts/bim_agent_guidance.py) |
 | Role definitions, artifacts and role tools | [runtime_roles](runtime_roles/__init__.py) |
@@ -26,11 +28,16 @@ the coordinator chooses shared tools directly or delegates optional read-only
 questions using the same configured model and shared budget. Worker advice binds
 actual frozen inputs and an optional source snapshot; only the coordinator edits
 the main BIM. Photo generation and automatic detail selection are not implemented.
-Simple polygon prisms use the
-explicit source_polygon_v1 input contract with the same source builder and viewer;
-curves, footprint holes and height-varying spaces remain unsupported. Mesh overlays
-can scope arbitrary source hosts and test source visibility, without certifying
-alignment to the original mesh.
+Simple polygon prisms use the explicit source_polygon_v1 contract with the same
+source builder and viewer. Declared circular arcs use a bounded chord approximation
+with retained provenance, and floor footprints can contain courtyard holes covered
+by actual member spaces. Single-space holes and continuously height-varying/sloped
+spaces remain unsupported. Mesh overlays scope arbitrary source hosts and test
+source visibility. Original triangle sections and scoped same-ray depth comparisons
+provide reproducible geometric evidence, without certifying texture-window accuracy
+or whole-building fidelity. The development-only
+[readiness check](../../scripts/dev/check_mesh_readiness.py) validates a selected
+case's frozen input allowlist, configuration and version seals without model calls.
 
 ## Retained code and history
 
