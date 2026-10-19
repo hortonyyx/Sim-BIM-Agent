@@ -13,7 +13,9 @@ true building footprint.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
 import hashlib
+from io import BytesIO
 import json
 import math
 from pathlib import Path
@@ -453,6 +455,53 @@ class MeshObservation:
         self._parts = tuple(parts)
         self.vertex_count = sum(len(part.vertices) for part in self._parts)
         self.face_count = face_offset
+
+    def viewer_payload(self, frame: dict[str, Any]) -> dict[str, Any]:
+        """Export every textured scene instance in the declared source BIM frame.
+
+        RGB factors are baked in linear space; texture alpha and its separate
+        material factor remain intact. This is display data, not a new mesh
+        observation or a fitted/validated correspondence with source geometry.
+        """
+        from src.agent.geometry.mesh_bim_frame import (
+            observation_to_source, validate_mesh_frame,
+        )
+
+        frame = validate_mesh_frame(frame)
+        if frame["mesh_sha256"] != self.mesh_sha256:
+            raise ValueError("viewer mesh frame refers to a different mesh asset")
+        textures: list[str] = []
+        texture_indices: dict[str, int] = {}
+        parts = []
+        for part in self._parts:
+            pixels = np.array(part.texture, dtype=np.uint8, copy=True)
+            rgb = _apply_linear_rgb_factor(
+                pixels[..., :3].reshape(-1, 3), part.base_color_factor
+            )
+            pixels[..., :3] = rgb.reshape(pixels.shape[:2] + (3,))
+            encoded = BytesIO()
+            Image.fromarray(pixels).save(encoded, format="PNG")
+            png = encoded.getvalue()
+            digest = hashlib.sha256(png).hexdigest()
+            if digest not in texture_indices:
+                texture_indices[digest] = len(textures)
+                textures.append("data:image/png;base64," + base64.b64encode(png).decode("ascii"))
+            parts.append({
+                "positions": observation_to_source(part.vertices, frame, 0).reshape(-1).tolist(),
+                "indices": part.faces.reshape(-1).tolist(),
+                "uv": part.uv.reshape(-1).tolist(),
+                "texture": texture_indices[digest],
+                "alpha_mode": part.alpha_mode,
+                "alpha_factor": part.alpha_factor,
+            })
+        return {
+            "schema_version": "textured_mesh_view_v1",
+            "mesh_sha256": self.mesh_sha256,
+            "mesh_frame": frame,
+            "face_count": self.face_count,
+            "textures": textures,
+            "parts": parts,
+        }
 
     def _face_location(self, global_face_id: int) -> tuple[_MeshPart, int]:
         if global_face_id < 0 or global_face_id >= self.face_count:

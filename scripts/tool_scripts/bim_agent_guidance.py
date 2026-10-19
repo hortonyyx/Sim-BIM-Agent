@@ -193,6 +193,10 @@ Use record_inference for assumptions and repeated templates with exceptions;
 build_parametric_bim expands the declaration, and inspect_parametric_plan plus
 audit_inference_candidate compare the saved spaces/openings to that declaration.
 Check source counts, extents, connections and visible facades after assembly.
+For each identified lift service storey, include a hosted landing door connecting
+the floor's circulation to the continuous shaft. Reuse an evidenced landing layout
+as an explicit inference where details are missing; ground/top doors alone do not
+represent intermediate service. Do not add stops to unserved or equipment levels.
 Interpret auxiliary plans, relationship sketches and text by the information each
 part supplies. One image may combine reliable dimensions, approximate proportions
 and spatial relationships. Use the reconstruction reference only for regions that
@@ -1093,6 +1097,15 @@ served storey includes it through explicit spanning_space_ids membership. Do not
 the core per storey or insert fake intermediate slabs simply to fit a repeated-floor
 template. Conversely, do not invent a continuous void when separate rooms or real
 floors are supported.
+
+An identified lift service storey needs a landing door connecting its accessible
+floor space or lobby to the shaft; continuous shaft membership alone supplies no
+door connection. If the service pattern is established but a floor's door position
+or size is unseen, reuse a compatible observed landing layout with inferred
+position/size and source references, checking the actual host and floor elevation.
+Do not omit intermediate landing doors merely because only ground/top plans are
+available. Keep uncertain service scope explicit, and do not mechanically add
+doors to machine rooms, equipment ranges or levels the lift does not serve.
 
 Place doors from the intended circulation and the actual separating partition.
 Choose a plausible entrance side before a position. Allow usable jamb or wall return,

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import base64
 import hashlib
+from io import BytesIO
+import json
 
 import numpy as np
 from PIL import Image
@@ -523,3 +526,90 @@ def test_blend_composites_unrounded_linear_opaque_backing(tmp_path):
     linear = alpha*np.array([1, 0, 0])+(1-alpha)*np.array([64, 128, 192])/255
     expected = np.rint((1.055*linear**(1/2.4)-.055)*255).astype(int)
     np.testing.assert_array_equal(image.getpixel((20, 20)), expected)
+
+
+def _viewer_frame(observation, **changes):
+    return {"mesh_sha256": observation.mesh_sha256, "yaw_degrees": 0,
+            "translation_m": [0, 0, 0], "reason": "Declared source placement",
+            "source_refs": ["test:placement"], **changes}
+
+
+def test_viewer_payload_applies_scene_and_source_frame_without_fitting(tmp_path):
+    uv = [[-0.25, 0.125], [1.5, 0.25], [0.75, 2.0]]
+    mesh = _textured_mesh([[0, 0, 0], [2, 0, 0], [0, 1, 3]], [[0, 1, 2]], uv,
+                          np.full((2, 2, 3), 200, dtype=np.uint8))
+    scene = trimesh.Scene()
+    scene.add_geometry(mesh, transform=trimesh.transformations.translation_matrix([10, 20, 30]))
+    observation = MeshObservation(_export(scene, tmp_path / "placed.glb"))
+    frame = _viewer_frame(observation, yaw_degrees=90, translation_m=[3, -4, 5])
+    payload = observation.viewer_payload(frame)
+    assert payload["schema_version"] == "textured_mesh_view_v1"
+    assert payload["mesh_sha256"] == observation.mesh_sha256
+    assert payload["mesh_frame"] == frame and payload["mesh_frame"] is not frame
+    assert payload["mesh_frame"]["source_refs"] is not frame["source_refs"]
+    assert payload["face_count"] == 1
+    part, = payload["parts"]
+    # Scene [10,20,30] becomes native [10,-30,20]; rotate +90 then translate.
+    np.testing.assert_allclose(np.asarray(part["positions"]).reshape(-1, 3),
+                               [[33, 6, 25], [33, 8, 25], [32, 6, 28]], atol=1e-9)
+    assert part["indices"] == [0, 1, 2]
+    np.testing.assert_allclose(np.asarray(part["uv"]).reshape(-1, 2), uv)
+    assert part["alpha_mode"] == "OPAQUE" and part["alpha_factor"] == 1
+    assert json.loads(json.dumps(payload, allow_nan=False)) == payload
+
+
+@pytest.mark.parametrize("changes", [
+    {"mesh_sha256": "0" * 64}, {"yaw_degrees": float("nan")}, {"translation_m": [0, 0]},
+])
+def test_viewer_payload_rejects_other_asset_and_invalid_frame(tmp_path, changes):
+    observation = MeshObservation(_export(trimesh.Scene(_quad(0, (255, 255, 255))),
+                                          tmp_path / "original.glb"))
+    with pytest.raises(ValueError):
+        observation.viewer_payload(_viewer_frame(observation, **changes))
+
+
+def test_viewer_payload_preserves_all_instances_uv_alpha_and_bakes_rgb_before_dedup(tmp_path):
+    rgba = np.full((2, 2, 4), 255, dtype=np.uint8)
+    rgba[..., 3] = [[0, 128], [255, 64]]
+    scene = trimesh.Scene()
+    scene.add_geometry(_quad(0, (255, 255, 255)), node_name="opaque_a")
+    scene.add_geometry(_quad(1, (255, 255, 255)), node_name="opaque_b")
+    for index, factor in enumerate(([64, 128, 255, 128], [64, 128, 255, 64], [128, 128, 255, 128])):
+        mesh = _quad(2 + index, (255, 255, 255))
+        mesh.visual.material = trimesh.visual.material.PBRMaterial(
+            baseColorTexture=Image.fromarray(rgba), baseColorFactor=factor, alphaMode="BLEND")
+        scene.add_geometry(mesh, node_name=f"blend_{index}")
+    path = _export(scene, tmp_path / "materials.glb")
+    original_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    observation = MeshObservation(path)
+    original_pixels = [np.array(part.texture, copy=True) for part in observation._parts]
+    payload = observation.viewer_payload(_viewer_frame(observation))
+    assert payload["face_count"] == 10 and len(payload["parts"]) == 5
+    assert sum(len(part["indices"]) // 3 for part in payload["parts"]) == 10
+    assert len(payload["textures"]) == 3  # identical baked PNGs share one entry
+    pngs = []
+    for uri in payload["textures"]:
+        assert uri.startswith("data:image/png;base64,")
+        pngs.append(base64.b64decode(uri.split(",", 1)[1], validate=True))
+    assert len({hashlib.sha256(png).digest() for png in pngs}) == 3
+    exported = {part.node_name: value for part, value in zip(observation._parts, payload["parts"], strict=True)}
+    assert exported["opaque_a"]["texture"] == exported["opaque_b"]["texture"]
+    assert exported["blend_0"]["texture"] == exported["blend_1"]["texture"]
+    assert exported["blend_0"]["texture"] != exported["blend_2"]["texture"]
+    for original, value, pixels_before in zip(observation._parts, payload["parts"], original_pixels, strict=True):
+        np.testing.assert_array_equal(value["indices"], original.faces.reshape(-1))
+        np.testing.assert_array_equal(value["uv"], original.uv.reshape(-1))
+        np.testing.assert_array_equal(value["positions"], original.vertices.reshape(-1))
+        np.testing.assert_array_equal(np.asarray(original.texture), pixels_before)
+        image = np.asarray(Image.open(BytesIO(pngs[value["texture"]])))
+        if original.alpha_mode == "OPAQUE":
+            np.testing.assert_array_equal(image, np.full((2, 2, 3), 255, dtype=np.uint8))
+            assert value["alpha_factor"] == 1
+        else:
+            assert value["alpha_mode"] == "BLEND"
+            np.testing.assert_array_equal(image[..., 3], rgba[..., 3])
+            red = 188 if original.node_name == "blend_2" else 137
+            np.testing.assert_array_equal(image[..., :3], np.tile([red, 188, 255], (2, 2, 1)))
+            assert value["alpha_factor"] == pytest.approx((64 if original.node_name == "blend_1" else 128) / 255)
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == original_sha == observation.mesh_sha256
+    assert observation.viewer_payload(_viewer_frame(observation)) == payload

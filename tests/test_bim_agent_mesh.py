@@ -128,6 +128,7 @@ def test_mesh_frame_and_overlay_reach_stdio_and_preserve_saved_geometry(tmp_path
     built = runner.Toolkit(run).build(json.loads(_two_room_proposal()))
     original = run/built['candidate']/'source_model.json'
     original_bytes = original.read_bytes()
+    assert '"textured_mesh":' not in original.with_name('viewer.html').read_text(encoding='utf-8')
     async def scenario():
         async with _server_session(run, readonly=False) as session:
             result = await session.call_tool('view_mesh', {'azimuth_degrees':0,
@@ -154,6 +155,12 @@ def test_mesh_frame_and_overlay_reach_stdio_and_preserve_saved_geometry(tmp_path
             x,y,z = points['queries'][0]['world_xyz']
             assert points['queries'][0]['source_xyz'] == pytest.approx([3-y,4+x,z])
             source = json.loads((run/candidate/'source_model.json').read_text())
+            html = (run/candidate/'viewer.html').read_text(encoding='utf-8')
+            start = html.index('window.GEO = ') + len('window.GEO = ')
+            embedded = json.loads(html[start:html.index(';</script>', start)])
+            assert embedded['textured_mesh']['mesh_frame'] == source['mesh_frame']
+            assert embedded['textured_mesh']['face_count'] == 12
+            assert embedded['source_model']['source_model_sha256'] == source['source_model_sha256']
             for key in ('spaces','boundaries','openings','connections'):
                 assert source[key] == json.loads(original_bytes)[key]
         async with _server_session(run, readonly=True) as session:
@@ -161,6 +168,35 @@ def test_mesh_frame_and_overlay_reach_stdio_and_preserve_saved_geometry(tmp_path
             assert 'set_candidate_mesh_frame' not in names and 'overlay_mesh_candidate' in names
     asyncio.run(scenario())
     assert original.read_bytes() == original_bytes
+
+
+def test_precision_viewer_refresh_preserves_admitted_mesh(tmp_path, monkeypatch):
+    from test_bim_agent_tools import _two_room_proposal
+    from scripts.tool_scripts.bim_agent_precision import building_precision
+    from scripts.tool_scripts import bim_agent_regularization as regularization
+
+    _, run, _ = _prepare(tmp_path, monkeypatch)
+    toolkit = runner.Toolkit(run)
+    value = json.loads(_two_room_proposal())
+    value['mesh_frame'] = dict(mesh_sha256=toolkit.manifest['mesh_input']['sha256'],
+        yaw_degrees=30, translation_m=[2,3,0], reason='synthetic frame', source_refs=['fixture'])
+    built = toolkit.build(value)
+    assert built['source_geometry_ready'], built
+    path = run / built['candidate']
+    source_bytes = (path/'source_model.json').read_bytes()
+    source = json.loads(source_bytes)
+    audit = {'reports': [{'changes': []}], 'source_model_sha256': source['source_model_sha256']}
+    monkeypatch.setattr(regularization, 'collect_candidate_report', lambda *args: audit)
+    # Emulate an inherited audit first becoming available for this saved candidate.
+    assert not (path/'regularization_report.json').exists()
+    building_precision(toolkit, built['candidate'])
+    html = (path/'viewer.html').read_text(encoding='utf-8')
+    start = html.index('window.GEO = ') + len('window.GEO = ')
+    embedded = json.loads(html[start:html.index(';</script>', start)])
+    assert embedded['textured_mesh']['mesh_frame'] == value['mesh_frame']
+    assert embedded['textured_mesh']['face_count'] == 12
+    assert '几何规整清单' in html
+    assert (path/'source_model.json').read_bytes() == source_bytes
 
 
 def test_simple_polygon_reaches_shared_mesh_tools_and_saved_handoff(tmp_path, monkeypatch):
@@ -194,6 +230,8 @@ def test_simple_polygon_reaches_shared_mesh_tools_and_saved_handoff(tmp_path, mo
             delivery = _full_delivery_result(run, await session.call_tool('finish_bim', {'candidate':candidate}))
             assert delivery['source_model_sha256'] == saved['source_model_sha256']
             assert (run/candidate/'viewer.html').is_file()
+            assert '"textured_mesh":' in (run/candidate/'viewer.html').read_text(encoding='utf-8')
+            assert f'src="{candidate}/viewer.html"' in (run/'delivery.html').read_text(encoding='utf-8')
     asyncio.run(scenario())
 
 

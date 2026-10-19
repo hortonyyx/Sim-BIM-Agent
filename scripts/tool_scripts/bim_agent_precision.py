@@ -112,7 +112,8 @@ def building_precision(toolkit, candidate, source=None):
             viewer = build_source_viewer_html(display,
                 source_geometry_ready=saved.get('source_geometry_ready', False),
                 assumptions=source.get('assumptions', []),
-                unresolved=source.get('generation', {}).get('unresolved', []))
+                unresolved=source.get('generation', {}).get('unresolved', []),
+                mesh_path=toolkit.run/'assets'/'input.glb' if source.get('mesh_frame') else None)
             (path / 'viewer.html').write_text(viewer, encoding='utf-8', newline='\n')
     if errors:
         report['evidence_errors'] = errors

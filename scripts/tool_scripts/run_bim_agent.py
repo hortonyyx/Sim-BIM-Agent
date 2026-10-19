@@ -1391,7 +1391,8 @@ class Toolkit:
             provenance["claim_application"] = claim_application
         if plan_assembly is not None:
             provenance["plan_assembly"] = plan_assembly
-        report = export_source_proposal(proposal, self.run/candidate, provenance=provenance)
+        report = export_source_proposal(proposal, self.run/candidate, provenance=provenance,
+            mesh_path=self.run/'assets'/'input.glb' if proposal.get('mesh_frame') else None)
         if operations is not None:
             dump(self.run/candidate/"operations.json", operations)
         result = {"candidate": candidate, "remaining_seconds": self.remaining_seconds(), **report,
