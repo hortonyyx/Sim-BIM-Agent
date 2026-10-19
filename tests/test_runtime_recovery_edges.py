@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from decimal import Decimal
+import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -23,6 +25,129 @@ from test_agent_runtime import MESSAGES, response, runtime
 
 class InjectedCrash(BaseException):
     pass
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_file_capture_uses_bounded_reads_and_verifies_existing_blob(tmp_path, monkeypatch, corrupt):
+    source = tmp_path / "artifact.bin"
+    data = b"bounded artifact\n" * 200_000
+    source.write_bytes(data)
+    expected = hashlib.sha256(data).hexdigest()
+    with EventStore(tmp_path / "run", run_id="stream", task_id="root",
+                    budget_limit=BudgetAmounts(calls=1)) as store:
+        original_read = Path.read_bytes
+
+        def no_whole_artifact_read(path):
+            if path == source or path.parent.name == "blobs":
+                raise MemoryError("whole artifact allocation forbidden")
+            return original_read(path)
+
+        monkeypatch.setattr(Path, "read_bytes", no_whole_artifact_read)
+        ref = store.put_file(source)
+        assert ref.sha256 == expected
+        target = store.directory / ref.uri
+        with target.open("rb") as saved:
+            assert hashlib.file_digest(saved, "sha256").hexdigest() == expected
+        if corrupt:
+            target.write_bytes(b"changed")
+            with pytest.raises(ValueError, match="corrupted"):
+                store.put_file(source)
+        else:
+            assert store.put_file(source) == ref
+        assert not list((store.directory / "blobs").glob(".capture-*"))
+
+
+def test_memory_error_during_failure_artifact_capture_saves_minimal_receipt_and_resumes(tmp_path, monkeypatch):
+    engine = runtime(tmp_path, [response(("write", "save", {"value": 7}))])
+
+    def fail_next_request(name, current):
+        if name == "before_request" and current.counts["model_calls"] == 1:
+            current.stage = "prepare_request"
+            raise MemoryError("private allocation details")
+
+    def fail_capture(*args, **kwargs):
+        raise MemoryError("private capture details")
+
+    engine.fault_hook = fail_next_request
+    monkeypatch.setattr(engine.store, "put_file", fail_capture)
+    with engine.store:
+        receipt = asyncio.run(engine.run(MESSAGES))
+        assert receipt["status"] == "failed"
+        assert receipt["receipt_kind"] == "minimal_memory_failure"
+        assert receipt["failure"]["failure_stage"] == "prepare_request"
+        assert receipt["counts_snapshot"]["model_calls"] == 1
+        assert receipt["accounting_complete"] is False and receipt["completion"] is None
+        assert receipt == json.loads((engine.store.task_directory / "receipt.json").read_bytes())
+        assert "private" not in json.dumps(receipt)
+        assert (tmp_path / "tools" / "saved.json").is_file()
+
+    resumed = runtime(tmp_path, [response(text="done")], tools=engine.tools)
+    with resumed.store:
+        recovered = asyncio.run(resumed.run(MESSAGES, resume=True))
+        assert recovered["status"] == "completed" and recovered["model_calls"] == 2
+        assert recovered["tool_calls"] == 1 and len(engine.tools.calls) == 1
+        assert len(recovered["artifacts"]) == 1
+        resumed.store.validate()
+
+
+def test_minimal_memory_receipt_after_stop_event_is_not_completed_on_resume(tmp_path, monkeypatch):
+    engine = runtime(tmp_path, [response(text="done")])
+    real_capture = engine.store.capture
+
+    def fail_receipt_capture(value, **kwargs):
+        if isinstance(value, dict) and "artifact_paths" in value and "status" in value:
+            raise MemoryError("receipt capture allocation")
+        return real_capture(value, **kwargs)
+
+    monkeypatch.setattr(engine.store, "capture", fail_receipt_capture)
+    with engine.store:
+        receipt = asyncio.run(engine.run(MESSAGES))
+        assert receipt["status"] == "failed"
+        assert receipt["receipt_kind"] == "minimal_memory_failure"
+        assert any(e.payload.event_type == "run_lifecycle" and e.payload.reason == "completed"
+                   for e in engine.store.events)
+    resumed = runtime(tmp_path, [], tools=engine.tools)
+    with resumed.store:
+        recovered = asyncio.run(resumed.run(MESSAGES, resume=True))
+        assert recovered["status"] == "completed"
+        assert "receipt_kind" not in recovered and "resume_status" not in recovered
+        assert recovered["model_calls"] == 1 and not resumed.adapter.requests
+        resumed.store.validate()
+
+
+@pytest.mark.parametrize("cache", ["forged", "missing", "corrupt", "wrong_shape"])
+def test_completed_receipt_file_cannot_override_journal_answer_on_resume(tmp_path, cache):
+    engine = runtime(tmp_path, [response(text="recorded answer")])
+    with engine.store:
+        receipt = asyncio.run(engine.run(MESSAGES))
+        assert receipt["status"] == "completed"
+        if cache == "missing":
+            (engine.store.task_directory / "receipt.json").unlink()
+        elif cache == "corrupt":
+            (engine.store.task_directory / "receipt.json").write_bytes(b'{"status":')
+        else:
+            engine.store.write_json("receipt.json", {**receipt, "answer": "unrecorded answer"}
+                                    if cache == "forged" else [])
+    resumed = runtime(tmp_path, [], tools=engine.tools)
+    with resumed.store:
+        recovered = asyncio.run(resumed.run(MESSAGES, resume=True))
+        assert recovered["status"] == "completed" and recovered["answer"] == "recorded answer"
+        assert "resume_status" not in recovered and not resumed.adapter.requests
+        resumed.store.validate()
+
+
+def test_completed_receipt_additive_reports_do_not_rewrite_journal_or_override_canonical_fields(tmp_path):
+    engine = runtime(tmp_path, [response(text="recorded answer")])
+    with engine.store:
+        receipt = asyncio.run(engine.run(MESSAGES))
+        before = engine.store.path.read_bytes()
+        engine.store.write_json("receipt.json", {**receipt, "domain_report": {"arbitrary": True},
+                                                 "completion": {"unrecorded": True}})
+    resumed = runtime(tmp_path, [], tools=engine.tools)
+    with resumed.store:
+        recovered = asyncio.run(resumed.run(MESSAGES, resume=True))
+        assert recovered == {**receipt, "resume_status": "already_completed"}
+        assert resumed.store.path.read_bytes() == before and not resumed.adapter.requests
 
 
 @pytest.mark.parametrize("boundary", ["after_reservation", "after_retry"])

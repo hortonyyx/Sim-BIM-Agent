@@ -314,7 +314,14 @@ class MeshWorkerTools:
                           if source.source_id == "run-receipt" and source.blob is not None]
         if saved_receipts:
             receipt = json.loads(child.get_bytes(saved_receipts[-1]))
-            if receipt.get("status") == "completed":
+            try:
+                disk_receipt = json.loads((child.task_directory / "receipt.json").read_bytes())
+            except (FileNotFoundError, ValueError):
+                disk_receipt = None
+            # A completed journal stop can precede a failed final receipt write.
+            # Let Runtime restore that suffix and finish accounting before
+            # publishing a worker outcome; only an identical receipt is cached.
+            if receipt.get("status") == "completed" and disk_receipt == receipt:
                 return self._save_outcome(child, record, receipt)
         receipt = await self._execute_child(child, record, child_limits)
         return self._save_outcome(child, record, receipt)

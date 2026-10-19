@@ -246,7 +246,9 @@ def update_observer_budget(engine, event, raw):
     remaining = {"model_calls": max(0, engine.limits.model_calls - engine.counts["model_calls"]),
         "tool_calls": max(0, engine.limits.tool_calls - engine.counts["tool_calls"]),
         "tokens": engine.task_budget.available.tokens,
-        "seconds": max(0.0, engine._remaining()),
+        # Unlimited time is null on the wire; infinity is only an internal
+        # Runtime comparison value and cannot enter the JSON evidence store.
+        "seconds": max(0.0, engine._remaining()) if engine.limits.seconds is not None else None,
         "scope": "remaining child allowance; root budget may be lower"}
     previous = next((entry for entry in engine.context.state
                      if entry.key == "observer-remaining-budget"), None)

@@ -252,7 +252,7 @@ class Runtime:
                 raise ValueError("existing journal requires explicit resume")
             reason = self._restore()
             if reason == "already_completed":
-                return {**json.loads((self.store.task_directory / "receipt.json").read_bytes()),
+                return {**self._completed_receipt,
                         "resume_status": reason}
             if reason:
                 return self._stop(reason)
@@ -1630,12 +1630,24 @@ class Runtime:
             return "resume_state_changed"
         suffix = [e for e in self.store.events if e.sequence > sequence]
         if any(e.payload.event_type == "run_lifecycle" and e.payload.reason == "completed" for e in suffix):
-            if (self.store.task_directory / "receipt.json").exists():
+            try:
                 receipt = json.loads((self.store.task_directory / "receipt.json").read_bytes())
-                completed = receipt.get("completion")
+            except (FileNotFoundError, ValueError):
+                receipt = None
+            anchors = [source.blob for event in suffix for source in event.source_refs
+                       if source.source_id == "run-receipt" and source.blob is not None]
+            recorded = json.loads(self.store.get_bytes(anchors[-1])) if anchors else None
+            # Callers may add domain reports to the materialized receipt. Every
+            # journal-owned field must still match, and only the anchored fields
+            # are returned; the caller can reconstruct its own annotations.
+            if (isinstance(receipt, dict) and isinstance(recorded, dict)
+                    and recorded.get("status") == "completed"
+                    and all(key in receipt and receipt[key] == value for key, value in recorded.items())):
+                completed = recorded.get("completion")
                 if ((self.domain_completion and not completed)
                         or (completed and (not self.domain_completion or self.domain_completion(self) != completed))):
                     return "resume_state_changed"
+                self._completed_receipt = recorded
                 return "already_completed"
         if saved.get("context"):
             from .context import ContextManager
@@ -2192,7 +2204,23 @@ class Runtime:
         return reason
 
     def _exception_stop(self, exc):
-        return self._stop(self._exception_reason(exc))
+        try:
+            return self._stop(self._exception_reason(exc))
+        except MemoryError:
+            # Do not repeat finalization, collect artifacts, or reconstruct usage
+            # after memory pressure has already broken normal failure handling.
+            # This small best-effort receipt is not a completed journal or bill.
+            receipt = {"status": "failed", "receipt_kind": "minimal_memory_failure",
+                "run_id": self.store.run_id, "task_id": self.store.task_id,
+                "failure": {"error_type": type(exc).__name__, "failure_stage": self.stage,
+                    "stop_error_type": "MemoryError"},
+                "answer": None, "completion": None, "artifacts": [], "artifact_paths": [],
+                "accounting_complete": False, "counts_snapshot": dict(self.counts),
+                "elapsed_seconds": self.elapsed_seconds(),
+                "budget_scope": "root" if self.store.is_root_task else "child",
+                "note": "Normal stop failed in memory allocation. Counts are an unreconciled snapshot; journal and saved artifacts remain the recovery authority."}
+            self.store.write_json("receipt.json", receipt)
+            return receipt
 
     def _stop(self, reason):
         self._load_budget()
@@ -2211,7 +2239,7 @@ class Runtime:
         artifacts, paths = [], []
         for path in self.tools.artifacts():
             if path.is_file():
-                artifacts.append(self.store.put_bytes(path.read_bytes()))
+                artifacts.append(self.store.put_file(path))
                 paths.append(str(path))
         costs = [s.cost for s in self.task_budget.ledger.effective_settlements]
         estimated = self.task_budget.ledger.committed.money_usd

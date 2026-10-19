@@ -6,6 +6,7 @@ from src.utils import file_lock
 import hashlib
 import json
 import os
+import tempfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -284,6 +285,34 @@ class EventStore:
 
     def put_json(self, value) -> HashedBlobRef:
         return self.put_bytes(json_bytes(value), "application/json")
+
+    def put_file(self, source: Path, media_type="application/octet-stream") -> HashedBlobRef:
+        """Capture a file with bounded buffers, including existing-blob verification."""
+        temporary = None
+        try:
+            digest = hashlib.sha256()
+            with Path(source).open("rb") as incoming, tempfile.NamedTemporaryFile(
+                    dir=self.directory / "blobs", prefix=".capture-", delete=False) as output:
+                temporary = Path(output.name)
+                while chunk := incoming.read(256 * 1024):
+                    digest.update(chunk)
+                    output.write(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            sha = digest.hexdigest()
+            relative = f"blobs/{sha}"
+            target = self.directory / relative
+            if target.exists():
+                with target.open("rb") as saved:
+                    if hashlib.file_digest(saved, "sha256").hexdigest() != sha:
+                        raise ValueError("content-addressed blob was corrupted")
+            else:
+                replace_file(temporary, target)
+                self._sync_directory(target.parent)
+            return HashedBlobRef(uri=relative, sha256=sha, media_type=media_type)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def put_json_tree(self, value) -> HashedBlobRef:
         from .json_tree import store_json_tree

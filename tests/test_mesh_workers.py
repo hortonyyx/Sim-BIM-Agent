@@ -194,6 +194,61 @@ def test_worker_capability_is_optional_with_no_child_requests(tmp_path, local_to
         assert wrapper.repeatability("delegate_mesh_workers") == "read_only"
 
 
+@pytest.mark.parametrize("parent_seconds,child_seconds", [(None, None), (None, 30), (60, None)])
+def test_worker_budget_context_preserves_unlimited_and_inherited_time(
+        tmp_path, local_tools, parent_seconds, child_seconds):
+    run, limits = _inputs(tmp_path), _limits(seconds=parent_seconds, tokens=None)
+    with EventStore(tmp_path / "audit", run_id="mesh-context-time", task_id="coordinator",
+                    budget_limit=limits.ledger_limit()) as store:
+        wrapper, adapters = _wrapper(store, run, limits, {"inspect": [
+            response(("child-image", "view_image", {"name": "sketch.png"})),
+            response(text=_answer(seen=True))]})
+        wrapper.route["context"] = ContextPolicy(image_history_batches=1).model_dump(mode="json")
+        task = _task(model_calls=2, tool_calls=2, tokens=None, seconds=child_seconds)
+        engine = _root_engine(store, wrapper, limits, [
+            response(("delegate", "delegate_mesh_workers", {"tasks": [task]})),
+            response(text="The worker result remains subject to coordinator review.")])
+        parent_receipt = asyncio.run(engine.run([{"role": "user", "content": "Observe the admitted image."}]))
+        assert parent_receipt["status"] == "completed"
+        assert wrapper.state()["tasks"][0]["status"] == "completed"
+        assert len(adapters) == 1 and len(adapters[0].requests) == 2
+        assert local_tools[0].calls == [("view_image", {"name": "sketch.png"})]
+        child = store.for_task("inspect", parent_task_id=store.task_id)
+        executions = [e for e in child.events if e.payload.event_type == "tool_execution"]
+        assert len(executions) == 1 and executions[0].payload.outcome == "succeeded"
+        second_request = json.loads(adapters[0].requests[1])
+        state_messages = [m["content"] for m in second_request["messages"]
+            if m["role"] == "user" and isinstance(m.get("content"), str)
+            and m["content"].startswith("Current runtime state")]
+        assert len(state_messages) == 1
+        entries = json.loads(state_messages[0].partition(": ")[2])
+        remaining = next(e["value"] for e in entries if e["key"] == "observer-remaining-budget")
+        assert remaining["model_calls"] == 1 and remaining["tool_calls"] == 1
+        assert remaining["tokens"] is None
+        timing = json.loads((child.task_directory / "mesh_worker.json").read_bytes())["timing"]
+        stop = next(e for e in reversed(child.events) if e.payload.event_type == "run_lifecycle"
+                    and e.payload.action == "stop")
+        receipt_ref = next(r.blob for r in stop.source_refs if r.source_id == "run-receipt")
+        receipt = json.loads(child.get_bytes(receipt_ref))
+        assert receipt["status"] == "completed" and receipt["model_calls"] == 2 and receipt["tool_calls"] == 1
+        if parent_seconds is None and child_seconds is None:
+            assert remaining["seconds"] is None
+            assert timing["deadline_epoch"] is None and timing["time_budget_seconds"] is None
+            assert receipt["limits"]["seconds"] is None and receipt["deadline_epoch"] is None
+        else:
+            ceiling = child_seconds if child_seconds is not None else parent_seconds
+            assert 0 < remaining["seconds"] <= ceiling
+            assert 0 < timing["time_budget_seconds"] <= ceiling
+            assert timing["deadline_epoch"] is not None and receipt["deadline_epoch"] is not None
+            assert receipt["limits"]["seconds"] <= ceiling
+        # Null child limits still use the same root ledger; no private budget or
+        # implicit deadline is introduced by the context projection.
+        assert sum(e.payload.event_type == "adapter_request" for e in store.all_events) == 4
+        assert RuntimeBudget.from_events(store.budget_limit, store.all_events).ledger.committed.calls == 4
+        assert parent_receipt["model_calls"] == 2
+        store.validate()
+
+
 @pytest.mark.parametrize("arguments", [
     {"tasks": [_task(), _task()]},
     {"tasks": [{"task_id": "x", "question": "q"}]},
@@ -495,7 +550,8 @@ def test_parallel_workers_cannot_double_reserve_remaining_root_tokens(tmp_path, 
         store.validate()
 
 
-def test_recovery_uses_journal_receipt_not_editable_receipt_file(tmp_path, local_tools, monkeypatch):
+@pytest.mark.parametrize("disk_receipt", ["unchanged", "missing", "forged"])
+def test_recovery_uses_journal_receipt_not_editable_receipt_file(tmp_path, local_tools, monkeypatch, disk_receipt):
     run, limits = _inputs(tmp_path), _limits()
     with EventStore(tmp_path / "audit", run_id="mesh-receipt-binding", task_id="coordinator",
                     budget_limit=limits.ledger_limit()) as store:
@@ -509,10 +565,66 @@ def test_recovery_uses_journal_receipt_not_editable_receipt_file(tmp_path, local
         monkeypatch.setattr(wrapper, "_save_outcome", interrupted)
         assert _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [_task()]})))["status"] == "child_failed"
         child = store.for_task("inspect", parent_task_id=store.task_id)
-        (child.task_directory / "receipt.json").write_text('{"status":"completed","answer":"forged"}')
+        receipt_path = child.task_directory / "receipt.json"
+        if disk_receipt == "missing":
+            receipt_path.unlink()
+        elif disk_receipt == "forged":
+            receipt_path.write_text('{"status":"completed","answer":"forged"}')
         monkeypatch.setattr(wrapper, "_save_outcome", save)
         assert _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [_task()]})))["status"] == "completed"
-        assert len(adapters) == 1
+        assert len(adapters) == (1 if disk_receipt == "unchanged" else 2)
+        assert [len(adapter.requests) for adapter in adapters] == ([1] if disk_receipt == "unchanged" else [1, 0])
+        receipt = json.loads(receipt_path.read_bytes())
+        assert receipt["status"] == "completed" and receipt["answer"] == _answer()
+        assert receipt["model_calls"] == 1 and receipt["usage_complete"]
+        store.validate()
+
+
+def test_worker_rebuilds_receipt_after_completed_stop_then_minimal_memory_failure(tmp_path, local_tools, monkeypatch):
+    run, limits = _inputs(tmp_path), _limits()
+    with EventStore(tmp_path / "audit", run_id="mesh-memory-receipt", task_id="coordinator",
+                    budget_limit=limits.ledger_limit()) as store:
+        _start(store)
+        wrapper, adapters = _wrapper(store, run, limits, {"inspect": [response(text=_answer())]})
+        capture, put_json = EventStore.capture, EventStore.put_json
+
+        def fail_completed_capture(current, value, **kwargs):
+            if (current.task_id == "inspect" and isinstance(value, dict)
+                    and value.get("status") == "completed" and "artifact_paths" in value):
+                raise MemoryError("offline failure after completed stop was journaled")
+            return capture(current, value, **kwargs)
+
+        def fail_failed_receipt(current, value):
+            if (current.task_id == "inspect" and isinstance(value, dict)
+                    and value.get("status") == "failed" and "artifact_paths" in value):
+                raise MemoryError("offline failure while saving normal failure receipt")
+            return put_json(current, value)
+
+        with monkeypatch.context() as fault:
+            fault.setattr(EventStore, "capture", fail_completed_capture)
+            fault.setattr(EventStore, "put_json", fail_failed_receipt)
+            first = _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [_task()]})))
+        assert first["status"] == "failed"
+        child = store.for_task("inspect", parent_task_id=store.task_id)
+        receipt_path = child.task_directory / "receipt.json"
+        failed = json.loads(receipt_path.read_bytes())
+        assert failed["status"] == "failed" and failed["receipt_kind"] == "minimal_memory_failure"
+        assert wrapper._anchored(child, "mesh-worker-outcome") is None
+        saved_receipts = [source.blob for event in child.events for source in event.source_refs
+                          if source.source_id == "run-receipt" and source.blob is not None]
+        assert json.loads(child.get_bytes(saved_receipts[-1]))["status"] == "completed"
+
+        resumed = _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [_task()]})))
+        assert resumed["status"] == "completed"
+        rebuilt = json.loads(receipt_path.read_bytes())
+        assert rebuilt["status"] == "completed" and "receipt_kind" not in rebuilt
+        assert rebuilt["answer"] == _answer() and rebuilt["model_calls"] == 1
+        assert rebuilt["usage_complete"] and rebuilt["request_usage_accounting"]
+        assert [len(adapter.requests) for adapter in adapters] == [1, 0]
+        assert sum(event.payload.event_type == "adapter_request" for event in store.all_events) == 1
+        assert sum(event.payload.event_type == "tool_execution" for event in store.all_events) == 0
+        assert all(not tool.calls for tool in local_tools)
+        store.validate()
 
 
 def test_child_version_catalog_includes_enabled_context_image_tool(tmp_path, local_tools, monkeypatch):
