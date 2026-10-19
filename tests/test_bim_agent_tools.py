@@ -1565,14 +1565,32 @@ def test_parametric_tool_stdio_builds_repeated_spaces_and_preserves_compact_plan
             assert payload['source_geometry_ready'],payload
             assert payload['counts']['spaces']==2
             assert len([c for c in result.content if c.type=='image'])==1
-            restored=await session.call_tool('inspect_parametric_plan', {'candidate':payload['candidate']})
-            assert _json_result(restored)==compact
+            restored=await session.call_tool('inspect_parametric_plan', {'candidate':payload['candidate'], 'full':True})
+            restored_data = _json_result(restored)
+            assert restored_data['value']==compact
+            assert payload['parametric']['plan_sha256'] == restored_data['plan_sha256']
+            assert payload['draft'] and len(payload['draft_sha256']) == 64
+            revised = _json_result(await session.call_tool('patch_parametric_bim', {
+                'candidate': payload['candidate'], 'expected_plan_sha256': restored_data['plan_sha256'],
+                'operations_json': json.dumps([{'op': 'replace', 'path': '/instances/1/height',
+                    'value': 3.2, 'reason': 'Explicit synthetic upper height correction',
+                    'source_refs': ['synthetic height observation']}])}))
+            assert revised['saved_candidate'] == 'candidate_02', revised
+            assert revised['parametric']['base']['plan_sha256'] == restored_data['plan_sha256']
+            assert revised['draft'] != payload['draft'] and revised['draft_sha256'] != payload['draft_sha256']
+            report = json.loads((run / revised['candidate'] / 'report.json').read_bytes())
+            assert report['parametric'] == revised['parametric']
+            assert report['parametric']['source_file_sha256'] == digest(run / revised['candidate'] / 'source_model.json')
+            current = _json_result(await session.call_tool('inspect_parametric_plan', {
+                'candidate': revised['candidate'], 'pointer': '/instances/1/height'}))
+            assert current['status'] == 'current' and current['value'] == 3.2
             failed=await session.call_tool('build_parametric_bim', {'plan_json':'{"oops":1}'})
             assert 'missing fields' in _json_result(failed)['error']
         async with _server_session(run, readonly=True) as session:
             names={t.name for t in (await session.list_tools()).tools}
             assert 'build_parametric_bim' not in names
             assert 'inspect_parametric_plan' not in names
+            assert 'patch_parametric_bim' not in names
     asyncio.run(exercise())
 
 
@@ -1600,3 +1618,353 @@ def test_source_build_feedback_and_finish_preserve_same_level_annex_connection(t
             finished=_json_result(await session.call_tool('finish_bim',{'candidate':result['candidate']}))
             assert finished['viewer_exists']
     asyncio.run(exercise())
+
+
+# The compact-plan state/patch contract is tested without a model or MCP process.
+class _ParametricFunctionToolkit:
+    def __init__(self, run):
+        self.run = run
+        self.run.mkdir()
+        self.readonly = False
+        self.reject = False
+        self.calls = []
+        self.logs = []
+
+    def remaining_seconds(self):
+        return None
+
+    def log(self, action, data):
+        self.logs.append((action, data))
+
+    def candidate_path(self, candidate):
+        path = self.run / candidate
+        if not path.is_dir():
+            raise ValueError('unknown candidate')
+        return path
+
+    def build(self, proposal, *, action, parent):
+        from scripts.tool_scripts.bim_agent_saved_result import saved_result
+        self.calls.append(dict(proposal=proposal, action=action, parent=parent))
+        if self.reject:
+            return saved_result({'error': 'synthetic source constraint',
+                                 'error_stage': 'source_hard_constraints'}, audit_written=True)
+        candidate = f'candidate_{len(list(self.run.glob("candidate_*"))) + 1:02d}'
+        folder = self.run / candidate
+        folder.mkdir()
+        (folder / 'proposal.json').write_text(json.dumps(proposal), encoding='utf-8')
+        source = {'generation': {'provenance': {'parent_candidate': parent}},
+                  'geometry': proposal['geometry']}
+        (folder / 'source_model.json').write_text(json.dumps(source), encoding='utf-8')
+        return saved_result({'candidate': candidate, 'source_geometry_ready': True,
+                             'opening_inventory': {'large': 'kept in actual shared builder reports'}},
+                            candidate=candidate, created=[candidate], geometry_applied=True, audit_written=True)
+
+
+def _parametric_function_plan():
+    return {'templates': {'office': {'footprint': [[0,0],[6,0],[6,4],[0,4]],
+             'spaces': [{'id': 'room', 'role': 'office', 'rect': [0,0,6,4],
+                         'source_refs': ['synthetic declared hypothesis']}]}},
+            'instances': [{'id': 'A', 'template': 'office', 'z': 0, 'height': 3}],
+            'assumptions': ['test'], 'unresolved': ['actual interiors unknown']}
+
+
+def _parametric_function_op(op, path, value=None):
+    result = {'op': op, 'path': path}
+    if op != 'test':
+        result.update(reason='explicit synthetic correction', source_refs=['test observation'])
+    if op != 'remove':
+        result['value'] = value
+    return result
+
+
+def _parametric_file_hashes(path):
+    return {p.relative_to(path).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in path.rglob('*') if p.is_file()}
+
+
+def test_parametric_function_build_inspect_and_patch_preserve_exact_base(tmp_path):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    plan = _parametric_function_plan()
+    raw = json.dumps(plan, indent=2)
+    first = build_parametric(toolkit, raw)
+    assert (toolkit.run / first['draft']).read_text(encoding='utf-8') == raw
+    assert 'opening_inventory' not in first
+    state = inspect_parametric(toolkit, first['candidate'])
+    assert state['status'] == 'current' and state['patch_allowed']
+    assert state['summary']['expanded_instance_count'] == 1
+    assert 'value' not in state
+    assert inspect_parametric(toolkit, first['candidate'], pointer='/templates/office')['value'] == plan['templates']['office']
+    original_hashes = _parametric_file_hashes(toolkit.run)
+    second = patch_parametric(toolkit, json.dumps([
+        _parametric_function_op('test', '/instances/0/height', 3),
+        _parametric_function_op('replace', '/instances/0/height', 3.5),
+        _parametric_function_op('add', '/assumptions/-', 'new explicit assumption')]),
+        candidate=first['candidate'], expected_sha=state['plan_sha256'])
+    assert second['saved_candidate'] == 'candidate_02'
+    assert toolkit.calls[-1]['parent'] == first['candidate']
+    assert second['parametric']['base']['source_file_sha256'] == first['parametric']['source_file_sha256']
+    current = inspect_parametric(toolkit, second['candidate'], full=True)
+    expected = _parametric_function_plan()
+    expected['instances'][0]['height'] = 3.5
+    expected['assumptions'].append('new explicit assumption')
+    assert current['value'] == expected
+    assert all(_parametric_file_hashes(toolkit.run)[name] == sha for name, sha in original_hashes.items())
+    patch = json.loads((toolkit.run / second['parametric']['patch']['file']).read_bytes())
+    assert patch['base']['plan_sha256'] == state['plan_sha256']
+    assert patch['new_draft_sha256'] == second['draft_sha256']
+
+
+@pytest.mark.parametrize('reject_stage', ['expansion', 'source'])
+def test_parametric_function_failed_draft_can_be_patched(tmp_path, reject_stage):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    plan = _parametric_function_plan()
+    if reject_stage == 'expansion':
+        del plan['unresolved']
+    else:
+        toolkit.reject = True
+    first = build_parametric(toolkit, json.dumps(plan))
+    assert first['saved_candidate'] is None and first['error']
+    base = inspect_parametric(toolkit, draft=first['draft'])
+    toolkit.reject = False
+    op = (_parametric_function_op('add', '/unresolved', ['unknown']) if reject_stage == 'expansion'
+          else _parametric_function_op('replace', '/instances/0/height', 3.5))
+    second = patch_parametric(toolkit, json.dumps([op]), draft=first['draft'], expected_sha=base['plan_sha256'])
+    assert second['saved_candidate'] == 'candidate_01'
+    assert toolkit.calls[-1]['parent'] is None
+    assert json.loads((toolkit.run / first['draft']).read_bytes()) == plan
+
+
+@pytest.mark.parametrize('failure', ['stale_sha', 'test', 'traversal', 'unknown_root', 'extra_field',
+                                   'leading_zero', 'scalar', 'missing', 'missing_reason', 'empty_refs'])
+def test_parametric_function_rejected_patch_is_atomic(tmp_path, failure):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    first = build_parametric(toolkit, json.dumps(_parametric_function_plan()))
+    state = inspect_parametric(toolkit, first['candidate'])
+    sha = state['plan_sha256']
+    op = _parametric_function_op('replace', '/instances/0/height', 4)
+    if failure == 'stale_sha': sha = '0' * 64
+    elif failure == 'test': op = _parametric_function_op('test', '/instances/0/height', True)
+    elif failure == 'traversal': op['path'] = '/../proposal.json'
+    elif failure == 'unknown_root': op['path'] = '/source_model'
+    elif failure == 'extra_field': op['unknown'] = 'no'
+    elif failure == 'leading_zero': op['path'] = '/instances/00/height'
+    elif failure == 'scalar': op['path'] = '/instances/0/height/x'
+    elif failure == 'missing': op['path'] = '/instances/0/missing'
+    elif failure == 'missing_reason': del op['reason']
+    elif failure == 'empty_refs': op['source_refs'] = []
+    before = _parametric_file_hashes(toolkit.run)
+    result = patch_parametric(toolkit, json.dumps([
+        _parametric_function_op('add', '/assumptions/-', 'must not apply'), op]),
+        candidate=first['candidate'], expected_sha=sha)
+    assert result['saved_candidate'] is None and result['error']
+    assert len(toolkit.calls) == 1
+    assert _parametric_file_hashes(toolkit.run) == before
+
+
+def test_parametric_function_generic_revision_reports_stale_without_overwriting(tmp_path):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    first = build_parametric(toolkit, json.dumps(_parametric_function_plan()))
+    generic = toolkit.build({'geometry': {'changed_only_in_source': True}}, action='revise_bim', parent=first['candidate'])
+    before = _parametric_file_hashes(toolkit.run)
+    inspected = inspect_parametric(toolkit, generic['candidate'], full=True)
+    assert inspected['status'] == 'stale_lineage' and not inspected['exact_plan']
+    assert inspected['nearest_parametric']['candidate'] == first['candidate']
+    assert inspected['nearest_parametric']['reference_only'] and 'value' not in inspected
+    assert inspected['reference_selection']['reference_only']
+    assert inspected['reference_selection']['value'] == _parametric_function_plan()
+    result = patch_parametric(toolkit, json.dumps([_parametric_function_op('replace', '/instances/0/height', 4)]),
+        candidate=generic['candidate'], expected_sha=first['parametric']['plan_sha256'])
+    assert 'no exact bound' in result['error']
+    assert _parametric_file_hashes(toolkit.run) == before
+
+
+@pytest.mark.parametrize('artifact', ['source_model.json', 'proposal.json', 'parametric_plan.json',
+                                    'parametric_state.json', 'draft', 'patch'])
+def test_parametric_function_binding_detects_changed_bytes(tmp_path, artifact):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    first = build_parametric(toolkit, json.dumps(_parametric_function_plan()))
+    second = patch_parametric(toolkit, json.dumps([_parametric_function_op('replace', '/instances/0/height', 4)]),
+        candidate=first['candidate'], expected_sha=first['parametric']['plan_sha256'])
+    path = (toolkit.run / second['draft'] if artifact == 'draft' else
+            toolkit.run / second['parametric']['patch']['file'] if artifact == 'patch' else
+            toolkit.run / second['candidate'] / artifact)
+    path.write_bytes(path.read_bytes() + b' ')
+    state = inspect_parametric(toolkit, second['candidate'])
+    assert state['status'] == 'stale' and not state['patch_allowed']
+    count = len(toolkit.calls)
+    result = patch_parametric(toolkit, json.dumps([_parametric_function_op('replace', '/instances/0/height', 5)]),
+        candidate=second['candidate'], expected_sha=second['parametric']['plan_sha256'])
+    assert result['error'] and len(toolkit.calls) == count
+
+
+def test_parametric_function_large_node_can_be_read_completely_in_pages(tmp_path):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    plan = _parametric_function_plan()
+    plan['assumptions'] = ['较长的观察依据' * 100]
+    first = build_parametric(toolkit, json.dumps(plan))
+    offset, parts, hashes = 0, [], set()
+    while True:
+        read = inspect_parametric(toolkit, first['candidate'], pointer='/assumptions', max_chars=71, offset=offset)
+        assert read['fragment'] and len(read['serialized_json']) <= 71
+        parts.append(read['serialized_json'])
+        hashes.add(read['serialized_sha256'])
+        offset = read['next_offset']
+        if offset is None:
+            break
+    assert len(hashes) == 1
+    assert json.loads(''.join(parts)) == plan['assumptions']
+    assert inspect_parametric(toolkit, first['candidate'], max_chars=20)['summary']['summary_truncated']
+
+
+def test_parametric_function_remove_escaped_pointer_and_readonly(tmp_path):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    plan = _parametric_function_plan()
+    plan['templates']['office/~example'] = plan['templates'].pop('office')
+    plan['instances'][0]['template'] = 'office/~example'
+    first = build_parametric(toolkit, json.dumps(plan))
+    assert inspect_parametric(toolkit, first['candidate'], pointer='/templates/office~1~0example')['value']['spaces']
+    result = patch_parametric(toolkit, json.dumps([_parametric_function_op('remove', '/assumptions/0')]),
+        candidate=first['candidate'], expected_sha=first['parametric']['plan_sha256'])
+    assert inspect_parametric(toolkit, result['candidate'], full=True)['value']['assumptions'] == []
+    before = _parametric_file_hashes(toolkit.run)
+    toolkit.readonly = True
+    assert build_parametric(toolkit, json.dumps(plan))['error']
+    assert patch_parametric(toolkit, '[]', candidate=first['candidate'],
+                            expected_sha=first['parametric']['plan_sha256'])['error']
+    assert _parametric_file_hashes(toolkit.run) == before
+
+
+@pytest.mark.parametrize('raw', ['{"templates":{},"templates":{}}', '{"instances":[NaN]}', '{broken'])
+def test_parametric_function_invalid_json_is_preserved_but_not_patchable(tmp_path, raw):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    result = build_parametric(toolkit, raw)
+    assert result['error'] and result['saved_candidate'] is None
+    assert (toolkit.run / result['draft']).read_text(encoding='utf-8') == raw
+    assert not inspect_parametric(toolkit, draft=result['draft'])['patch_allowed']
+    assert not toolkit.calls
+
+
+def test_parametric_function_repeat_and_core_connection_patch_uses_shared_expansion(tmp_path):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    plan = {'templates': {
+        'core': {'footprint': [[0,0],[2,0],[2,4],[0,4]],
+                 'spaces': [{'id': 'lift', 'role': 'shaft', 'rect': [0,0,2,4], 'source_refs': ['declared shaft']}]},
+        'office': {'footprint': [[0,0],[6,0],[6,4],[0,4]],
+                   'spaces': [{'id': 'room', 'role': 'office', 'rect': [2,0,6,4], 'source_refs': ['declared office']}]}
+        }, 'instances': [{'id': 'CORE', 'template': 'core', 'z': 0, 'height': 6}],
+        'repeats': [{'id': 'offices', 'template': 'office', 'id_prefix': 'F', 'start': 1,
+                     'count': 2, 'z': 0, 'height': 3, 'spanning_space_ids': ['CORE:lift'],
+                     'source_refs': ['explicitly repeated storeys']}],
+        'core_connections': [{'id': 'lift', 'core_space_id': 'CORE:lift', 'space': 'room',
+            'repeat_ids': ['offices'], 'p1': [2,1], 'p2': [2,2], 'z': [0,2.1],
+            'source_refs': ['explicit service set']}],
+        'assumptions': ['synthetic'], 'unresolved': ['interiors unknown']}
+    first = build_parametric(toolkit, json.dumps(plan))
+    assert first['saved_candidate'] == 'candidate_01', first
+    assert len(toolkit.calls[0]['proposal']['geometry']['openings']) == 2
+    result = patch_parametric(toolkit, json.dumps([
+        _parametric_function_op('replace', '/repeats/0/count', 12),
+        _parametric_function_op('replace', '/instances/0/height', 36)]),
+        candidate=first['candidate'], expected_sha=first['parametric']['plan_sha256'])
+    assert result['saved_candidate'] == 'candidate_02', result
+    assert inspect_parametric(toolkit, result['candidate'])['summary']['expanded_instance_count'] == 13
+    assert len(toolkit.calls[-1]['proposal']['geometry']['openings']) == 12
+    saved_plan = inspect_parametric(toolkit, result['candidate'], full=True)['value']
+    assert len(saved_plan['instances']) == 1 and len(saved_plan['repeats']) == 1
+    assert len(saved_plan['core_connections']) == 1
+
+
+def test_parametric_function_legacy_plan_is_readable_but_not_an_exact_adoption(tmp_path):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    first = build_parametric(toolkit, json.dumps(_parametric_function_plan()))
+    (toolkit.run / first['candidate'] / 'parametric_state.json').unlink()
+    state = inspect_parametric(toolkit, first['candidate'], pointer='/instances')
+    assert state['status'] == 'stale_lineage' and not state['patch_allowed']
+    assert state['reference_selection']['value'] == _parametric_function_plan()['instances']
+    rejected = patch_parametric(toolkit, json.dumps([_parametric_function_op('replace', '/instances/0/height', 4)]),
+        candidate=first['candidate'], expected_sha=first['parametric']['plan_sha256'])
+    assert rejected['error'] and len(toolkit.calls) == 1
+
+
+def test_parametric_function_failed_patch_keeps_a_repairable_draft_and_patch_audit(tmp_path):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    first = build_parametric(toolkit, json.dumps(_parametric_function_plan()))
+    failed = patch_parametric(toolkit, json.dumps([_parametric_function_op('remove', '/unresolved')]),
+        candidate=first['candidate'], expected_sha=first['parametric']['plan_sha256'])
+    assert failed['saved_candidate'] is None and 'missing fields' in failed['error']
+    assert failed['parametric']['base']['candidate'] == first['candidate']
+    assert (toolkit.run / failed['parametric']['patch']['file']).is_file()
+    draft = inspect_parametric(toolkit, draft=failed['draft'])
+    fixed = patch_parametric(toolkit, json.dumps([_parametric_function_op('add', '/unresolved', ['explicit unknown'])]),
+        draft=failed['draft'], expected_sha=draft['plan_sha256'])
+    assert fixed['saved_candidate'] == 'candidate_02'
+    assert fixed['parametric']['base']['draft'] == failed['draft']
+
+
+def test_parametric_function_unbuilt_candidate_requires_its_draft_for_repair(tmp_path):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    original = toolkit.build
+    def without_source(proposal, *, action, parent):
+        result = original(proposal, action=action, parent=parent)
+        (toolkit.run / result['candidate'] / 'source_model.json').unlink()
+        result['saved_candidate'] = None
+        result['source_geometry_ready'] = False
+        return result
+    toolkit.build = without_source
+    first = build_parametric(toolkit, json.dumps(_parametric_function_plan()))
+    inspected = inspect_parametric(toolkit, first['candidate'])
+    assert inspected['status'] == 'unbuilt' and not inspected['patch_allowed']
+    operations = json.dumps([_parametric_function_op('replace', '/instances/0/height', 4)])
+    rejected = patch_parametric(toolkit, operations, candidate=first['candidate'],
+                                expected_sha=first['parametric']['plan_sha256'])
+    assert 'no saved source' in rejected['error']
+    toolkit.build = original
+    repaired = patch_parametric(toolkit, operations, draft=first['draft'], expected_sha=first['draft_sha256'])
+    assert repaired['saved_candidate'] == 'candidate_02' and toolkit.calls[-1]['parent'] is None
+
+
+def test_parametric_function_real_toolkit_failed_export_repairs_preserved_draft(tmp_path):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric, patch_parametric
+    run = _run_with_one_image(tmp_path)
+    toolkit = Toolkit(run)
+    plan = _parametric_function_plan()
+    plan['templates']['office']['spaces'][0]['role'] = 'invalid_unregistered_role'
+    failed = build_parametric(toolkit, json.dumps(plan))
+    assert failed['candidate'] == 'candidate_01' and failed['saved_candidate'] is None
+    assert not (run / failed['candidate'] / 'source_model.json').exists()
+    assert inspect_parametric(toolkit, failed['candidate'])['status'] == 'unbuilt'
+    original = _parametric_file_hashes(run / failed['candidate'])
+    repaired = patch_parametric(toolkit, json.dumps([
+        _parametric_function_op('replace', '/templates/office/spaces/0/role', 'office')]),
+        draft=failed['draft'], expected_sha=failed['draft_sha256'])
+    assert repaired['saved_candidate'] == 'candidate_02' and repaired['source_geometry_ready']
+    assert inspect_parametric(toolkit, repaired['candidate'])['status'] == 'current'
+    report = json.loads((run / repaired['candidate'] / 'report.json').read_bytes())
+    assert report['parametric']['base']['draft'] == failed['draft']
+    assert report['parametric']['patch']['sha256'] == digest(run / repaired['parametric']['patch']['file'])
+    assert (run / repaired['candidate'] / 'source_model.json').is_file()
+    assert _parametric_file_hashes(run / failed['candidate']) == original
+
+
+@pytest.mark.parametrize('artifact', ['candidate', 'draft'])
+def test_parametric_function_corrupt_state_is_a_structured_refusal(tmp_path, artifact):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    first = build_parametric(toolkit, json.dumps(_parametric_function_plan()))
+    path = ((toolkit.run / first['candidate'] / 'parametric_state.json') if artifact == 'candidate'
+            else (toolkit.run / first['draft']).with_suffix('.state.json'))
+    path.write_text('[]', encoding='utf-8')
+    state = inspect_parametric(toolkit, first['candidate'])
+    assert state['status'] == 'stale' and not state['patch_allowed'] and 'object' in state['error']

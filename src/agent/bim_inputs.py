@@ -35,6 +35,8 @@ IMPLEMENTATION_FILES = (
     'scripts/tool_scripts/run_bim_agent.py',
     'scripts/tool_scripts/bim_agent_guidance.py',
     'scripts/tool_scripts/bim_agent_continuation.py',
+    'scripts/tool_scripts/bim_agent_parametric.py',
+    'scripts/tool_scripts/bim_agent_view_selection.py',
     'src/agent/geometry/parametric_proposal.py',
     'scripts/tool_scripts/bim_agent_inputs.py',
     'src/agent/execution/bim_claims.py',

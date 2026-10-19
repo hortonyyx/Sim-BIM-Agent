@@ -9,6 +9,9 @@ EnergyPlus graph. The product model is `work model + runtime + domain`.
 | BIM rules and evidence contracts | [contracts](contracts/__init__.py), [source model](geometry/source_bim.py) |
 | Deterministic geometry and relationships | [geometry](geometry/__init__.py) |
 | Declared curve approximation and courtyard footprints | [source curves](geometry/source_curves.py), [shared parametric templates](geometry/parametric_proposal.py) |
+| Explicit repeated floors and core service connections | [parametric expansion](geometry/parametric_proposal.py); declared exceptions, service sets and role evidence |
+| Saved parameter inspection and local revision | [parametric drafts and patches](../../scripts/tool_scripts/bim_agent_parametric.py); hash-bound exact plans, paged references and explicit patches |
+| Changed representative plan feedback | [plan selection](../../scripts/tool_scripts/bim_agent_view_selection.py); native mesh and parametric builds, all diagnostic floors retained |
 | Original mesh sections and same-view geometry comparison | [sections](geometry/mesh_section.py), [correspondence](geometry/mesh_correspondence.py) |
 | Original OPAQUE/BLEND views and scoped pixel measurement | [observation](geometry/mesh_observation.py); contributing fractional alpha has no unique measured surface |
 | Model-callable tools | [run_bim_agent.py](../../scripts/tool_scripts/run_bim_agent.py) and its `bim_agent_*` modules |
@@ -29,6 +32,12 @@ the coordinator chooses shared tools directly or delegates optional read-only
 questions using the same configured model and shared budget. Worker advice binds
 actual frozen inputs and an optional source snapshot; only the coordinator edits
 the main BIM. Photo generation and automatic detail selection are not implemented.
+New mesh tasks expose the inherited output allowance and reject infeasible explicit
+total-token budgets before freezing inputs; a rejection creates no observation.
+Repeated instance ranges and core connections expand declared service sets only.
+Generic source revisions can diverge from a parameter plan: ancestor plans then
+remain readable references, not exact editable state. Unshown plans can be rendered
+on demand; representative feedback does not certify source-input fidelity.
 Simple polygon prisms use the explicit source_polygon_v1 contract with the same
 source builder and viewer. Declared circular arcs use a bounded chord approximation
 with retained provenance, and floor footprints can contain courtyard holes covered

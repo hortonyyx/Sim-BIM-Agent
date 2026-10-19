@@ -2,6 +2,10 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_mesh_feedback_selection.py": {
+      "group": "targeted",
+      "reason": "Source geometry based repeated-floor feedback selection, incremental views and on-demand complete access"
+    },
     "tests/test_source_shape_gate.py": {
       "group": "targeted",
       "reason": "Actual Toolkit saves preserve geometric axis-rule applicability, legacy thresholds, Z gaps and source validity"

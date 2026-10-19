@@ -73,12 +73,166 @@ def strings(value, nonempty=False):
     return list(value)
 
 
+def _integer(value, label, minimum, maximum):
+    if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+        raise ValueError(f'{label} must be an integer from {minimum} to {maximum}')
+    return value
+
+
+def _instance_records(plan):
+    """Expand only declared sequences; explicit exceptions never silently win."""
+    explicit = plan['instances']
+    repeats = plan.get('repeats', [])
+    if not isinstance(explicit, list) or not isinstance(repeats, list):
+        raise ValueError('instances and repeats must be lists')
+    if len(explicit) > 100:
+        raise ValueError('supply 1 to 100 expanded floor/volume instances')
+    instances, ids, groups = [], set(), {}
+    for instance in explicit:
+        fields(instance, ('id', 'template', 'z', 'height'),
+               ('spanning_space_ids', 'source_refs', 'assumptions'))
+        fid = identifier(instance['id'])
+        if fid in ids:
+            raise ValueError(f'duplicate instance {fid}')
+        ids.add(fid)
+        instances.append(copy.deepcopy(instance))
+    for repeat in repeats:
+        fields(repeat, ('id', 'template', 'id_prefix', 'start', 'count', 'z', 'height', 'source_refs'),
+               ('id_padding', 'spanning_space_ids', 'exclude_ids', 'assumptions'))
+        rid = identifier(repeat['id'])
+        if rid in groups:
+            raise ValueError(f'duplicate repeat {rid}')
+        prefix = identifier(repeat['id_prefix'])
+        start = _integer(repeat['start'], 'repeat start', 0, 1000000)
+        count = _integer(repeat['count'], 'repeat count', 1, 100)
+        padding = _integer(repeat.get('id_padding', 0), 'id_padding', 0, 8)
+        base, height = number(repeat['z']), number(repeat['height'])
+        if height <= 0:
+            raise ValueError('repeat height must be positive')
+        refs = strings(repeat['source_refs'], True)
+        assumptions = strings(repeat.get('assumptions', []))
+        members = strings(repeat.get('spanning_space_ids', []))
+        generated = [f'{prefix}{start+i:0{padding}d}' for i in range(count)]
+        excluded = strings(repeat.get('exclude_ids', []))
+        if len(set(excluded)) != len(excluded) or not set(excluded) <= set(generated):
+            raise ValueError(f'{rid}: exclude_ids must be unique IDs in this repeat')
+        explicit_ids = {instance['id'] for instance in explicit}
+        if not set(excluded) <= explicit_ids:
+            raise ValueError(f'{rid}: every excluded ID needs a complete explicit instance')
+        groups[rid] = []
+        for index, fid in enumerate(generated):
+            if fid in excluded:
+                continue
+            if fid in ids:
+                raise ValueError(f'duplicate instance {fid}; explicitly exclude a replacement')
+            if len(instances) >= 100:
+                raise ValueError('supply 1 to 100 expanded floor/volume instances')
+            ids.add(fid)
+            groups[rid].append(fid)
+            instances.append(dict(id=fid, template=repeat['template'],
+                z=round(base + index * height, 9), height=height,
+                spanning_space_ids=list(members), source_refs=list(refs), assumptions=list(assumptions)))
+    if not 1 <= len(instances) <= 100:
+        raise ValueError('supply 1 to 100 expanded floor/volume instances')
+    return instances, groups
+
+
+def expand_parametric_instances(plan: dict) -> list[dict]:
+    """Return deterministic instances for representative views; keep compact input intact."""
+    return _instance_records(plan)[0]
+
+
+def _evidence(row, instance):
+    return dict(source_refs=strings(row['source_refs'], True) + strings(instance.get('source_refs', [])),
+                assumptions=strings(row.get('assumptions', [])) + strings(instance.get('assumptions', [])))
+
+
+def _role_evidence(space):
+    if 'role_evidence' not in space:
+        return {}
+    from src.agent.correction.schema import RoomRoleEvidence
+    from src.agent.roles import require_role
+    evidence = RoomRoleEvidence.model_validate(space['role_evidence']).model_dump(mode='json')
+    if require_role(space['role']) != evidence['role']:
+        raise ValueError(f"space {space['id']}: role does not match role_evidence.role")
+    return {'role_evidence': evidence}
+
+
+def _core_openings(plan, instances, groups, floors, existing):
+    declarations = plan.get('core_connections', [])
+    if not isinstance(declarations, list):
+        raise ValueError('core_connections must be a list')
+    instance_map = {row['id']: row for row in instances}
+    floor_map = {row['name']: row for row in floors}
+    spaces = {cell['id']: floor for floor in floors for cell in floor['cells']}
+    result, ids, served = [], set(), set()
+    for declaration in declarations:
+        fields(declaration, ('id', 'core_space_id', 'space', 'p1', 'p2', 'z', 'source_refs'),
+               ('instance_ids', 'repeat_ids', 'kind', 'state', 'assumptions'))
+        cid = identifier(declaration['id'])
+        if cid in ids:
+            raise ValueError(f'duplicate core connection declaration {cid}')
+        ids.add(cid)
+        local = identifier(declaration['space'])
+        core = declaration['core_space_id']
+        if not isinstance(core, str) or core not in spaces:
+            raise ValueError(f'{cid}: unknown core space {core}')
+        selected = strings(declaration.get('instance_ids', []))
+        repeat_ids = strings(declaration.get('repeat_ids', []))
+        for rid in repeat_ids:
+            if rid not in groups:
+                raise ValueError(f'{cid}: unknown repeat {rid}')
+            selected.extend(groups[rid])
+        if not selected or len(set(selected)) != len(selected) or len(set(repeat_ids)) != len(repeat_ids):
+            raise ValueError(f'{cid}: service instances must be nonempty and unique')
+        kind = declaration.get('kind', 'door')
+        state = declaration.get('state', 'open' if kind == 'open' else 'unknown')
+        if kind not in ('door', 'open') or state not in ('open', 'closed', 'unknown') or (kind == 'open' and state != 'open'):
+            raise ValueError('core connections must be doors or open passages with a valid state')
+        points = [declaration['p1'], declaration['p2']]
+        if any(not isinstance(point, list) or len(point) != 2 for point in points):
+            raise ValueError('core connection endpoints must contain x,y')
+        p1, p2 = [[number(value) for value in point] for point in points]
+        if p1 == p2:
+            raise ValueError('core connection must have positive width')
+        relative_z = interval(declaration['z'])
+        for fid in selected:
+            if fid not in instance_map:
+                raise ValueError(f'{cid}: unknown service instance {fid}')
+            instance, floor, core_floor = instance_map[fid], floor_map[fid], spaces[core]
+            space = f'{fid}:{local}'
+            if space not in spaces or space == core:
+                raise ValueError(f'{cid}: unknown or invalid local service space {space}')
+            if core not in instance.get('spanning_space_ids', []):
+                raise ValueError(f'{cid}: {core} must be an explicit spanning member of {fid}')
+            base, height = floor['z_floor'], floor['ceiling_height']
+            if core_floor['z_floor'] > base + 1e-9 or core_floor['z_floor'] + core_floor['ceiling_height'] < base + height - 1e-9:
+                raise ValueError(f'{cid}: core does not cover the whole service instance {fid}')
+            if relative_z[0] < 0 or relative_z[1] > height:
+                raise ValueError(f'{cid}: core connection height outside service instance {fid}')
+            if (core, fid) in served:
+                raise ValueError(f'duplicate core service connection for {core} at {fid}')
+            served.add((core, fid))
+            z = [round(base + value, 9) for value in relative_z]
+            for row in existing:
+                if {row.get('space_id'), row.get('other_space_id')} == {space, core}:
+                    old_z = interval(row.get('z'))
+                    if min(old_z[1], z[1]) > max(old_z[0], z[0]):
+                        raise ValueError(f'{cid}: explicit connection already serves {space} and {core}')
+            result.append(dict(id=f'{fid}:core:{cid}', space_id=space, other_space_id=core,
+                kind=kind, state=state, p1=list(p1), p2=list(p2), z=z,
+                **_evidence(declaration, instance)))
+            if len(result) + len(existing) > 5000:
+                raise ValueError('aperture expansion exceeds experiment limit')
+    return result
+
+
 def _source_template(template, curves):
     """Use the common source geometry expansion for declared curved rings."""
     from src.agent.geometry.source_curves import expand_source_polygon_geometry
     cells = []
     for space in template['spaces']:
-        fields(space, ('id', 'role', 'source_refs'), ('polygon', 'rect', 'boundary_path', 'assumptions'))
+        fields(space, ('id', 'role', 'source_refs'), ('polygon', 'rect', 'boundary_path', 'assumptions', 'role_evidence'))
         if sum(key in space for key in ('polygon', 'rect', 'boundary_path')) != 1:
             raise ValueError('space needs exactly one of polygon, rect or boundary_path')
         cell = copy.deepcopy(space)
@@ -99,7 +253,7 @@ def _source_template(template, curves):
 
 def expand_parametric_proposal(plan: dict) -> dict:
     fields(plan, ('templates', 'instances', 'assumptions', 'unresolved'),
-           ('connections', 'schema_version', 'mesh_frame', 'boundary_curves'))
+           ('connections', 'schema_version', 'mesh_frame', 'boundary_curves', 'repeats', 'core_connections'))
     json.dumps(plan, allow_nan=False)
     schema_version = plan.get('schema_version', '2')
     if schema_version not in ('2', 'source_polygon_v1'):
@@ -109,16 +263,14 @@ def expand_parametric_proposal(plan: dict) -> dict:
         raise ValueError('boundary_curves requires source_polygon_v1')
     if not isinstance(plan['templates'], dict) or not plan['templates']:
         raise ValueError('templates must be a nonempty object')
-    if not isinstance(plan['instances'], list) or not 1 <= len(plan['instances']) <= 100:
-        raise ValueError('supply 1 to 100 explicit floor/volume instances')
+    instances, groups = _instance_records(plan)
     check_floor_placements(
         (f"plan.instances[{i}].z", instance.get('z'), f"plan.instances[{i}].height", instance.get('height'))
-        for i, instance in enumerate(plan['instances']) if isinstance(instance, dict))
+        for i, instance in enumerate(instances))
     floors, windows, openings, all_points = [], [], [], []
     expanded_templates = {}
     ids = set()
-    for instance_index, instance in enumerate(plan['instances']):
-        fields(instance, ('id', 'template', 'z', 'height'), ('spanning_space_ids',))
+    for instance_index, instance in enumerate(instances):
         fid = identifier(instance['id'])
         if fid in ids:
             raise ValueError(f'duplicate instance {fid}')
@@ -141,7 +293,7 @@ def expand_parametric_proposal(plan: dict) -> dict:
         cells, local_ids = [], set()
         for space in source_template['cells'] if source_template else template['spaces']:
             if not source_template:
-                fields(space, ('id', 'role', 'source_refs'), ('polygon', 'rect', 'assumptions'))
+                fields(space, ('id', 'role', 'source_refs'), ('polygon', 'rect', 'assumptions', 'role_evidence'))
             sid = identifier(space['id'])
             if sid in local_ids:
                 raise ValueError(f'duplicate space {sid}')
@@ -158,8 +310,7 @@ def expand_parametric_proposal(plan: dict) -> dict:
             cells.append(dict(id=f'{fid}:{sid}', role=space['role'], polygon=polygon,
                 x=[min(p[0] for p in polygon), max(p[0] for p in polygon)],
                 y=[min(p[1] for p in polygon), max(p[1] for p in polygon)],
-                source_refs=strings(space['source_refs'], True),
-                assumptions=strings(space.get('assumptions', []))))
+                **_evidence(space, instance), **_role_evidence(space)))
             if 'boundary_path' in space:
                 cells[-1]['boundary_path'] = copy.deepcopy(space['boundary_path'])
         if not cells:
@@ -204,7 +355,7 @@ def expand_parametric_proposal(plan: dict) -> dict:
                     raise ValueError(f'{fid}:{rid}:{i}: span {span} on {facade} plane {plane} has {len(owners)} complete hosts; preserve aperture and recheck partitions')
                 windows.append(dict(id=f'{fid}:{rid}:{i}', floor=fid, facade=facade,
                     span=[lo,hi], z=[round(base+v,9) for v in z], room=next(iter(owners)),
-                    source_refs=strings(row['source_refs'],True), assumptions=strings(row.get('assumptions',[]))))
+                    **_evidence(row, instance)))
         for row in template.get('opening_rows', []):
             if not simple_polygon:
                 raise ValueError('opening_rows requires source_polygon_v1')
@@ -241,8 +392,7 @@ def expand_parametric_proposal(plan: dict) -> dict:
                     other_space_id=f'{fid}:{row["other_space"]}' if row.get('other_space') else None,
                     kind=row['kind'], state=row.get('state', 'open' if row['kind'] == 'open' else 'unknown'),
                     p1=endpoints[0], p2=endpoints[1], z=[round(base+v, 9) for v in z],
-                    source_refs=strings(row['source_refs'], True),
-                    assumptions=strings(row.get('assumptions', []))))
+                    **_evidence(row, instance)))
         for door in template.get('doors', []):
             fields(door, ('id','space','other_space','p1','p2','z','source_refs'), ('kind','state','assumptions'))
             for sid in (door['space'],door['other_space']):
@@ -256,11 +406,18 @@ def expand_parametric_proposal(plan: dict) -> dict:
                 other_space_id=f'{fid}:{door["other_space"]}' if door['other_space'] is not None else None,
                 kind=door.get('kind','door'),state=door.get('state','unknown'),
                 p1=door['p1'],p2=door['p2'],z=[round(base+v,9) for v in z],
-                source_refs=strings(door['source_refs'],True),assumptions=strings(door.get('assumptions',[]))))
+                **_evidence(door, instance)))
     # Cross-instance connections use explicit global IDs and absolute heights.
-    openings.extend(copy.deepcopy(plan.get('connections', [])))
+    connections = plan.get('connections', [])
+    if not isinstance(connections, list) or any(not isinstance(row, dict) for row in connections):
+        raise ValueError('connections must be a list of opening records')
+    openings.extend(copy.deepcopy(connections))
+    openings.extend(_core_openings(plan, instances, groups, floors, openings))
     if len(windows)+len(openings)>5000:
         raise ValueError('aperture expansion exceeds experiment limit')
+    aperture_ids = [row['id'] for row in windows + openings]
+    if len(set(aperture_ids)) != len(aperture_ids):
+        raise ValueError('duplicate expanded aperture ID')
     proposal = dict(geometry=dict(schema_version=schema_version,
         footprint_x=[min(p[0] for p in all_points),max(p[0] for p in all_points)],
         footprint_y=[min(p[1] for p in all_points),max(p[1] for p in all_points)],

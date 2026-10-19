@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 
 COMPACT_TOOLS = frozenset({'build_bim', 'build_plan_bim', 'revise_bim', 'revise_plan_bim',
-                          'build_parametric_bim', 'assemble_plan_bim', 'check_openings', 'finish_bim',
+                          'build_parametric_bim', 'patch_parametric_bim', 'assemble_plan_bim', 'check_openings', 'finish_bim',
                           'claim_transaction', 'view_pixel_profile'})
 
 
@@ -278,7 +278,8 @@ def compact_reply(run: Path, tool: str, result: dict, *, full_result: dict | Non
                     'matched_openings', 'all_readings_consistent', 'comparison_summary',
                     'saved_reviews', 'process_review',
                     'error', 'error_stage', 'error_type', 'tool_name', 'repair_hint', 'remaining_seconds',
-                    'plan_input', 'plan_revision', 'drawing_differences', 'building_precision', 'counts'):
+                    'plan_input', 'plan_revision', 'parametric', 'draft', 'draft_sha256', 'plan_sha256',
+                    'source_plan_selection', 'drawing_differences', 'building_precision', 'counts'):
             if key in reply and _reply_bytes({**bounded, key: reply[key]}) <= 24000:
                 bounded[key] = reply[key]
         reply = bounded

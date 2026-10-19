@@ -210,6 +210,92 @@ def test_invalid_dispatch_is_rejected_before_worker_requests(tmp_path, local_too
         assert raw["isError"] and adapters == [] and wrapper.state()["tasks"] == []
 
 
+@pytest.mark.parametrize("tokens", [6500, 7000, 32000])
+@pytest.mark.parametrize("output_parameter", ["max_tokens", "max_completion_tokens"])
+def test_infeasible_new_token_budget_rejected_before_freezing_inputs(
+        tmp_path, local_tools, tokens, output_parameter):
+    run, limits = _inputs(tmp_path), _limits()
+    with EventStore(tmp_path / "audit", run_id="mesh-token-preflight", task_id="coordinator",
+                    budget_limit=limits.ledger_limit()) as store:
+        _start(store)
+        wrapper, adapters = _wrapper(store, run, limits, {"inspect": [response(text=_answer())]})
+        wrapper.parameters = {output_parameter: 32000}
+        configuration = wrapper._configuration()
+        before = list(store.all_events)
+        result = _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {
+            "tasks": [_task(tokens=tokens)]})))
+        assert result["status"] == "rejected" and result["reason_code"] == "worker_token_budget_infeasible"
+        assert result["stage"] == "budget_preflight" and result["admitted"] is False
+        assert result["result"] is None and result["model_calls"] == result["tool_calls"] == 0
+        assert result["budget"]["configured_task_tokens"] == tokens
+        assert result["budget"]["output_token_limit"] == 32000
+        assert result["budget"]["minimum_task_tokens"] == 32001
+        assert "tokens=null" in result["reason"] and "not evidence" in result["meaning"]
+        assert list(store.all_events) == before and wrapper.state()["tasks"] == []
+        child = store.for_task("inspect", parent_task_id=store.task_id)
+        assert not (child.task_directory / "bim").exists()
+        assert not (child.task_directory / "mesh_worker.json").exists()
+        assert child.events == [] and adapters == [] and local_tools == []
+        assert wrapper._configuration() == configuration
+        # Rejection did not admit this ID or freeze the bad budget. Null adds no
+        # child cap; the real shared Runtime still reserves against the root.
+        accepted = _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {
+            "tasks": [_task(tokens=None)]})))
+        assert accepted["status"] == "completed" and len(adapters) == 1
+        assert len(adapters[0].requests) == 1
+        assert wrapper.parameters == {output_parameter: 32000}
+        record = json.loads((child.task_directory / "mesh_worker.json").read_bytes())
+        assert record["task"]["budget"]["tokens"] is None
+        assert record["configuration"] == configuration
+        assert RuntimeBudget.from_events(store.budget_limit, store.all_events).ledger.committed.calls == 1
+        store.validate()
+
+
+def test_worker_state_and_schema_explain_total_tokens_and_output_reserve(tmp_path, local_tools):
+    run, limits = _inputs(tmp_path), _limits()
+    with EventStore(tmp_path / "audit", run_id="mesh-budget-contract", task_id="coordinator",
+                    budget_limit=limits.ledger_limit()) as store:
+        wrapper, _ = _wrapper(store, run, limits, {})
+        wrapper.parameters = {"max_tokens": 32000}
+        state = asyncio.run(wrapper.call_tool("mesh_worker_state", {}))["structuredContent"]
+        contract = state["token_budget"]
+        assert contract["output_token_limit"] == 32000 and contract["minimum_task_tokens"] == 32001
+        assert "Necessary lower bound only" in contract["minimum_task_tokens_basis"]
+        assert "across all requests" in contract["tokens_meaning"]
+        assert "not a per-response output cap" in contract["tokens_meaning"]
+        schema = next(tool for tool in workers.mesh_worker_tool_specs()
+                      if tool["name"] == "delegate_mesh_workers")["inputSchema"]
+        description = schema["properties"]["tasks"]["items"]["properties"]["budget"]["properties"]["tokens"]["description"]
+        assert contract["tokens_meaning"] in description and "mesh_worker_state" in description
+
+
+def test_preflight_does_not_reject_legacy_admitted_zero_call_result(tmp_path, local_tools, monkeypatch):
+    run, limits = _inputs(tmp_path), _limits()
+    with EventStore(tmp_path / "audit", run_id="mesh-legacy-budget", task_id="coordinator",
+                    budget_limit=limits.ledger_limit()) as store:
+        _start(store)
+        wrapper, adapters = _wrapper(store, run, limits, {"inspect": []})
+        task = _task(tokens=1)
+        # Reproduce a pre-preflight admission using the ordinary Runtime and
+        # its immutable outcome, including the historical zero-call stop.
+        with monkeypatch.context() as legacy:
+            legacy.setattr(wrapper, "_new_task_budget_rejection", lambda task: None)
+            saved = _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [task]})))
+        assert saved["status"] == "child_token_budget_exhausted" and saved["result"] is None
+        assert saved["runtime"]["model_calls"] == 0
+        before = list(store.all_events)
+        assert _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [task]}))) == saved
+        read = asyncio.run(wrapper.call_tool("read_mesh_worker", {"task_id": "inspect"}))
+        assert not read["isError"] and read["structuredContent"] == saved
+        assert list(store.all_events) == before and len(adapters) == 1 and adapters[0].requests == []
+        changed = _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {
+            "tasks": [_task(tokens=None)]})))
+        assert changed["status"] == "rejected" and "different exact arguments" in changed["reason"]
+        wrapper.parameters["max_tokens"] = 512
+        assert asyncio.run(wrapper.call_tool("read_mesh_worker", {"task_id": "inspect"}))["isError"]
+        store.validate()
+
+
 def test_completed_id_reuses_result_but_argument_config_or_asset_changes_fail(tmp_path, local_tools):
     run, limits = _inputs(tmp_path), _limits()
     with EventStore(tmp_path / "audit", run_id="mesh-reuse", task_id="coordinator",
@@ -255,7 +341,7 @@ def test_parallel_workers_overlap_and_fail_independently(tmp_path, local_tools):
         raw = asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [_task("one"), _task("bad"),
             _task("two"), _task("too-small", tokens=1)]}))
         assert [row["status"] for row in raw["structuredContent"]["results"]] == [
-            "completed", "permission_denied", "completed", "child_token_budget_exhausted"]
+            "completed", "permission_denied", "completed", "rejected"]
         assert activity["peak"] == 2
         assert sum(event.payload.event_type == "adapter_request" for event in store.all_events) == 3
         store.validate()
@@ -362,7 +448,9 @@ def test_child_timing_with_unlimited_parent_is_persisted_not_reset(tmp_path, loc
                     budget_limit=limits.ledger_limit()) as store:
         _start(store)
         wrapper, _ = _wrapper(store, run, limits, {"inspect": []})
-        task = _task(tokens=1, seconds=20)
+        # Above the necessary output-only floor, but below the real input +
+        # output reservation: Runtime still enforces the full request budget.
+        task = _task(tokens=257, seconds=20)
         _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [task]})))
         child = store.for_task("inspect", parent_task_id=store.task_id)
         before = json.loads((child.task_directory / "mesh_worker.json").read_bytes())["timing"]

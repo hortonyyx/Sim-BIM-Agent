@@ -1438,13 +1438,34 @@ class Toolkit:
             result["projection_errors"] = errors
             result["source_plan_views"], result["source_plan_errors"] = [], []
             source = json.loads(source_path.read_bytes())
-            for floor in source["floors"]:
+            feedback_floors = [floor['id'] for floor in source['floors']]
+            if self.manifest.get('mesh_input') or action in {'build_parametric_bim', 'patch_parametric_bim'}:
+                from scripts.tool_scripts.bim_agent_view_selection import select_plan_feedback
+                previous_path = self.candidate_path(parent)/'source_model.json' if parent else None
+                previous = (json.loads(previous_path.read_bytes())
+                            if previous_path is not None and previous_path.is_file() else None)
+                # Projection metadata already validated the registered frames.
+                # Re-reading optional calibration files could turn a saved BIM
+                # into an exception after their errors were safely reported.
+                preferred = [row['floor_id'] for row in projections if isinstance(row.get('floor_id'), str)]
+                precision = result['building_precision']
+                selection = select_plan_feedback(source, previous, preferred_floor_ids=preferred,
+                    additional_findings=[*precision.get('items', []),
+                        *precision.get('wall_placement', {}).get('items', []),
+                        *precision.get('evidence_errors', []), *errors])
+                if parent and previous is None:
+                    selection['parent_source_unavailable'] = parent
+                selection['read_any_floor']['arguments']['candidate'] = candidate
+                dump(self.run/candidate/'plan_feedback_selection.json', selection)
+                result['source_plan_selection'] = selection
+                feedback_floors = selection['selected_floor_ids']
+            for floor_id in feedback_floors:
                 try:
-                    _, metadata = self.plan_view(candidate, floor["id"])
+                    _, metadata = self.plan_view(candidate, floor_id)
                     result["source_plan_views"].append(metadata)
                 except Exception as error:
                     result["source_plan_errors"].append({"candidate": candidate,
-                        "floor_id": floor["id"], "error": str(error)})
+                        "floor_id": floor_id, "error": str(error)})
         saved_source_result(self.run, result, parent=parent)
         self.log(action, result)
         return result
@@ -3256,40 +3277,33 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
         def build_parametric_bim(plan_json: str) -> CallToolResult:
             """Expand model-declared floor templates and window rows, then build source BIM.
             Read get_bim_reference('parametric') first. Never infers or trims geometry.
-            Relative aperture heights are offset by each explicit instance base.
+            Explicit repeats and core service sets expand in code. Failed drafts are patchable.
             """
-            from src.agent.geometry.parametric_proposal import expand_parametric_proposal
-            folder = toolkit.run / 'parametric_drafts'
-            folder.mkdir(exist_ok=True)
-            draft = folder / f'draft_{len(list(folder.glob("*.json")))+1:03d}.json'
-            draft.write_text(plan_json, encoding="utf-8", newline="\n")
-            try:
-                plan = json.loads(plan_json)
-                proposal = expand_parametric_proposal(plan)
-            except (ValueError, TypeError, KeyError) as error:
-                result = {'error': str(error), 'draft': draft.relative_to(toolkit.run).as_posix(),
-                          'remaining_seconds': toolkit.remaining_seconds()}
-                toolkit.log('build_parametric_bim', result)
-                return candidate_result(result)
-            result = toolkit.build(proposal, action='build_parametric_bim')
-            if result.get('candidate'):
-                dump(toolkit.run / result['candidate'] / 'parametric_plan.json', plan)
-            # Full inventories and every plan remain on disk/available on demand.
-            # Return representative template plans without repeating identical floors.
-            result.pop('opening_inventory', None)
-            representatives = {}
-            for instance in plan['instances']:
-                representatives.setdefault(instance['template'], instance['id'])
-            result['source_plan_views'] = [v for v in result.get('source_plan_views', [])
-                                         if v['floor_id'] in representatives.values()]
-            return candidate_result(result)
+            from scripts.tool_scripts.bim_agent_parametric import build_parametric
+            return candidate_result(build_parametric(toolkit, plan_json))
 
         @server.tool()
-        def inspect_parametric_plan(candidate: str) -> dict:
-            """Read the exact saved compact plan for revision; original evidence is separate."""
-            value = json.loads((toolkit.candidate_path(candidate) / 'parametric_plan.json').read_bytes())
-            toolkit.log('inspect_parametric_plan', {'candidate': candidate})
-            return value
+        def inspect_parametric_plan(candidate: str = "", draft: str = "", pointer: str | None = None,
+                                    full: bool = False, offset: int = 0, max_chars: int = 12000) -> dict:
+            """Summarize an exact saved parametric candidate OR failed draft, with its patch hash.
+            Use pointer for a JSON node, or full=true, with offset to page large values.
+            Generic source edits may make the original template stale; no implicit rebase.
+            """
+            from scripts.tool_scripts.bim_agent_parametric import inspect_parametric
+            return inspect_parametric(toolkit, candidate, draft=draft, pointer=pointer,
+                                      full=full, offset=offset, max_chars=max_chars)
+
+        @server.tool()
+        def patch_parametric_bim(operations_json: str, expected_plan_sha256: str,
+                                 candidate: str = "", draft: str = "") -> CallToolResult:
+            """Patch an exact saved compact plan or draft and build a new candidate.
+            Supply one candidate OR draft and its current plan hash. Operations use
+            add/replace/remove/test with JSON Pointer paths, reason and source_refs;
+            read get_bim_reference('parametric'). Never silently overwrite source edits.
+            """
+            from scripts.tool_scripts.bim_agent_parametric import patch_parametric
+            return candidate_result(patch_parametric(toolkit, operations_json, candidate=candidate,
+                draft=draft, expected_sha=expected_plan_sha256))
 
         @server.tool()
         def build_bim(proposal_json: str) -> CallToolResult:

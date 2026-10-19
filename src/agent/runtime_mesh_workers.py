@@ -52,11 +52,19 @@ You may return only uncertainty when the question cannot be established.
 Respect task_limits and remaining root allowance; your task creates no budget.
 """
 
+_TOKEN_BUDGET_MEANING = (
+    "Total worker token budget across all requests, including input and output; "
+    "each request reserves estimated input/image/reasoning tokens plus the inherited "
+    "configured output allowance. This is not a per-response output cap. "
+    "Null adds no child token limit beyond the shared root budget.")
+
 _BUDGET_SCHEMA = {"type": "object", "additionalProperties": False,
     "properties": {"model_calls": {"type": "integer", "minimum": 1},
         "tool_calls": {"type": "integer", "minimum": 0},
         "seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
-        "tokens": {"type": ["integer", "null"], "minimum": 1}},
+        "tokens": {"type": ["integer", "null"], "minimum": 1,
+            "description": _TOKEN_BUDGET_MEANING + " An explicit value must exceed the configured "
+                "output allowance shown by mesh_worker_state and cover the actual request estimates."}},
     "required": ["model_calls", "tool_calls"]}
 _TASK_SCHEMA = {"type": "object", "additionalProperties": False,
     "properties": {"task_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"},
@@ -67,14 +75,14 @@ _TASK_SCHEMA = {"type": "object", "additionalProperties": False,
         "budget": _BUDGET_SCHEMA}, "required": ["task_id", "question", "budget"]}
 
 EXTRA_TOOLS = [
-    {"name": "delegate_mesh_workers", "description": "Ask any needed read-only mesh questions concurrently and wait for this batch. All workers use the coordinator's configured model and shared root budget. Only supplied tasks run; using workers is optional. Each task needs a unique stable ID and explicit model/tool allowance. Optional candidate is a frozen read-only source snapshot; observation_ids reuse parent mesh views. All admitted auxiliary inputs and declarations remain available. Reusing identical completed IDs reads their saved results; changed arguments/configuration/evidence are rejected. Null seconds/tokens add no child limit beyond root constraints. Workers cannot modify or finish the parent BIM.",
+    {"name": "delegate_mesh_workers", "description": "Ask any needed read-only mesh questions concurrently and wait for this batch. All workers use the coordinator's configured model and shared root budget. Only supplied tasks run; using workers is optional. Each task needs a unique stable ID and explicit model/tool allowance. Optional candidate is a frozen read-only source snapshot; observation_ids reuse parent mesh views. All admitted auxiliary inputs and declarations remain available. Reusing identical completed IDs reads their saved results; changed arguments/configuration/evidence are rejected. Null seconds/tokens add no child limit beyond root constraints. budget.tokens is a total input-plus-output allowance across requests, not an output cap. Inspect mesh_worker_state for the inherited output allowance; infeasible new tasks are rejected before input freezing and produce no observation evidence. Workers cannot modify or finish the parent BIM.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
          "tasks": {"type": "array", "minItems": 1, "items": _TASK_SCHEMA}}, "required": ["tasks"]}},
     {"name": "read_mesh_worker", "description": "Read a saved worker result and its frozen input/source basis. Optional view_ids return actual verified PNGs cited or observed by that worker (mesh_NNN, section_NNN, overlay_NNN or admitted image names). The coordinator judges whether snapshot advice applies to its current candidate; nothing is applied automatically.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
          "task_id": {"type": "string", "minLength": 1},
          "view_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": True}}, "required": ["task_id"]}},
-    {"name": "mesh_worker_state", "description": "Inspect mesh worker status, configured model, concurrency and shared remaining allowance. Counts distinguish parent and child tasks; saved advice is not a BIM quality verdict.",
+    {"name": "mesh_worker_state", "description": "Inspect mesh worker status, configured model, concurrency, inherited output allowance, minimum necessary task token budget and shared remaining allowance. The token minimum excludes actual input estimates and is not a guarantee that a request can start. Counts distinguish parent and child tasks; saved advice is not a BIM quality verdict.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {}}},
 ]
 MESH_WORKER_TOOL_NAMES = tuple(tool["name"] for tool in EXTRA_TOOLS)
@@ -189,6 +197,33 @@ class MeshWorkerTools:
             "low_output_limit_reason": self.low_output_limit_reason,
             "pricing": self.pricing.model_dump(mode="json") if self.pricing is not None else None}
 
+    def _token_budget_contract(self):
+        # Match Runtime's configured output allowance without changing the
+        # immutable configuration or lowering the requested model parameters.
+        output = self.parameters.get("max_tokens", self.parameters.get("max_completion_tokens"))
+        minimum = output + 1 if type(output) is int and output > 0 else None
+        return {"output_token_limit": output, "minimum_task_tokens": minimum,
+            "minimum_task_tokens_basis": "Necessary lower bound only: configured output allowance plus "
+                "at least one input token. Actual input/image/reasoning estimates and later requests "
+                "can require more; the shared runtime still checks and reserves the full request.",
+            "tokens_meaning": _TOKEN_BUDGET_MEANING}
+
+    def _new_task_budget_rejection(self, task):
+        contract = self._token_budget_contract()
+        tokens = task["budget"].get("tokens")
+        minimum = contract["minimum_task_tokens"]
+        if tokens is None or minimum is None or tokens >= minimum:
+            return None
+        return {"task_id": task["task_id"], "status": "rejected",
+            "reason_code": "worker_token_budget_infeasible", "stage": "budget_preflight",
+            "reason": f"budget.tokens={tokens} cannot cover inherited output_token_limit="
+                f"{contract['output_token_limit']} plus request input; the total must be strictly greater "
+                "than the output allowance. Use tokens=null to inherit root constraints or explicitly "
+                "budget for the full request estimates and planned calls. No allowance was changed.",
+            "budget": {"configured_task_tokens": tokens, **contract},
+            "admitted": False, "result": None, "model_calls": 0, "tool_calls": 0,
+            "meaning": "No worker started or observations were made; this rejection is not evidence."}
+
     def _child(self, task_id):
         if task_id in {self.store.task_id, self.store.root_task_id}:
             raise ValueError("worker ID cannot name the coordinator")
@@ -246,6 +281,9 @@ class MeshWorkerTools:
         else:
             if child.events:
                 raise ValueError("task ID belongs to a different existing task")
+            rejected = self._new_task_budget_rejection(task)
+            if rejected is not None:
+                return rejected
             now = time.time()
             seconds = task["budget"].get("seconds")
             deadline = now + seconds if seconds is not None else None
@@ -406,6 +444,7 @@ class MeshWorkerTools:
         remaining = max(0, self.limits.tool_calls - sum(event.payload.event_type == "tool_invocation"
             for event in self.store.all_events))
         return {"model": self.model, "route_id": self.route["route_id"], "max_concurrent": self.max_concurrent,
+            "token_budget": self._token_budget_contract(),
             "tasks": list(tasks.values()), "shared_budget_available": available, "shared_tool_calls_available": remaining,
             "scope": "worker advice only; completion and BIM quality remain separate"}
 

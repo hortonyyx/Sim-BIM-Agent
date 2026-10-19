@@ -56,7 +56,7 @@ COORDINATOR_ONLY_TOOL_NAMES = (
     "check_source_space_relation", "check_openings",
     "record_work_review", "finish_bim", "overlay_candidate", "revise_bim",
     "review_detail", "build_plan_bim", "assemble_plan_bim", "build_parametric_bim",
-    "inspect_parametric_plan", "build_bim", "view_elevation_candidate", "view_candidate",
+    "inspect_parametric_plan", "patch_parametric_bim", "build_bim", "view_elevation_candidate", "view_candidate",
     "prepare_elevation_reading", "apply_elevation_readings",
 )
 COORDINATOR_TOOL_NAMES = LOCAL_OBSERVER_TOOL_NAMES + COORDINATOR_ONLY_TOOL_NAMES

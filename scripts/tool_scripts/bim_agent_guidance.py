@@ -190,9 +190,17 @@ Original BLEND textures remain visible; transparent_composite pixels cannot be
 measured or counted as geometric matches. Use valid opaque pixels or original
 triangle sections, distinguishing a texture's visible area from its carrier faces.
 Use record_inference for assumptions and repeated templates with exceptions;
-build_parametric_bim expands the declaration, and inspect_parametric_plan plus
-audit_inference_candidate compare the saved spaces/openings to that declaration.
+build_parametric_bim expands the declaration. Use repeats for confirmed identical
+storeys and core_connections for their explicitly declared service stops, rather
+than writing each floor/connection again. Read get_bim_reference('parametric').
+inspect_parametric_plan returns the saved plan hash; patch_parametric_bim edits
+only changed declarations, including a rejected draft. audit_inference_candidate
+compares the saved spaces/openings to the declared scope.
 Check source counts, extents, connections and visible facades after assembly.
+Native-mesh saves return representative changed plan geometry and all located
+diagnostic floors. Role/evidence/note-only changes do not need another full stack
+of plans. Use inspect_candidate(candidate,floor_id,include_plan=true) for any
+unshown floor; omission from automatic feedback is not a fidelity verdict.
 For each identified lift service storey, include a hosted landing door connecting
 the floor's circulation to the continuous shaft. Reuse an evidenced landing layout
 as an explicit inference where details are missing; ground/top doors alone do not
@@ -215,6 +223,9 @@ independent questions can share a batch. There are no compulsory roles or stages
 Workers use your configured model, decoding settings and shared run allowance.
 Assign bounded task budgets and leave enough allowance for your synthesis, edits
 and final checks. A child's budget does not add to the root budget.
+tokens means cumulative input plus output, not only the answer length. An explicit
+total must exceed the inherited per-response output allowance before admission;
+that minimum alone does not cover input. null inherits the shared root allowance.
 
 Each task has a stable task_id, a question, optional notes, optional candidate
 snapshot and optional existing original-mesh observation_ids. The worker receives
@@ -1203,13 +1214,55 @@ For curved facades, explicitly locate windows on the chosen discretized chord;
 do not stretch one planar opening across multiple chord hosts. Different template
 instances may use different templates for exceptions without editing the repeated
 base. An optional top-level mesh_frame is preserved on the expanded candidate.
-Cross-instance connections are ordinary geometry.openings records with GLOBAL
-space_id/other_space_id and ABSOLUTE z (see geometry reference); not auto-created.
-The tool saves the compact plan and expanded proposal with each candidate. Use
-inspect_parametric_plan(candidate) to read/edit a template and resubmit the FULL
-compact plan. Preserve all reliable IDs/geometry/evidence and explain changes.
-A failed expansion is saved as parametric_drafts; a failed source build retains
-its candidate. Return feedback is a geometric check, not input fidelity approval.
+Cross-instance connections may still be ordinary geometry.openings records with
+GLOBAL space_id/other_space_id and ABSOLUTE z (see geometry reference).
+
+REPEATED STOREYS. Keep exceptional or continuous volumes in instances. Add repeats:
+[{"id":"office_run","template":"typical","id_prefix":"O","start":1,
+  "count":20,"id_padding":2,"z":8.4,"height":3.2,
+  "spanning_space_ids":["L1:shaft"],"source_refs":["declared repeat inference"]}].
+This creates O01..O20 at z+i*height. Increasing count expands in code; do not
+resubmit repeated geometry or enumerate each service door. Repetition is still
+your architectural judgment, not newly observed evidence. Total expanded
+instances must be 1..100. Optional exclude_ids names exceptional IDs; each must
+be supplied as a complete explicit instance. Exclusion keeps its position in the
+height sequence and removes it from that repeat's default service selection.
+No expressions, interpolated geometry or automatic matching are evaluated.
+Template spaces may include role_evidence using the existing role/basis/
+source_refs/assumptions contract; code copies it to the repeated spaces.
+
+CORE SERVICE CONNECTIONS. Add core_connections, for example:
+[{"id":"lift1","core_space_id":"L1:shaft","space":"hall",
+  "repeat_ids":["office_run"],"instance_ids":["special"],
+  "p1":[9,3],"p2":[9,4],"z":[0,2.1],
+  "source_refs":["observed landing reused as explicit inference"]}].
+repeat_ids/instance_ids select an explicit nonempty service set; use only IDs
+actually declared in this plan. The local space is INSTANCE:hall, the global
+core is unchanged, and z is relative to each service floor. Generated IDs are
+INSTANCE:core:lift1. The core must be a spanning member covering that entire
+floor; each generated aperture must pass the ordinary source host/height checks.
+Duplicate service declarations and an already explicit matching connection are
+rejected. Defaults kind=door,state=unknown; open passages require kind=open,state=open.
+An exceptional door layout uses a separate disjoint service selection. Equipment,
+roof and non-stopping floors are never inferred as stops merely by intersection.
+Unknown service is a question/assumption to resolve, not permission to stop everywhere.
+
+LOCAL PARAMETRIC REVISION. The saved compact plan and expanded source remain bound.
+inspect_parametric_plan(candidate=...) returns an exact/stale status, plan hash
+and summary; read pointer="/templates/typical" or full=true for details. Large
+values are paged by offset/next_offset. A failed declaration is readable using
+draft=the returned draft id instead of candidate. Apply add/replace/remove/test
+JSON Pointer operations with patch_parametric_bim and expected_plan_sha256;
+preserve reliable IDs/geometry/evidence and explain each change.
+For every add/replace/remove, include reason and nonempty source_refs, for example
+{"op":"replace","path":"/templates/typical/spaces/0/rect/2","value":6.2,
+ "reason":"Correct measured exterior extent","source_refs":["mesh_004 span"]}.
+Use inspect to find exact JSON Pointer array indices; never guess them. Never resend an
+entire unchanged plan just to move one coordinate. A generic revise_bim candidate
+can diverge from its ancestor's parametric plan: stale_lineage is reference only,
+and patch refuses to overwrite those later source edits silently. Keep template
+changes in the parametric path when they remain naturally expressible there.
+Return feedback is a geometric check, not input fidelity approval.
 """
 
 REFERENCES['source_curves'] = """Explicit curves for source_polygon_v1 only; metres, one XY frame.
