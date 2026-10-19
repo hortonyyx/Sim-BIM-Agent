@@ -44,4 +44,6 @@ Go按订阅记账，保留供应商实报tokens，不套Paratera单价、不生�
 
 2026-10-19连接修复与小图片/工具续接验收见[连接修复报告](../reports/2026-10-19_provider_connection_repair.md)。小请求成功不能证明此前长请求的EOF已彻底消失；本轮没有增加重试、超时或切换默认代理。
 
+随后按用户授权完成[原读图任务长请求复测](../reports/2026-10-19_reader_connection_retest.md)：新官方路径下，GLM平面及MiMo平面/北立面仍复现等待响应头时EOF，均早于450秒上限。Go长请求问题尚未解决；现有证据不能区分本机代理路径、网关或上游责任。
+
 官方依据：[Go端点、会话和模型说明](https://opencode.ai/v2/docs/console/go/)、[OpenCode模型元数据](https://models.dev/api.json)、[标准Responses工具循环](https://developers.openai.com/api/docs/guides/function-calling)、[无状态推理历史](https://developers.openai.com/api/docs/guides/reasoning)。
