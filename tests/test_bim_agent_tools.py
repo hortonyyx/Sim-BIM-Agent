@@ -1642,9 +1642,11 @@ class _ParametricFunctionToolkit:
             raise ValueError('unknown candidate')
         return path
 
-    def build(self, proposal, *, action, parent):
+    def build(self, proposal, *, action, parent, feedback_parent=None, architectural_regularization=None):
         from scripts.tool_scripts.bim_agent_saved_result import saved_result
-        self.calls.append(dict(proposal=proposal, action=action, parent=parent))
+        self.calls.append(dict(proposal=proposal, action=action, parent=parent,
+                               feedback_parent=feedback_parent,
+                               architectural_regularization=architectural_regularization))
         if self.reject:
             return saved_result({'error': 'synthetic source constraint',
                                  'error_stage': 'source_hard_constraints'}, audit_written=True)
@@ -1968,3 +1970,98 @@ def test_parametric_function_corrupt_state_is_a_structured_refusal(tmp_path, art
     path.write_text('[]', encoding='utf-8')
     state = inspect_parametric(toolkit, first['candidate'])
     assert state['status'] == 'stale' and not state['patch_allowed'] and 'object' in state['error']
+
+
+def test_parametric_function_failed_draft_chain_recovers_only_verified_feedback_parent(tmp_path):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    first = build_parametric(toolkit, json.dumps(_parametric_function_plan()))
+    failed = patch_parametric(toolkit, json.dumps([_parametric_function_op('remove', '/unresolved')]),
+        candidate=first['candidate'], expected_sha=first['parametric']['plan_sha256'])
+    failed_again = patch_parametric(toolkit, json.dumps([_parametric_function_op('remove', '/assumptions')]),
+        draft=failed['draft'], expected_sha=failed['plan_sha256'])
+    assert failed_again['saved_candidate'] is None
+    # An advisory state hint cannot replace the immutable patch ancestry.
+    path = (toolkit.run / failed_again['draft']).with_suffix('.state.json')
+    state = json.loads(path.read_bytes())
+    state['feedback_parent'] = {'candidate': 'candidate_999', 'source_file_sha256': '0'*64}
+    path.write_text(json.dumps(state), encoding='utf-8')
+    fixed = patch_parametric(toolkit, json.dumps([
+        _parametric_function_op('add', '/unresolved', ['unknown']),
+        _parametric_function_op('add', '/assumptions', ['explicit'])]),
+        draft=failed_again['draft'], expected_sha=failed_again['plan_sha256'])
+    assert fixed['saved_candidate'] == 'candidate_02', fixed
+    assert toolkit.calls[-1]['parent'] is None  # No fabricated source lineage.
+    reference = toolkit.calls[-1]['feedback_parent']
+    assert reference == {'candidate': first['candidate'], **{key: first['parametric'][key]
+        for key in ('plan_sha256', 'proposal_sha256', 'source_file_sha256')}}
+    assert fixed['parametric']['feedback_parent'] == reference
+
+
+@pytest.mark.parametrize('changed', ['source_model.json', 'parametric_plan.json', 'proposal.json'])
+def test_parametric_function_stale_feedback_ancestor_falls_back_without_blocking_draft_repair(tmp_path, changed):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    first = build_parametric(toolkit, json.dumps(_parametric_function_plan()))
+    failed = patch_parametric(toolkit, json.dumps([_parametric_function_op('remove', '/unresolved')]),
+        candidate=first['candidate'], expected_sha=first['parametric']['plan_sha256'])
+    original = toolkit.run / first['candidate'] / changed
+    original.write_bytes(original.read_bytes()+b' ')
+    fixed = patch_parametric(toolkit, json.dumps([_parametric_function_op('add', '/unresolved', ['unknown'])]),
+        draft=failed['draft'], expected_sha=failed['plan_sha256'])
+    assert fixed['saved_candidate'] == 'candidate_02', fixed
+    assert toolkit.calls[-1]['feedback_parent'] is None and toolkit.calls[-1]['parent'] is None
+    assert 'changed' in fixed['parametric']['feedback_parent_unavailable']
+
+
+def test_parametric_function_built_draft_uses_its_own_bound_source_not_older_ancestor(tmp_path):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, patch_parametric
+    toolkit = _ParametricFunctionToolkit(tmp_path / 'run')
+    first = build_parametric(toolkit, json.dumps(_parametric_function_plan()))
+    second = patch_parametric(toolkit, json.dumps([
+        _parametric_function_op('replace', '/instances/0/height', 4)]),
+        candidate=first['candidate'], expected_sha=first['parametric']['plan_sha256'])
+    reverted = patch_parametric(toolkit, json.dumps([
+        _parametric_function_op('replace', '/instances/0/height', 3)]),
+        draft=second['draft'], expected_sha=second['draft_sha256'])
+    assert reverted['saved_candidate'] == 'candidate_03'
+    assert toolkit.calls[-1]['parent'] is None
+    assert toolkit.calls[-1]['feedback_parent']['candidate'] == second['candidate']
+
+
+@pytest.mark.parametrize('yaw', [0, 17])
+def test_mesh_generic_metadata_revisions_keep_adopted_local_frame_and_current_role(tmp_path, monkeypatch, yaw):
+    import math
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, inspect_parametric
+    from tests.test_bim_agent_mesh import _prepare
+    _, run, _ = _prepare(tmp_path, monkeypatch)
+    toolkit = Toolkit(run)
+    value = _parametric_function_plan()
+    angle = math.radians(yaw)
+    def world(x, y):
+        return [.04+math.cos(angle)*x-math.sin(angle)*y,
+                .04+math.sin(angle)*x+math.cos(angle)*y]
+    ring = [world(0, 0), world(6.04, 0), world(6.04, 4.04), world(0, 4.04)]
+    value['schema_version'] = 'source_polygon_v1'
+    value['templates']['office']['footprint'] = ring
+    room = value['templates']['office']['spaces'][0]
+    room.pop('rect')
+    room['polygon'] = ring
+    value['modelling'] = {'frames': [{'id': 'wing', 'origin': [.04, .04],
+        'yaw_degrees': yaw, 'templates': ['office']}]}
+    first = build_parametric(toolkit, json.dumps(value))
+    assert first['source_geometry_ready'], first
+    initial = json.loads((run/first['candidate']/'source_model.json').read_bytes())
+    second = toolkit.revise(first['candidate'], json.dumps([{'op': 'set_space_role',
+        'space_id': 'A:room', 'role': 'meeting', 'basis': 'inferred', 'assumptions': ['Use is inferred'],
+        'reason': 'explicit use hypothesis', 'source_refs': ['fixture']}]))
+    assert second['source_geometry_ready'], second
+    third = toolkit.revise(second['candidate'], json.dumps([{'op': 'set_notes',
+        'assumptions': ['text-only follow-up'], 'unresolved': ['interiors unknown']}]))
+    assert third['source_geometry_ready'], third
+    for built in (second, third):
+        current = json.loads((run/built['candidate']/'source_model.json').read_bytes())
+        for actual, expected in zip(current['spaces'][0]['polygon'], initial['spaces'][0]['polygon']):
+            assert actual == pytest.approx(expected, abs=1e-9, rel=0)
+        assert current['spaces'][0]['role'] == 'conference/meeting/multipurpose'
+        assert not inspect_parametric(toolkit, built['candidate'])['exact_plan']

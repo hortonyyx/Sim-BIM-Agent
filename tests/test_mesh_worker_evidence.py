@@ -93,6 +93,18 @@ def test_packet_copies_only_admitted_bytes_and_one_optional_candidate(prepared):
     verify_mesh_worker_packet(packet, parent, child)
 
 
+def test_worker_receives_the_same_adopted_architectural_scale(prepared):
+    toolkit, _ = prepared
+    path = toolkit.run/'inputs.json'
+    manifest = json.loads(path.read_bytes())
+    policy = {'schema_version':'1', 'grid_m':0.1, 'simplification_tolerance_m':0.3}
+    manifest['architectural_modelling_policy'] = policy
+    _write(path, manifest)
+    parent, child, packet = _packet(prepared)
+    assert json.loads((child/'inputs.json').read_bytes())['architectural_modelling_policy'] == policy
+    verify_mesh_worker_packet(packet, parent, child)
+
+
 def test_packet_resume_is_immutable_and_unrelated_candidate_does_not_invalidate(prepared):
     parent, child, packet = _packet(prepared, candidate=True)
     (parent / "candidate_99").mkdir()

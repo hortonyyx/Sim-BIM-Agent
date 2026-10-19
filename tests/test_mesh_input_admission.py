@@ -76,6 +76,8 @@ def test_mixed_configuration_reaches_shared_runtime_and_freezes_only_authorized_
     manifest = json.loads((run / "inputs.json").read_bytes())
     assert manifest["source_input_mode"] == "native_mesh_with_images_with_building_declaration"
     assert "lite_bim_grid_step_m" not in manifest
+    assert manifest['architectural_modelling_policy'] == {
+        'schema_version':'1', 'grid_m':0.1, 'simplification_tolerance_m':0.3}
     assert manifest["input_contents"]["ground_truth_or_evaluation"] == {"included": False}
     assert set(manifest["images"]) == {"1f.png"}
     assert manifest["floor_plan_images"] == ["1f.png"]

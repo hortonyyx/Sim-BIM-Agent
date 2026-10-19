@@ -17,7 +17,7 @@ from src.agent.geometry.parametric_proposal import expand_parametric_proposal
 
 PATCH_ROOTS = frozenset({"templates", "instances", "repeats", "connections",
     "core_connections", "assumptions", "unresolved", "schema_version",
-    "mesh_frame", "boundary_curves"})
+    "mesh_frame", "boundary_curves", "modelling"})
 _DRAFT = re.compile(r"draft_[0-9]+\.json\Z")
 
 
@@ -131,6 +131,9 @@ def _current_state(toolkit, candidate):
         raise ValueError("parametric candidate state changed after binding")
     if _load(draft.read_bytes()) != _load((folder / "parametric_plan.json").read_bytes()):
         raise ValueError("candidate plan does not match its admitted draft")
+    if state.get("architectural_regularization") is not None:
+        from scripts.tool_scripts.bim_agent_architectural import validate_parametric_regularization
+        validate_parametric_regularization(toolkit, state)
     return state
 
 
@@ -195,7 +198,60 @@ def _failure(toolkit, action, error, *, state=None, stage="parametric_input"):
     return result
 
 
-def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None):
+def _feedback_parent(toolkit, state, candidate):
+    """Resolve feedback ancestry through immutable patch audits, never draft hints.
+
+    A failed draft can still be repaired if its former rendered baseline changed.
+    Such a baseline is only an optimization: return a miss instead of trusting it
+    or weakening the exact plan used for the patch itself.
+    """
+    try:
+        cursor, seen = state, set()
+        for _ in range(100):
+            if candidate:
+                current = _current_state(toolkit, candidate)
+                if current is None or current.get("source_file_sha256") is None:
+                    raise ValueError("feedback ancestor has no exact saved source")
+                for key in ("plan_sha256", "proposal_sha256", "source_file_sha256"):
+                    if cursor.get(key) != current.get(key):
+                        raise ValueError(f"feedback ancestor binding changed: {key}")
+                return {"candidate": candidate, **{key: current[key] for key in
+                    ("plan_sha256", "proposal_sha256", "source_file_sha256")}}, None
+            draft = cursor["draft"]
+            if draft in seen:
+                raise ValueError("cyclic parametric feedback ancestry")
+            seen.add(draft)
+            # An explicitly selected built draft has its own most recent source.
+            # Verify its reciprocal binding instead of skipping to an older patch
+            # ancestor (which could hide a reversal of the last geometry edit).
+            if cursor.get("candidate") and cursor.get("candidate_binding_file"):
+                current = _current_state(toolkit, cursor["candidate"])
+                if (current is None or current.get("draft") != draft or
+                        current.get("draft_sha256") != cursor["plan_sha256"]):
+                    raise ValueError("feedback draft candidate binding changed")
+                if current.get("source_file_sha256") is not None:
+                    candidate, cursor = cursor["candidate"], current
+                    continue
+            patch = cursor.get("patch")
+            if not patch:
+                return None, None
+            audit = _load(_inside(toolkit, Path(toolkit.run) / patch["file"]).read_bytes())
+            if audit.get("new_draft_sha256") != cursor["plan_sha256"]:
+                raise ValueError("feedback patch does not bind the repaired draft")
+            base = audit["base"]
+            if base.get("candidate"):
+                candidate, cursor = base["candidate"], base
+            else:
+                cursor = _draft_state(toolkit, _draft(toolkit, base["draft"]))
+                if cursor["plan_sha256"] != base["plan_sha256"]:
+                    raise ValueError("feedback ancestor draft bytes changed")
+        raise ValueError("parametric feedback ancestry exceeds 100 drafts")
+    except (ValueError, TypeError, KeyError, OSError) as error:
+        return None, str(error)
+
+
+def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
+           feedback_parent=None, feedback_parent_error=None):
     if getattr(toolkit, "readonly", False):
         return _failure(toolkit, action, "parametric writes are unavailable in readonly mode")
     if not isinstance(plan_json, str):
@@ -209,16 +265,33 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None):
         state["base"] = base
     if patch:
         state["patch"] = patch
+    if feedback_parent:
+        state["feedback_parent"] = feedback_parent
+    if feedback_parent_error:
+        state["feedback_parent_unavailable"] = feedback_parent_error
     _write(path.with_suffix(".state.json"), state)
     try:
         plan = _load(plan_json)
-        proposal = expand_parametric_proposal(plan)
+        from scripts.tool_scripts.bim_agent_architectural import prepare_parametric_plan
+        compiled_plan, regularization = prepare_parametric_plan(toolkit, plan, draft_path=path)
+        if regularization is not None:
+            state["architectural_regularization"] = regularization
+        proposal = expand_parametric_proposal(compiled_plan)
     except (ValueError, TypeError, KeyError) as error:
         state.update(status="invalid_plan", error=str(error))
+        if isinstance(getattr(error, "audit", None), dict):
+            state["regularization_failure"] = error.audit
+        if isinstance(getattr(error, "audit_reference", None), dict):
+            state["regularization_failure_reference"] = error.audit_reference
         _write(path.with_suffix(".state.json"), state)
         return _failure(toolkit, action, error, state=state, stage="parametric_expansion")
     try:
-        result = toolkit.build(proposal, action=action, parent=parent)
+        options = {}
+        if feedback_parent is not None:
+            options["feedback_parent"] = feedback_parent
+        if regularization is not None:
+            options["architectural_regularization"] = regularization
+        result = toolkit.build(proposal, action=action, parent=parent, **options)
     except (ValueError, TypeError, KeyError) as error:
         state.update(status="build_rejected", error=str(error))
         _write(path.with_suffix(".state.json"), state)
@@ -234,6 +307,12 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None):
             "source_file_sha256": (_sha(folder / "source_model.json")
                                    if (folder / "source_model.json").is_file() else None),
             "base": base, "patch": patch, "fidelity": "not_evaluated"}
+        if feedback_parent is not None:
+            binding["feedback_parent"] = feedback_parent
+        if feedback_parent_error:
+            binding["feedback_parent_unavailable"] = feedback_parent_error
+        if regularization is not None:
+            binding["architectural_regularization"] = regularization
         if binding["source_file_sha256"] is None:
             binding["status"] = "unbuilt"
         _write(folder / "parametric_state.json", binding)
@@ -380,7 +459,9 @@ def inspect_parametric(toolkit, candidate: str = "", *, draft: str = "",
                   "plan_sha256": state["plan_sha256"], "patch_allowed": True,
                   "fidelity": "not_evaluated"}
         result["lineage"] = {key: state[key] for key in
-                             ("base", "patch", "proposal_sha256", "source_file_sha256") if key in state}
+                             ("base", "patch", "proposal_sha256", "source_file_sha256",
+                              "feedback_parent", "feedback_parent_unavailable",
+                              "architectural_regularization") if key in state}
         if pointer is not None or full:
             pointer = pointer if pointer is not None else ""
             result.update(_selection(_select(plan, _tokens(pointer)), pointer, max_chars, offset))
@@ -463,6 +544,7 @@ def patch_parametric(toolkit, operations_json: str, *, candidate: str = "", draf
         operations = _load(operations_json)
         updated = _apply(plan, operations)
         encoded = _json(updated)
+        feedback_parent, feedback_error = _feedback_parent(toolkit, state, parent)
     except (ValueError, TypeError, KeyError, OSError) as error:
         return _failure(toolkit, action, error)
     base = {"candidate": candidate or None, "draft": state["draft"],
@@ -474,4 +556,5 @@ def patch_parametric(toolkit, operations_json: str, *, candidate: str = "", draf
     path = _new_path(toolkit, "parametric_patches", "patch")
     _write(path, record)
     patch = {"file": _relative(toolkit, path), "sha256": _sha(path)}
-    return _build(toolkit, encoded, action=action, base=base, patch=patch, parent=parent)
+    return _build(toolkit, encoded, action=action, base=base, patch=patch, parent=parent,
+                  feedback_parent=feedback_parent, feedback_parent_error=feedback_error)

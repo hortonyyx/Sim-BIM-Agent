@@ -2,6 +2,18 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_architectural_regularization.py": {
+      "group": "targeted",
+      "reason": "Local supporting-line and shared-height architectural adoption with preserved topology and semantic narrow-space handling"
+    },
+    "tests/test_mesh_architectural_policy.py": {
+      "group": "targeted",
+      "reason": "New mesh policy admission, original/adopted audit binding, generic and parametric construction and historical policy boundaries"
+    },
+    "tests/test_source_contacts_performance.py": {
+      "group": "targeted",
+      "reason": "Contact invariant reuse is exactly equivalent to original geometry and topology including oblique and tolerance cases"
+    },
     "tests/test_mesh_feedback_selection.py": {
       "group": "targeted",
       "reason": "Source geometry based repeated-floor feedback selection, incremental views and on-demand complete access"

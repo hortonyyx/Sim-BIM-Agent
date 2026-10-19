@@ -50,6 +50,11 @@ Before directly describing auxiliary PNG evidence, call view_image (optionally
 with box). Admission alone does not establish that you have viewed an image.
 You may return only uncertainty when the question cannot be established.
 Respect task_limits and remaining root allowance; your task creates no budget.
+Reserve a model response for the structured answer. Once the bounded question has
+enough evidence, return the useful conclusion with remaining uncertainty; do not
+spend the final request on another optional crop, measurement or fine-detail check.
+Answer the assigned discrepancy at the coordinator's architectural scale rather
+than expanding the assignment into a full building audit.
 """
 
 _TOKEN_BUDGET_MEANING = (

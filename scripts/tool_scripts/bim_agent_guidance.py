@@ -180,6 +180,12 @@ Use inspect_mesh/view_mesh for the admitted native asset, keeping its metric
 frame and camera metadata. Prepared images use their supplied projection, not
 an invented plan scale. Observe the building envelope and opening patterns;
 record missing interiors as architectural inference at the requested detail.
+Start with main masses, shared storey datums and a typical-floor declaration;
+add only significant setbacks and evidenced aperture/service exceptions. New mesh
+runs use architectural_modelling_policy: 10 cm adopted main parameters in local
+reference frames, with original observations and adoption audits preserved.
+Derived oblique intersections need not lie on a global XY grid. Read the
+parametric reference for the optional modelling declaration and rejection repair.
 view_mesh_section intersects original triangles at a declared height; use it for
 local footprints, offsets or setbacks. A section describes mesh surfaces, not
 interior rooms. compare_mesh_source_pixels reports first-surface correspondences
@@ -223,6 +229,9 @@ independent questions can share a batch. There are no compulsory roles or stages
 Workers use your configured model, decoding settings and shared run allowance.
 Assign bounded task budgets and leave enough allowance for your synthesis, edits
 and final checks. A child's budget does not add to the root budget.
+Ask for a short usable conclusion as soon as the assigned uncertainty is resolved;
+reserve allowance for that answer. Do not ask a worker to complete a whole-building
+audit when one facade or one specific discrepancy will answer the question.
 tokens means cumulative input plus output, not only the answer length. An explicit
 total must exceed the inherited per-response output allowance before admission;
 that minimum alone does not cover input. null inherits the shared root allowance.
@@ -1060,8 +1069,12 @@ absent volume. A plausible completion may combine cut remnants, adjoining face
 directions, texture, repeated facade patterns, local sections and architectural
 context. State why the completion is preferred and retain viable uncertainty.
 When several interpretations fit the available evidence equally well, prefer the
-simpler useful one. Simplicity does not authorize dropping observed spaces, wall
-strips, openings or building parts.
+simpler useful one. Preserve real spaces, separating walls, apertures, shafts and
+major setbacks. Minor facade relief, trim or roof blades can be explicitly omitted
+or represented as detail evidence at the requested scale; do not invent a narrow
+room or equipment space merely to display a geometry-only solid. Component
+thickness metadata does not create that solid. Record the simplification and its
+scope instead of assigning a fictitious room use.
 
 Use observed metric extents where they are reliable. Within noisy or incomplete
 evidence, choose reasonable architectural dimensions and regularize consistently,
@@ -1126,6 +1139,18 @@ longest shared wall, put every door at its midpoint or use a fixed offset for ev
 building. A door connects already distinct spaces and must not substitute for a
 missing or invented partition. Door sizes, states and positions without direct
 evidence remain architectural inferences.
+
+SCALE AND SIMPLIFICATION. Adopt main dimensions, shared reference offsets and
+heights on the run's 0.1 m architectural scale. Preserve measured values as
+observations; the program keeps the adopted copy and its audit. Align compatible
+major roofs/storey datums and reuse one storey height for a repeated range.
+Start from a simple envelope; variations below roughly 0.3 m are candidates for
+omission/alignment when they change no meaningful outline, opening, gap or space
+relationship. This is not an automatic merge distance. Protect genuine narrow
+shafts, cabinets, entrance recesses and actual wall/gap identities. Explicitly
+declare meaningful exceptions; do not chase millimetre bumps to clear a numeric
+residual. Geometry and host rejection must be repaired, but unreviewed metadata
+and optional fine detail do not require another full modelling cycle.
 
 ASSEMBLY AND REVISION. build_parametric_bim can expand explicit storey/space
 templates and aperture spans; read get_bim_reference('parametric') for its contract.
@@ -1247,6 +1272,44 @@ An exceptional door layout uses a separate disjoint service selection. Equipment
 roof and non-stopping floors are never inferred as stops merely by intersection.
 Unknown service is a question/assumption to resolve, not permission to stop everywhere.
 
+ARCHITECTURAL ADOPTION. New native-mesh manifests declare
+architectural_modelling_policy={"schema_version":"1","grid_m":0.1,
+"simplification_tolerance_m":0.3}. The tool regularizes main supporting-line
+offsets and vertical levels before expanding repeats; original plans/observations,
+the adopted copy and audit remain separately bound. Historical runs without this
+policy keep their recorded behavior. Do not round every world vertex yourself.
+Optional plan.modelling adds explicit construction context, for example:
+{"frames":[{"id":"wing","origin":[10,20],"yaw_degrees":17,
+"templates":["typical"]}],"vertical":{"datum_m":0},
+"space_intents":{"typical:shaft":"shaft"}}.
+Template coordinates are still source XY: a frame describes the local rulers
+used for adoption, not another transform to apply to the input. Omitted templates
+use the source identity frame. mesh_frame stays the independent source-to-input
+relation. Shared parallel supporting lines use shared offsets; oblique intersections
+retain derived decimals. Existing opening endpoints follow their same host.
+An acute corner whose derived movement exceeds one grid step rejects instead of
+silently magnifying a small line adjustment into a large envelope change.
+Curved-template XY and narrow-width checks are explicitly not_assessed, preserving
+declared curves; normal source checks still apply. Thickness attributes are separate.
+For a justified common roof level, vertical.merge_groups accepts
+[{"id":"roof","semantic":"one simplified plant roof level","targets":[
+{"kind":"instance","id":"R1","edge":"top"},
+{"kind":"instance","id":"R2","edge":"top"}]}].
+Kinds instance/repeat and edges base/top refer to declared ranges; repeat top is
+its entire range end. Compatible uses/edge meanings and the 0.3 m cap are checked.
+A repeated range keeps one grid-aligned height: if accumulated change would move
+its main endpoint by over one grid step, resolve the intended main levels once;
+do not hide the residual in a thin storey. Real volume contacts/gaps are preserved.
+space_intents accepts room/shaft/cabinet/component. Narrow geometry-only
+blade/parapet spaces require a semantic correction or an explicit omission;
+component is a diagnostic intent, not a supported solid-component constructor.
+Never widen/delete a genuine shaft simply to clear this diagnostic.
+Generic build/revise applies the same policy to floor footprints/cells (or the
+existing explicit common footprint_x/y rectangle),
+retaining IDs and current edits. Local frame context follows a bound parent.
+Ambiguous hosts, absent footprint declarations or stale component bindings
+reject with an audit; use an explicit parametric declaration for those cases.
+
 LOCAL PARAMETRIC REVISION. The saved compact plan and expanded source remain bound.
 inspect_parametric_plan(candidate=...) returns an exact/stale status, plan hash
 and summary; read pointer="/templates/typical" or full=true for details. Large
@@ -1262,6 +1325,10 @@ entire unchanged plan just to move one coordinate. A generic revise_bim candidat
 can diverge from its ancestor's parametric plan: stale_lineage is reference only,
 and patch refuses to overwrite those later source edits silently. Keep template
 changes in the parametric path when they remain naturally expressible there.
+Resolve all currently known actionable changes in one patch, then compare the
+actual saved source. A repair to a failed draft retains its last hash-bound valid
+feedback baseline. Repeated equal diagnostics can share a representative plan;
+all affected IDs and complete findings remain in the saved selection record.
 Return feedback is a geometric check, not input fidelity approval.
 """
 

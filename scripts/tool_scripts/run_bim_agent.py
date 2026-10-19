@@ -1357,10 +1357,34 @@ class Toolkit:
 
     def build(self, proposal, *, action="build_bim", parent=None, operations=None,
               plan_input=None, calibration=None, claim_application=None,
-              plan_assembly=None, assembly_calibrations=None):
+              plan_assembly=None, assembly_calibrations=None, feedback_parent=None,
+              architectural_regularization=None):
+        started = checkpoint = time.perf_counter()
+        build_timings = {}
+        def stage(name):
+            nonlocal checkpoint
+            now = time.perf_counter()
+            build_timings[name] = now - checkpoint
+            checkpoint = now
         from src.agent.execution.source_proposal import export_source_proposal
         from scripts.tool_scripts.bim_agent_saved_result import saved_result, saved_source_result
         from scripts.tool_scripts.bim_agent_regularization import reject_source_proposal
+        from scripts.tool_scripts.bim_agent_architectural import (
+            prepare_source_proposal, validate_build_regularization)
+        try:
+            if architectural_regularization is not None:
+                validate_build_regularization(self, proposal, architectural_regularization)
+            else:
+                proposal, architectural_regularization = prepare_source_proposal(self, proposal, parent=parent)
+        except ValueError as error:
+            rejection = {"source_geometry_ready": False, "status": "rejected",
+                         "error": str(error), "stage": "architectural_regularization"}
+            if hasattr(error, "audit"):
+                rejection["architectural_diagnostics"] = error.audit
+            if hasattr(error, "audit_reference"):
+                rejection["architectural_audit"] = error.audit_reference
+            self.log(action, rejection)
+            return saved_result(rejection, audit_written=True)
         rejection = reject_source_proposal(
             self, proposal, plan_assembly=plan_assembly, parent=parent)
         if rejection is not None:
@@ -1391,13 +1415,19 @@ class Toolkit:
             provenance["claim_application"] = claim_application
         if plan_assembly is not None:
             provenance["plan_assembly"] = plan_assembly
+        if architectural_regularization is not None:
+            provenance["architectural_regularization"] = architectural_regularization
+        stage("admission_seconds")
         report = export_source_proposal(proposal, self.run/candidate, provenance=provenance,
             mesh_path=self.run/'assets'/'input.glb' if proposal.get('mesh_frame') else None)
+        stage("export_seconds")
         if operations is not None:
             dump(self.run/candidate/"operations.json", operations)
         result = {"candidate": candidate, "remaining_seconds": self.remaining_seconds(), **report,
                   "candidate_budget": self.candidate_budget(),
                   "input_view_status": self.input_view_status()}
+        if architectural_regularization is not None:
+            result["architectural_regularization"] = architectural_regularization
         if plan_assembly is not None:
             result["plan_assembly"] = plan_assembly
         if plan_input is not None:
@@ -1432,8 +1462,11 @@ class Toolkit:
                 result["space_relation_revalidation"] = self.revalidate_space_relations(
                     parent, candidate, source)
             from scripts.tool_scripts.bim_agent_precision import building_precision
+            stage("inventories_and_revalidation_seconds")
             result["building_precision"] = building_precision(self, candidate, source)
+            stage("building_precision_seconds")
             projections, errors = self.project_registered_calibrations(candidate, action)
+            stage("projection_seconds")
             result["source_image_projections"] = projections
             result["projection_errors"] = errors
             result["source_plan_views"], result["source_plan_errors"] = [], []
@@ -1444,21 +1477,43 @@ class Toolkit:
                 previous_path = self.candidate_path(parent)/'source_model.json' if parent else None
                 previous = (json.loads(previous_path.read_bytes())
                             if previous_path is not None and previous_path.is_file() else None)
+                comparison_error = None
+                # Feedback ancestry is not a geometry-edit parent.  A repaired
+                # failed draft may still compare with its last bound source.
+                if feedback_parent is not None:
+                    try:
+                        comparison = self.candidate_path(feedback_parent['candidate'])
+                        for name, field in (("source_model.json", "source_file_sha256"),
+                                            ("proposal.json", "proposal_sha256"),
+                                            ("parametric_plan.json", "plan_sha256")):
+                            if digest(comparison/name) != feedback_parent[field]:
+                                raise ValueError(f"feedback parent {name} binding changed")
+                        previous = json.loads((comparison/'source_model.json').read_bytes())
+                    except (OSError, ValueError, TypeError, KeyError) as error:
+                        previous = None
+                        comparison_error = str(error)
                 # Projection metadata already validated the registered frames.
                 # Re-reading optional calibration files could turn a saved BIM
                 # into an exception after their errors were safely reported.
                 preferred = [row['floor_id'] for row in projections if isinstance(row.get('floor_id'), str)]
                 precision = result['building_precision']
                 selection = select_plan_feedback(source, previous, preferred_floor_ids=preferred,
+                    view_context_by_floor={floor['id']: [row for row in projections
+                        if row.get('floor_id') == floor['id']] for floor in source['floors']},
                     additional_findings=[*precision.get('items', []),
                         *precision.get('wall_placement', {}).get('items', []),
                         *precision.get('evidence_errors', []), *errors])
                 if parent and previous is None:
                     selection['parent_source_unavailable'] = parent
+                if feedback_parent is not None:
+                    selection['feedback_parent'] = feedback_parent
+                if comparison_error:
+                    selection['feedback_parent_unavailable'] = comparison_error
                 selection['read_any_floor']['arguments']['candidate'] = candidate
                 dump(self.run/candidate/'plan_feedback_selection.json', selection)
                 result['source_plan_selection'] = selection
                 feedback_floors = selection['selected_floor_ids']
+            stage("feedback_selection_seconds")
             for floor_id in feedback_floors:
                 try:
                     _, metadata = self.plan_view(candidate, floor_id)
@@ -1466,6 +1521,9 @@ class Toolkit:
                 except Exception as error:
                     result["source_plan_errors"].append({"candidate": candidate,
                         "floor_id": floor_id, "error": str(error)})
+            stage("plan_views_seconds")
+        result["build_timings"] = {**build_timings, "total_seconds": time.perf_counter() - started}
+        dump(self.run/candidate/'build_timings.json', result["build_timings"])
         saved_source_result(self.run, result, parent=parent)
         self.log(action, result)
         return result
@@ -1532,10 +1590,10 @@ class Toolkit:
         return result
 
     def plan_view(self, candidate, floor_id):
-        from src.agent.geometry.source_plan_view import render_source_plan
+        from scripts.tool_scripts.bim_agent_view_selection import render_source_plan_cached
         path = self.candidate_path(candidate)
         source = json.loads((path / "source_model.json").read_bytes())
-        pic, metadata = render_source_plan(source, floor_id)
+        pic, metadata = render_source_plan_cached(source, floor_id, self.run/'plan_view_cache')
         # Public floor ordinals are unique and safe as filenames; source floor
         # identity remains in the metadata and every tool argument.
         stem = "plan_" + metadata["floor_name"]

@@ -10,6 +10,7 @@
 
 ## 产品与质量
 
+- 2026-10-20按用户授权完成mesh建筑尺度/简化与提效迭代后收工：一次6.1 Sol/high复盘，主参数0.1m局部参考线规整、窄体量语义检查、显式标高简化、失败draft反馈基线与内容绑定渲染缓存。公共接触计算缓存不变量后，同进程c08离线source构建61.669→4.513s且source/display精确相等；不是整案提速成绩。独审发现的局部参考系丢失与锐角位移放大均修复，正式入口公共轮廓兼容也修复并复验记录在交接。原run保留，0新完整建模、桌面未发布；当前唯一交接见[roadmap](project/roadmap.md)。下文“尚未实现/待再测”是早期状态，实际以最新交接为准。
 - BIM Agent = work model + harness；harness = runtime + domain。runtime 与建筑无关；domain 含 BIM rules、kernel、tools、methods、roles、guidance。
 - 统一产出源 BIM；还原、部分推理、完全推理按信息充分程度区分，不拆成三套产品。
 - 当前 domain 按可复用能力组织，入口见 [domain 导航](../src/agent/README.md)；旧阶段管线与资源在 legacy，不作为新任务的步骤或 skills。

@@ -10,6 +10,7 @@ EnergyPlus graph. The product model is `work model + runtime + domain`.
 | Deterministic geometry and relationships | [geometry](geometry/__init__.py) |
 | Declared curve approximation and courtyard footprints | [source curves](geometry/source_curves.py), [shared parametric templates](geometry/parametric_proposal.py) |
 | Explicit repeated floors and core service connections | [parametric expansion](geometry/parametric_proposal.py); declared exceptions, service sets and role evidence |
+| Architectural parameter adoption | [local-frame regularization](geometry/architectural_regularization.py), [run-bound artifacts](../../scripts/tool_scripts/bim_agent_architectural.py); new mesh runs adopt main parameters at 0.1 m, preserving source observations, host identities and real gaps |
 | Saved parameter inspection and local revision | [parametric drafts and patches](../../scripts/tool_scripts/bim_agent_parametric.py); hash-bound exact plans, paged references and explicit patches |
 | Changed representative plan feedback | [plan selection](../../scripts/tool_scripts/bim_agent_view_selection.py); native mesh and parametric builds, all diagnostic floors retained |
 | Original mesh sections and same-view geometry comparison | [sections](geometry/mesh_section.py), [correspondence](geometry/mesh_correspondence.py) |
@@ -38,6 +39,12 @@ Repeated instance ranges and core connections expand declared service sets only.
 Generic source revisions can diverge from a parameter plan: ancestor plans then
 remain readable references, not exact editable state. Unshown plans can be rendered
 on demand; representative feedback does not certify source-input fidelity.
+Failed parameter drafts retain a verified feedback comparison baseline without
+changing their source-edit ancestry. Equal single-floor diagnostics can share a
+plan representative while retaining every affected ID. A content-bound PNG cache
+reuses rendering only; all source geometry and relationship checks still run.
+Source contact discovery reuses per-boundary invariants within one build; it does
+not reuse old contact verdicts or change pair order/tolerances.
 Simple polygon prisms use the explicit source_polygon_v1 contract with the same
 source builder and viewer. Declared circular arcs use a bounded chord approximation
 with retained provenance, and floor footprints can contain courtyard holes covered

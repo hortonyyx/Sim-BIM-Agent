@@ -231,6 +231,10 @@ def prepare_bim_inputs(run: Path, *, images_path: Path | None, mesh_path: Path |
             "and one unverified saved pixel-plan declaration; no old source BIM, report, GT or evaluation"
         )
     if mesh_input:
+        from src.agent.geometry.architectural_regularization import DEFAULT_ARCHITECTURAL_POLICY
+        # Run policy is independent of the global-XY drawing grid.  Rotated
+        # walls retain derived intersection coordinates in the mesh path.
+        manifest['architectural_modelling_policy'] = dict(DEFAULT_ARCHITECTURAL_POLICY)
         manifest['mesh_input'] = mesh_input
         manifest['input_contents']['original_mesh'] = {'included': True, 'sha256': mesh_input['sha256']}
         manifest['only_input'] = ('Admitted original GLB and optional original PNGs, explicit building '
@@ -247,6 +251,49 @@ def prepare_bim_inputs(run: Path, *, images_path: Path | None, mesh_path: Path |
         proposal = json.loads(raw)
         manifest["seed"] = {"candidate": "seed", "proposal_sha256":hashlib.sha256(raw).hexdigest(),
                             "source":str(seed_path.resolve()), "mode":"previous_generated_proposal_recovery"}
+        if 'architectural_modelling_policy' in manifest:
+            from src.agent.geometry.architectural_regularization import (
+                ArchitecturalRegularizationError, regularize_architectural_proposal)
+            # A recovery seed imports a proposal, never trusted old audits or
+            # a local-frame binding from another run. Do not silently refit it.
+            audit_path = run/'seed_architectural_admission.json'
+            try:
+                adopted, admission = regularize_architectural_proposal(
+                    proposal, policy=manifest['architectural_modelling_policy'])
+            except ArchitecturalRegularizationError as error:
+                dump(audit_path, error.audit)
+                raise ValueError('saved mesh proposal needs architectural adoption; '
+                                 'see seed_architectural_admission.json; original seed unchanged') from error
+            def explicit_cells(geometry):
+                value = json.loads(json.dumps(geometry))
+                for floor in value['floors']:
+                    if not floor.get('footprint'):
+                        x0, x1 = value['footprint_x']
+                        y0, y1 = value['footprint_y']
+                        floor['footprint'] = {'vertices':[[x0,y0],[x1,y0],[x1,y1],[x0,y1]]}
+                    for cell in floor['cells']:
+                        if not cell.get('polygon') and not cell.get('boundary_path'):
+                            x0, x1 = cell['x']
+                            y0, y1 = cell['y']
+                            cell['polygon'] = [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]
+                        if cell.get('polygon'):
+                            cell['x'] = [min(p[0] for p in cell['polygon']), max(p[0] for p in cell['polygon'])]
+                            cell['y'] = [min(p[1] for p in cell['polygon']), max(p[1] for p in cell['polygon'])]
+                return value
+            unchanged = (explicit_cells(adopted['geometry']) == explicit_cells(proposal['geometry'])
+                         and 'modelling' not in proposal)
+            admission['recovery_geometry_unchanged'] = unchanged
+            dump(audit_path, admission)
+            if not unchanged:
+                raise ValueError('saved mesh proposal would change under the new architectural policy; '
+                                 'submit an explicit new declaration with its local frame instead; '
+                                 'see seed_architectural_admission.json; original seed unchanged')
+            manifest['seed']['architectural_admission'] = {
+                'file': audit_path.name, 'sha256': digest(audit_path), 'status': 'unchanged'}
+        if mesh_input and proposal.get('mesh_frame'):
+            from src.agent.geometry.mesh_bim_frame import validate_mesh_frame
+            if validate_mesh_frame(proposal['mesh_frame'])['mesh_sha256'] != mesh_input['sha256']:
+                raise ValueError('seed mesh_frame must refer to the admitted original mesh')
         from src.agent.execution.source_proposal import export_source_proposal
         report = export_source_proposal(proposal, run/"seed", provenance=manifest["seed"])
         if not (run/"seed"/"source_model.json").exists():

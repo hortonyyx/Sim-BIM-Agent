@@ -1,6 +1,7 @@
 """Mesh plan feedback is bounded by actual changed geometry, never floor count."""
 import copy
 import json
+import pytest
 
 from scripts.tool_scripts.bim_agent_view_selection import plan_signature, select_plan_feedback
 from scripts.tool_scripts.run_bim_agent import Toolkit
@@ -136,3 +137,134 @@ def test_source_geometry_and_membership_changes_are_not_mistaken_for_labels(tmp_
     current=copy.deepcopy(source)
     current['floors'][0]['z_floor']+=0.1
     assert current['floors'][0]['id'] in select_plan_feedback(current,source)['changed_floor_ids']
+
+
+def _small_source():
+    from src.agent.correction.parse import ensure_corrected_geometry
+    from src.agent.correction.schema import FootprintRing
+    from src.agent.geometry.source_bim import build_source_bim
+    value = plan()
+    value['instances'] = [dict(id=f'F{i+1}', template='typical', z=3*i, height=3) for i in range(3)]
+    geometry = ensure_corrected_geometry(expand_parametric_proposal(value)['geometry'])
+    for floor in geometry.floors:
+        floor.footprint = FootprintRing.model_validate(floor.footprint)
+    return build_source_bim(geometry, capability_profile='orthogonal_polygon')
+
+
+def test_equivalent_local_diagnostics_share_a_plan_but_keep_every_finding_and_location():
+    source = _small_source()
+    findings = [{'type': 'synthetic_width', 'space_id': f'F{i}:office', 'width': 0.4} for i in range(1, 4)]
+    selected = select_plan_feedback(source, source, additional_findings=findings)
+    assert selected['selected_floor_ids'] == ['F1']
+    assert selected['abnormal_floor_ids'] == ['F1', 'F2', 'F3']
+    assert selected['represented_by'] == {'F2': 'F1', 'F3': 'F1'}
+    assert selected['findings'] == findings
+    assert selected['diagnostic_groups'] == [{'representative_floor_id': 'F1',
+        'floor_ids': ['F1', 'F2', 'F3'], 'finding_indices': [0, 1, 2],
+        'located_ids': ['F1:office', 'F2:office', 'F3:office']}]
+
+
+@pytest.mark.parametrize('difference', ['value', 'evidence_context', 'source_ref', 'cross_floor', 'global'])
+def test_diagnostic_groups_do_not_hide_distinct_or_unbound_evidence(tmp_path, monkeypatch, difference):
+    source = _small_source()
+    findings = [{'type': 'synthetic_width', 'space_id': f'F{i}:office', 'width': 0.4} for i in range(1, 4)]
+    contexts = {}
+    if difference == 'value': findings[1]['width'] = 0.3
+    elif difference == 'evidence_context': contexts['F2'] = {'image_sha256': 'different', 'calibration': [1, 2]}
+    elif difference == 'source_ref': findings[1]['source_refs'] = ['different original image']
+    elif difference == 'cross_floor': findings = [{'spaces': ['F1:office', 'F2:office', 'F3:office']}]
+    else: findings = [{'error': 'unknown scope'}]
+    selected = select_plan_feedback(source, source, additional_findings=findings,
+                                    view_context_by_floor=contexts)
+    assert set(selected['selected_floor_ids']) == ({'F1', 'F2', 'F3'}
+        if difference in {'cross_floor', 'global'} else {'F1', 'F2'})
+    assert selected['findings'] == findings
+
+
+def _rehash_source(source):
+    from src.agent.geometry.source_image_overlay import _digest
+    source['source_model_sha256'] = _digest({k: v for k, v in source.items() if k != 'source_model_sha256'})
+    return source
+
+
+def test_plan_render_cache_reuses_unchanged_floor_with_current_source_metadata(tmp_path, monkeypatch):
+    from scripts.tool_scripts.bim_agent_view_selection import render_source_plan_cached
+    from src.agent.geometry import source_plan_view
+    source = _small_source()
+    original = source_plan_view.render_source_plan
+    calls = []
+    def counted(*args):
+        calls.append(args[1])
+        return original(*args)
+    monkeypatch.setattr(source_plan_view, 'render_source_plan', counted)
+    image, first = render_source_plan_cached(source, 'F1', tmp_path/'cache')
+    current = copy.deepcopy(source)
+    next(row for row in current['spaces'] if row['id']=='F2:office')['role'] = 'meeting'
+    _rehash_source(current)
+    reused, second = render_source_plan_cached(current, 'F1', tmp_path/'cache')
+    assert calls == ['F1'] and second['render_cache']['hit']
+    assert second['source_model_sha256'] == current['source_model_sha256'] != first['source_model_sha256']
+    assert second['render_cache']['key'] == first['render_cache']['key']
+    assert image.tobytes() == reused.tobytes()
+    current['source_model_sha256'] = source['source_model_sha256']
+    with pytest.raises(ValueError, match='does not match'):
+        render_source_plan_cached(current, 'F1', tmp_path/'cache')
+
+
+@pytest.mark.parametrize('changed', ['geometry', 'opening', 'role_label', 'renderer'])
+def test_plan_render_cache_is_bound_to_content_labels_and_renderer(tmp_path, monkeypatch, changed):
+    import scripts.tool_scripts.bim_agent_view_selection as selection
+    source = _small_source()
+    _, first = selection.render_source_plan_cached(source, 'F1', tmp_path/'cache')
+    current = copy.deepcopy(source)
+    if changed == 'geometry': current['spaces'][0]['polygon'][0][0] += 0.1
+    elif changed == 'opening':
+        for point in next(row for row in current['openings'] if row['id']=='F1:door:d')['vertices']:
+            point[1] += 0.1
+    elif changed == 'role_label': current['spaces'][0]['role'] = 'meeting'
+    else:
+        contract = selection._render_contract()
+        monkeypatch.setattr(selection, '_render_contract', lambda: {**contract, 'new_renderer': True})
+    _rehash_source(current)
+    _, second = selection.render_source_plan_cached(current, 'F1', tmp_path/'cache')
+    assert not second['render_cache']['hit']
+    assert second['render_cache']['key'] != first['render_cache']['key']
+
+
+@pytest.mark.parametrize('corrupt', ['png', 'metadata', 'record'])
+def test_corrupted_plan_cache_is_rebuilt_instead_of_reused(tmp_path, monkeypatch, corrupt):
+    from scripts.tool_scripts.bim_agent_view_selection import render_source_plan_cached
+    source = _small_source()
+    expected, first = render_source_plan_cached(source, 'F1', tmp_path/'cache')
+    key = first['render_cache']['key']
+    if corrupt == 'png': (tmp_path/'cache'/f'{key}.png').write_bytes(b'broken image')
+    else:
+        path = tmp_path/'cache'/f'{key}.json'
+        if corrupt == 'record': path.write_bytes(b'{broken')
+        else:
+            value = json.loads(path.read_bytes())
+            value['metadata']['space_ids'] = ['wrong identity']
+            path.write_text(json.dumps(value), encoding='utf-8')
+    rebuilt, second = render_source_plan_cached(source, 'F1', tmp_path/'cache')
+    assert not second['render_cache']['hit'] and expected.tobytes() == rebuilt.tobytes()
+    assert render_source_plan_cached(source, 'F1', tmp_path/'cache')[1]['render_cache']['hit']
+
+
+def test_real_failed_draft_repair_reuses_verified_feedback_baseline_without_source_parent(tmp_path, monkeypatch):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric, patch_parametric
+    from tests.test_bim_agent_tools import _parametric_function_op
+    _, run, _ = _prepare(tmp_path, monkeypatch)
+    toolkit = Toolkit(run)
+    first = build_parametric(toolkit, json.dumps(plan()))
+    assert first['source_geometry_ready'], first
+    failed = patch_parametric(toolkit, json.dumps([_parametric_function_op('remove', '/unresolved')]),
+        candidate=first['candidate'], expected_sha=first['parametric']['plan_sha256'])
+    assert failed['saved_candidate'] is None
+    repaired = patch_parametric(toolkit, json.dumps([
+        _parametric_function_op('add', '/unresolved', ['same geometry, revised uncertainty'])]),
+        draft=failed['draft'], expected_sha=failed['plan_sha256'])
+    assert repaired['source_geometry_ready'], repaired
+    assert repaired['source_plan_selection']['selected_floor_ids'] == []
+    assert repaired['source_plan_selection']['parent_source_model_sha256'] == first['source_model_sha256']
+    source = json.loads((run/repaired['candidate']/'source_model.json').read_bytes())
+    assert not source['generation']['provenance'].get('parent_candidate')

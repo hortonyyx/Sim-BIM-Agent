@@ -34,6 +34,10 @@ def _parts(shape):
 def _on_wall(vertices, boundary):
     origin = boundary.vertices[0][:2]
     direction, _ = _frame(origin, boundary.vertices[1][:2])
+    return _project_on_wall(vertices, origin, direction)
+
+
+def _project_on_wall(vertices, origin, direction):
     # Do not use the EP realization tolerance for source coplanarity.
     if any(abs((v[0]-origin[0])*direction[1] - (v[1]-origin[1])*direction[0]) > EPS for v in vertices):
         return None
@@ -86,26 +90,54 @@ def _opening_height_host_diagnostic(aperture, spaces_by_id):
 
 def _contacts(boundaries):
     """Record many-to-many contact patches without changing boundary geometry."""
+    ordered = sorted(boundaries.values(), key=lambda b: b.id)
+    # Boundaries are immutable during contact discovery. Keep these invariants
+    # local to this call, preserving the original projection and intersection
+    # operands (including their vertex order) for every surviving pair.
+    walls = {}
+    horizontal = {}
+    for boundary in ordered:
+        vertices = boundary.vertices
+        if boundary.geometry_type == "wall":
+            origin = vertices[0][:2]
+            direction, _ = _frame(origin, vertices[1][:2])
+            walls[boundary.id] = (
+                _newell(vertices), origin, direction,
+                _project_on_wall(vertices, origin, direction),
+                min(v[2] for v in vertices), max(v[2] for v in vertices),
+            )
+        elif boundary.geometry_type in {"floor", "ceiling"}:
+            polygon = Polygon([v[:2] for v in vertices])
+            horizontal[boundary.id] = (vertices[0][2], polygon, polygon.bounds)
     relations = []
-    for a, b in combinations(sorted(boundaries.values(), key=lambda b: b.id), 2):
+    for a, b in combinations(ordered, 2):
         if a.space_id == b.space_id:
             continue
         regions = []
         if a.geometry_type == b.geometry_type == "wall":
-            if float(_newell(a.vertices) @ _newell(b.vertices)) > -1 + EPS:
+            normal_a, origin, direction, parent, z_min_a, z_max_a = walls[a.id]
+            normal_b, _, _, _, z_min_b, z_max_b = walls[b.id]
+            # Wall projection leaves Z unchanged. Disjoint or touching Z
+            # intervals cannot produce a positive-area contact. Do not use an
+            # XY box here: source coplanarity deliberately permits EPS offsets.
+            if z_max_a <= z_min_b or z_max_b <= z_min_a:
                 continue
-            projected = _on_wall(b.vertices, a)
+            if float(normal_a @ normal_b) > -1 + EPS:
+                continue
+            projected = _project_on_wall(b.vertices, origin, direction)
             if projected is None:
                 continue
-            contact = _on_wall(a.vertices, a).intersection(projected)
-            origin = a.vertices[0][:2]
-            direction, _ = _frame(origin, a.vertices[1][:2])
+            contact = parent.intersection(projected)
             lift = lambda ring: _lift(list(ring), origin, direction)
         elif {a.geometry_type, b.geometry_type} == {"floor", "ceiling"}:
-            if abs(a.vertices[0][2] - b.vertices[0][2]) > EPS:
+            z, polygon_a, bounds_a = horizontal[a.id]
+            z_b, polygon_b, bounds_b = horizontal[b.id]
+            if abs(z - z_b) > EPS:
                 continue
-            contact = Polygon([v[:2] for v in a.vertices]).intersection(Polygon([v[:2] for v in b.vertices]))
-            z = a.vertices[0][2]
+            if (bounds_a[2] <= bounds_b[0] or bounds_b[2] <= bounds_a[0]
+                    or bounds_a[3] <= bounds_b[1] or bounds_b[3] <= bounds_a[1]):
+                continue
+            contact = polygon_a.intersection(polygon_b)
             lift = lambda ring: [[x, y, z] for x, y in ring]
         else:
             continue

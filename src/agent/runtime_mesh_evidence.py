@@ -219,7 +219,8 @@ def prepare_mesh_worker_packet(parent_run, child_run, *, task_id, question, note
         if _sha(target) != digest:
             raise ValueError("worker input changed while copying")
     child_manifest = {key: copy.deepcopy(manifest[key]) for key in
-        ("images", "image_kind", "mesh_input", "building_input", "plan_recovery") if key in manifest}
+        ("images", "image_kind", "mesh_input", "building_input", "plan_recovery",
+         "architectural_modelling_policy") if key in manifest}
     child_manifest.update(input_mode="runtime_mesh_worker_observation", scope=question,
         floor_plan_images=[], floor_scope_source="not_declared", **request["timing"])
     _path(child_run, "inputs.json").write_bytes(json_bytes(child_manifest))

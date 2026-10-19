@@ -11,6 +11,7 @@ import hashlib
 import html
 import json
 from pathlib import Path
+from time import perf_counter
 
 from src.agent.correction.parse import ensure_corrected_geometry
 from src.agent.geometry.source_bim import build_source_bim, source_view_geometry
@@ -115,6 +116,13 @@ def export_source_proposal(proposal: dict, out_dir: Path, *, provenance: dict | 
     assumptions and unresolved items.  The output is always a new directory;
     this function neither reads nor creates correction acceptance/run records.
     """
+    started = checkpoint = perf_counter()
+    timings = {}
+    def stage(name):
+        nonlocal checkpoint
+        now = perf_counter()
+        timings[name] = now - checkpoint
+        checkpoint = now
     out_dir = Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=False)
     report: dict = {
@@ -162,12 +170,14 @@ def export_source_proposal(proposal: dict, out_dir: Path, *, provenance: dict | 
         # including legacy numeric strings; the original proposal stays intact.
         from src.agent.geometry.input_scale import check_geometry_scale
         check_geometry_scale(geom.model_dump(mode="json"))
+        stage("proposal_admission_seconds")
         source = build_source_bim(
             geom,
             capability_profile="simple_polygon" if geom.schema_version == "source_polygon_v1" else "orthogonal_polygon",
             enclosure_declaration=enclosure,
             wall_readings=proposal.get('wall_readings'),
         )
+        stage("source_kernel_seconds")
         if "wall_readings" in proposal:
             from src.agent.geometry.reader_wall_metadata import bind_wall_readings
             source.update(bind_wall_readings(source, proposal["wall_readings"]))
@@ -224,14 +234,18 @@ def export_source_proposal(proposal: dict, out_dir: Path, *, provenance: dict | 
         report["source_model_sha256"] = source["source_model_sha256"]
 
         (out_dir / "source_model.json").write_bytes(_json_bytes(source, indent=2))
+        stage("source_metadata_and_save_seconds")
         display = source_view_geometry(source)
         (out_dir / "display_geometry.json").write_bytes(_json_bytes(display, indent=2))
+        stage("display_geometry_seconds")
 
         viewer = build_source_viewer_html(
             display, source_geometry_ready=report["source_geometry_ready"],
             assumptions=assumptions, unresolved=unresolved, mesh_path=mesh_path)
         (out_dir / "viewer.html").write_text(viewer, encoding="utf-8", newline="\n")
+        stage("viewer_seconds")
     except Exception as exc:
         report.update(status="error", source_geometry_ready=False, error=f"{type(exc).__name__}: {exc}")
+    report["timings"] = {**timings, "export_total_seconds": perf_counter() - started}
     (out_dir / "report.json").write_bytes(_json_bytes(report, indent=2))
     return report
