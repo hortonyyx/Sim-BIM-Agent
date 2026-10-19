@@ -8,7 +8,7 @@
 
 2026-10-19起，Go独立采用Windows物理IPv4直连：动态发现已连接物理网卡和默认路由，按路由/接口metric之和选择，最低metric并列或无可用路由则报错。连接前按socket选接口和绑定源IP，DNS与Go推理都避开HTTP代理和TUN，保留原域名、Host及TLS证书验证；不改系统路由/代理、不影响Paratera、ChatGPT等其他provider。暂只支持Windows物理IPv4，失败不会退回代理或系统fake-IP DNS；不固定网卡编号、源IP或Go服务器IP。
 
-DNS使用`https://cloudflare-dns.com/dns-query`，仅查询`opencode.ai`的A记录，不携带Go鉴权/session；解析和连接计入既有超时，结果按TTL最多缓存300秒。bootstrap默认`1.1.1.1`；本机该地址直连超时，因此在同一显式仓库外文件配置当前核验可达的Cloudflare DNS地址`104.16.248.249`。这是DNS服务的引导地址，非Go服务器静态地址；变更后仍必须通过Cloudflare域名证书校验。没有按失败自动切换DNS、模型服务或网络路径。机器网络改变后新建连接重新发现物理接口，旧运行不原地更换封印版本。
+DNS使用`https://cloudflare-dns.com/dns-query`，仅查询`opencode.ai`的A记录，不携带Go鉴权/session；解析和连接计入既有超时，结果按TTL最多缓存300秒。bootstrap默认`1.1.1.1`；本机该地址直连超时，因此在同一显式仓库外文件配置当前核验可达的Cloudflare DNS地址`104.16.248.249`。这是DNS服务的引导地址，非Go服务器静态地址；变更后仍必须通过Cloudflare域名证书校验。没有按失败自动切换DNS、模型服务或网络路径。机器网络改变后，新建Go运行/适配器时重新发现物理接口；现有适配器保留已选接口，旧运行不原地更换封印版本。
 
 可复制 [Go配置示例](../../product/config.opencode-go.example.json)，修改实际输入和输出目录，再执行产品`check/run`。原 [默认配置](../../product/config.example.json)仍是6 Sol，两个示例不互相改写历史结果。Go的Kimi K3默认省略思考档和采样参数，按服务默认运行；当前只接纳明确的`max`思考档，不能把6 Sol的`high`原样套过去。
 
@@ -26,7 +26,7 @@ Haiku整案采用独立的 [流程贯通配置](../../product/config.opencode-go
 
 这七个ID有明确协议、参数和预算profile；2026-10-19实时Go目录返回37个型号，不代表全部已接线。其他ID在模型请求前拒绝，不猜协议或接受未知实验型号。GPT-6 Sol不在已配置Go目录中。
 
-MiMo于2026-10-19补入，使用服务默认思考，不传温度或未登记effort。按[官方图片请求格式](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/multimodal-understanding/image-understanding)发送`max_completion_tokens`；图片保留原字节，发送前去掉本地`detail`显示提示并登记来源投影。runtime28在保存工具呈现前准备模型可接受的图片格式，保留原MCP、图片hash及省略hint，修复响应到达后把hint变化误判为丢图的审计故障。1,048,576上下文来自当日模型元数据；Go图片预算仍为未独立校准的proxy。串行复测仍有传输失败，真实读图质量未评，见[复测报告](../reports/2026-10-19_reader_transport_retry.md)。
+MiMo于2026-10-19补入，使用服务默认思考，不传温度或未登记effort。按[官方图片请求格式](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/multimodal-understanding/image-understanding)发送`max_completion_tokens`；图片保留原字节，发送前去掉本地`detail`显示提示并登记来源投影。runtime28在保存工具呈现前准备模型可接受的图片格式，保留原MCP、图片hash及省略hint，修复响应到达后把hint变化误判为丢图的审计故障。1,048,576上下文来自当日模型元数据；Go图片预算仍为未独立校准的proxy。旧代理路径下串行复测仍有传输失败，当轮真实读图质量未评，见[复测报告](../reports/2026-10-19_reader_transport_retry.md)。
 
 运行请求携带自身`User-Agent: Sim-BIM-Agent/work-model`及`x-opencode-session`。会话ID由运行目录与任务ID派生为UUID，同一任务恢复时稳定，不同并发reader各有自己的ID；不发送本机原始路径。没有伪装成OpenCode或Claude客户端。
 
@@ -48,8 +48,10 @@ Go按订阅记账，保留供应商实报tokens，不套Paratera单价、不生�
 
 2026-10-19连接修复与小图片/工具续接验收见[连接修复报告](../reports/2026-10-19_provider_connection_repair.md)。小请求成功不能证明此前长请求的EOF已彻底消失；本轮没有增加重试、超时或切换默认代理。
 
-随后按用户授权完成[原读图任务长请求复测](../reports/2026-10-19_reader_connection_retest.md)：新官方路径下，GLM平面及MiMo平面/北立面仍复现等待响应头时EOF，均早于450秒上限。Go长请求问题尚未解决；现有证据不能区分本机代理路径、网关或上游责任。
+随后按用户授权完成[原读图任务长请求复测](../reports/2026-10-19_reader_connection_retest.md)：新官方路径下，GLM平面及MiMo平面/北立面仍复现等待响应头时EOF，均早于450秒上限。当轮旧代理路径下Go长请求问题仍未解决；当时证据不能区分本机代理路径、网关或上游责任。
 
-2026-10-19追加[相同失败请求代理/直连对照](../reports/2026-10-19_go_proxy_direct_ab.md)：已核对端点、鉴权、自有UA、稳定session与当前官方文档；没有查到强制流式要求。当前HttpChatAdapter默认继承环境/系统代理；本机又启用Meta TUN/fake-IP，不能将trust_env=False等同真实直连。诊断在不改系统设置的前提下，单socket绑定物理网卡并保留TLS域名验证。原GLM第5请求逐字节重放，代理60.242秒EOF、物理直连20.577秒200；2请求、37,030已知tokens另1未知，0工具执行。优先怀疑代理路径，但单组先后/高缓存/服务波动不足以定位本地代理或证明多分钟/整任务稳定；产品默认网络设置尚未更改。
+2026-10-19追加[相同失败请求代理/直连对照](../reports/2026-10-19_go_proxy_direct_ab.md)：已核对端点、鉴权、自有UA、稳定session与当前官方文档；没有查到强制流式要求。当前HttpChatAdapter默认继承环境/系统代理；本机又启用Meta TUN/fake-IP，不能将trust_env=False等同真实直连。诊断在不改系统设置的前提下，单socket绑定物理网卡并保留TLS域名验证。原GLM第5请求逐字节重放，代理60.242秒EOF、物理直连20.577秒200；2请求、37,030已知tokens另1未知，0工具执行。优先怀疑代理路径，但单组先后/高缓存/服务波动不足以定位本地代理或证明多分钟/整任务稳定；当时产品默认网络设置尚未更改。
+
+2026-10-19随后按授权实施[Go独立物理直连及完整读图复测](../reports/2026-10-19_go_direct_reader_retest.md)，开发runtime31/domain113。104项定向通过，独立代码审阅无P1/P2。三个Go节点31请求/29完整200，另2请求因原900秒节点预算取消，0提前EOF；15个完整响应超过60秒、最长281.717秒。Go及其DNS逐请求有物理出口证据；Paratera测试前后实际仍走10809代理。GLM F1无有效稿，MiMo F1未提交草稿质量失败，MiMo North638.825秒正式提交且本张数值/实际图独评通过。单批证据不等于长期稳定或整楼能力；没有自动扩测、改reader或发布桌面，固定桌面仍runtime24/domain110。
 
 官方依据：[Go端点、会话和模型说明](https://opencode.ai/v2/docs/console/go/)、[OpenCode模型元数据](https://models.dev/api.json)、[标准Responses工具循环](https://developers.openai.com/api/docs/guides/function-calling)、[无状态推理历史](https://developers.openai.com/api/docs/guides/reasoning)。
