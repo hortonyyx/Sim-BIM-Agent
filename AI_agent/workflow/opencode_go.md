@@ -4,7 +4,11 @@
 
 ## 凭据与配置
 
-本机私有文件为 `D:/Sim-BIM-Agent/local-connections/opencode-go/credentials.env`，只读两个变量：`OPENCODE_GO_BASE_URL`（固定为`https://opencode.ai/inference/go/v1`）和`OPENCODE_GO_API_KEY`。该base是凭据的订阅范围与模型目录入口，不直接拼接推理路径；实际推理base按下表协议选择。不读取环境变量作回退，不展开env插值，不把key写到配置、journal或发布包。
+本机私有文件为 `D:/Sim-BIM-Agent/local-connections/opencode-go/credentials.env`，凭据变量为`OPENCODE_GO_BASE_URL`（固定为`https://opencode.ai/inference/go/v1`）和`OPENCODE_GO_API_KEY`；另允许公开网络参数`OPENCODE_GO_DNS_BOOTSTRAP_IPV4`。该base是凭据的订阅范围与模型目录入口，不直接拼接推理路径；实际推理base按下表协议选择。不读取环境变量作凭据或网络参数回退，不展开env插值，不把key写到配置、journal或发布包。
+
+2026-10-19起，Go独立采用Windows物理IPv4直连：动态发现已连接物理网卡和默认路由，按路由/接口metric之和选择，最低metric并列或无可用路由则报错。连接前按socket选接口和绑定源IP，DNS与Go推理都避开HTTP代理和TUN，保留原域名、Host及TLS证书验证；不改系统路由/代理、不影响Paratera、ChatGPT等其他provider。暂只支持Windows物理IPv4，失败不会退回代理或系统fake-IP DNS；不固定网卡编号、源IP或Go服务器IP。
+
+DNS使用`https://cloudflare-dns.com/dns-query`，仅查询`opencode.ai`的A记录，不携带Go鉴权/session；解析和连接计入既有超时，结果按TTL最多缓存300秒。bootstrap默认`1.1.1.1`；本机该地址直连超时，因此在同一显式仓库外文件配置当前核验可达的Cloudflare DNS地址`104.16.248.249`。这是DNS服务的引导地址，非Go服务器静态地址；变更后仍必须通过Cloudflare域名证书校验。没有按失败自动切换DNS、模型服务或网络路径。机器网络改变后新建连接重新发现物理接口，旧运行不原地更换封印版本。
 
 可复制 [Go配置示例](../../product/config.opencode-go.example.json)，修改实际输入和输出目录，再执行产品`check/run`。原 [默认配置](../../product/config.example.json)仍是6 Sol，两个示例不互相改写历史结果。Go的Kimi K3默认省略思考档和采样参数，按服务默认运行；当前只接纳明确的`max`思考档，不能把6 Sol的`high`原样套过去。
 

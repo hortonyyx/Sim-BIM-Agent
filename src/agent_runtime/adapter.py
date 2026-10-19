@@ -236,14 +236,14 @@ def prepare_request(*, store: EventStore, model: str, messages: list[dict],
 class HttpChatAdapter:
     """Credentials are used only in the header, never serialized to the journal."""
 
-    def __init__(self, *, base_url: str, api_key: str, transport=None):
+    def __init__(self, *, base_url: str, api_key: str, transport=None, trust_env=True):
         parsed = urlsplit(base_url)
         if parsed.scheme != "https" or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("base URL must be HTTPS and contain no credentials/query/fragment")
         self.endpoint = base_url.rstrip("/") + "/chat/completions"
         self.failure_provider = "glm" if parsed.hostname == "open.bigmodel.cn" else None
         self._key = api_key
-        self.client = httpx.AsyncClient(transport=transport, follow_redirects=False)
+        self.client = httpx.AsyncClient(transport=transport, follow_redirects=False, trust_env=trust_env)
 
     async def close(self):
         await self.client.aclose()

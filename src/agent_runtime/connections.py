@@ -96,12 +96,14 @@ class ResolvedConnection:
     descriptor: ConnectionDescriptor
     api_key: str = field(default="", repr=False)
     subscription: object | None = field(default=None, repr=False, compare=False)
+    go_dns_bootstrap: str | None = field(default=None, repr=False)
 
     def create_adapter(self, *, session_id=None):
         if self.descriptor.route_id == OPENCODE_GO:
             from .opencode_go import HttpGoAdapter
             return HttpGoAdapter(base_url=self.descriptor.base_url, api_key=self.api_key,
-                protocol=self.descriptor.adapter_kind, session_id=session_id)
+                protocol=self.descriptor.adapter_kind, session_id=session_id,
+                dns_bootstrap_ipv4=self.go_dns_bootstrap)
         if self.descriptor.route_id == CHATGPT_SUBSCRIPTION:
             from .responses import HttpResponsesAdapter
             return HttpResponsesAdapter(token_provider=self.subscription.get_access_token)
@@ -117,11 +119,12 @@ def resolve_connection(provider: str, credentials_file: Path | None,
                        *, chatgpt_auth_dir: Path | None = None, model=None) -> ResolvedConnection:
     """Resolve one reviewed live route without exposing its credential."""
     if provider == OPENCODE_GO:
-        from .opencode_go import credentials, inference_base_url, model_contract
+        from .opencode_go import credentials, dns_bootstrap, inference_base_url, model_contract
         protocol = model_contract(model)[0]
         _, key = credentials(credentials_file)
         return ResolvedConnection(descriptor=ConnectionDescriptor(route_id=provider,
-            base_url=inference_base_url(protocol), billing_mode="subscription", adapter_kind=protocol), api_key=key)
+            base_url=inference_base_url(protocol), billing_mode="subscription", adapter_kind=protocol),
+            api_key=key, go_dns_bootstrap=dns_bootstrap(credentials_file))
     if provider == CHATGPT_SUBSCRIPTION:
         from .openai_subscription import SubscriptionCredentials
         return ResolvedConnection(descriptor=ConnectionDescriptor(

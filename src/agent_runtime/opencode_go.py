@@ -74,6 +74,14 @@ def conversation_id(run_directory, task_id):
         str(Path(run_directory).resolve()) + ":" + str(task_id)))
 
 
+def dns_bootstrap(path):
+    """Optional public DNS bootstrap in the same explicit private connection file."""
+    from dotenv import dotenv_values
+    from .go_direct import DEFAULT_DNS_BOOTSTRAP, public_ipv4
+    value = dotenv_values(Path(path).resolve(), interpolate=False).get("OPENCODE_GO_DNS_BOOTSTRAP_IPV4")
+    return public_ipv4(value if value is not None else DEFAULT_DNS_BOOTSTRAP)
+
+
 def parameters(model, *, output_tokens, temperature=None, thinking=True, reasoning_effort=None):
     protocol, _, efforts = model_contract(model)
     if thinking is not True:
@@ -137,11 +145,14 @@ def model_profile(model):
 
 
 class HttpGoAdapter(HttpChatAdapter):
-    def __init__(self, *, base_url, api_key, protocol, session_id, transport=None):
+    def __init__(self, *, base_url, api_key, protocol, session_id, transport=None, dns_bootstrap_ipv4=None):
         if base_url != inference_base_url(protocol):
             raise ValueError("unreviewed OpenCode Go transport route")
         uuid.UUID(session_id)
-        super().__init__(base_url=base_url, api_key=api_key, transport=transport)
+        if transport is None:
+            from .go_direct import direct_transport, DEFAULT_DNS_BOOTSTRAP
+            transport = direct_transport(dns_bootstrap_ipv4 or DEFAULT_DNS_BOOTSTRAP)
+        super().__init__(base_url=base_url, api_key=api_key, transport=transport, trust_env=False)
         path = {"openai_chat_completions": "/chat/completions",
                 "anthropic_messages": "/messages", "openai_responses": "/responses"}[protocol]
         self.endpoint = base_url + path

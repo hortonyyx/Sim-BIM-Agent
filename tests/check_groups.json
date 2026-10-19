@@ -2,6 +2,10 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_go_direct.py": {
+      "group": "targeted",
+      "reason": "Go-only physical interface and DNS routing, provider isolation, TLS and deadlines"
+    },
     "tests/test_deepseek_runtime.py": {
       "group": "targeted",
       "reason": "Official DeepSeek credentials, parameter contract and offline image/tool round trip"
