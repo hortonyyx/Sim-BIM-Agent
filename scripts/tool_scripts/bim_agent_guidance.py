@@ -186,6 +186,9 @@ interior rooms. compare_mesh_source_pixels reports first-surface correspondences
 and signed depth residuals in a saved camera; texture-only windows and missing
 surfaces need visual judgment. Its numerical bins are scoped samples, not a
 whole-building fidelity verdict. Select these tools when they resolve a question.
+Original BLEND textures remain visible; transparent_composite pixels cannot be
+measured or counted as geometric matches. Use valid opaque pixels or original
+triangle sections, distinguishing a texture's visible area from its carrier faces.
 Use record_inference for assumptions and repeated templates with exceptions;
 build_parametric_bim expands the declaration, and inspect_parametric_plan plus
 audit_inference_candidate compare the saved spaces/openings to that declaration.
@@ -988,6 +991,14 @@ instead of guessing scale. Mesh local coordinates are Z-up
 declared frame for construction and evidence. Prepared mesh views instead use their
 supplied metric projection and explicit transform; local x/y need not be geographic
 east/north.
+
+Original OPAQUE and BLEND materials retain their alpha. Visible fractional-alpha
+contributions have no unique measured XYZ: point queries return
+reason='transparent_composite', hit=false and background=false; correspondence
+excludes them from residual summaries. Alpha-zero fragments do not occlude; a
+fully opaque front surface remains measurable. Sections intersect original carrier
+triangles, not alpha-cut texture shapes. Excess fragment/layer budgets reject the
+view explicitly. MASK, full PBR lighting and refraction are not implemented.
 
 inspect_mesh_directions returns area-weighted directions of selected near-vertical
 triangles. These directions are surface evidence, not the yaw to apply. Parallel

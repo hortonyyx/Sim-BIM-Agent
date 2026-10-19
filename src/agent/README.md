@@ -10,6 +10,7 @@ EnergyPlus graph. The product model is `work model + runtime + domain`.
 | Deterministic geometry and relationships | [geometry](geometry/__init__.py) |
 | Declared curve approximation and courtyard footprints | [source curves](geometry/source_curves.py), [shared parametric templates](geometry/parametric_proposal.py) |
 | Original mesh sections and same-view geometry comparison | [sections](geometry/mesh_section.py), [correspondence](geometry/mesh_correspondence.py) |
+| Original OPAQUE/BLEND views and scoped pixel measurement | [observation](geometry/mesh_observation.py); contributing fractional alpha has no unique measured surface |
 | Model-callable tools | [run_bim_agent.py](../../scripts/tool_scripts/run_bim_agent.py) and its `bim_agent_*` modules |
 | Input methods and shared guidance | [bim_agent_guidance.py](../../scripts/tool_scripts/bim_agent_guidance.py) |
 | Role definitions, artifacts and role tools | [runtime_roles](runtime_roles/__init__.py) |
@@ -38,6 +39,8 @@ provide reproducible geometric evidence, without certifying texture-window accur
 or whole-building fidelity. The development-only
 [readiness check](../../scripts/dev/check_mesh_readiness.py) validates a selected
 case's frozen input allowlist, configuration and version seals without model calls.
+Schema 2 admits one original GLB, optional PNGs and one JSON declaration with
+source/applicability records; path and allowlist checks precede input decoding.
 
 ## Retained code and history
 

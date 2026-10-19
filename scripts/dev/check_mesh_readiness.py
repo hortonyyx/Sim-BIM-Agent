@@ -1,4 +1,4 @@
-"""Read-only preflight for an isolated, frozen, original-GLB experiment.
+"""Read-only preflight for a frozen original mesh and explicit auxiliary inputs.
 
 This command never creates a provider, opens credentials, starts a run, or
 grants launch approval. The normal runtime entry remains the launch authority.
@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.agent.geometry.mesh_observation import _validate_self_contained_glb
+from src.agent.bim_inputs import admitted_png_paths
 from src.agent.runtime_configuration import (
     argv_for, load_configuration, mesh_worker_concurrency, resolve_case_input,
     resolve_supplemental_inputs, selected_case,
@@ -93,13 +94,49 @@ def _no_credentials(value: object) -> None:
             _no_credentials(item)
 
 
+def _check_raw_input_paths(raw: dict, inputs: Path, roles: dict, mesh: Path, schema: int) -> None:
+    """Prove the loader's input scope using names only, before it opens assets."""
+    case = raw["cases"][0]
+    if case.get("mode") != "single_model" or case.get("input_kind") != "mesh":
+        raise ValueError("readiness requires native single_model mesh execution")
+    configured_root = case.get("input_root", raw.get("input_root"))
+    if configured_root is None or _plain_path(Path(configured_root)) != inputs:
+        raise ValueError("configuration does not select the frozen input_root")
+    if case.get("continuation") is not None or case.get("reader_task") is not None:
+        raise ValueError("first experiment cannot inherit an earlier run")
+
+    def requested(field):
+        name = case.get(field)
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"{field} needs an explicit input path")
+        target = _plain_path(inputs / name)
+        if not target.is_relative_to(inputs):
+            raise ValueError(f"{field} escapes the frozen input_root")
+        return target
+
+    if requested("input") != mesh:
+        raise ValueError("configuration does not select the frozen mesh")
+    if schema == 1 and any(case.get(key) is not None for key in ("auxiliary_images", "building_input")):
+        raise ValueError("schema 1 admits no auxiliary drawings or declarations")
+    configured = {mesh.relative_to(inputs).as_posix(): "mesh"}
+    if case.get("auxiliary_images") is not None:
+        directory = requested("auxiliary_images")
+        configured.update({name: "auxiliary_image" for name in roles
+                           if (inputs / name).parent == directory and Path(name).suffix.lower() == ".png"})
+    if case.get("building_input") is not None:
+        configured[requested("building_input").relative_to(inputs).as_posix()] = "building_declaration"
+    if configured != roles:
+        raise ValueError("configured input roles differ from the frozen allowlist")
+
+
 def check_readiness(manifest_path: Path, *, repository_root: Path = ROOT) -> dict:
     """Validate bytes and ordinary configuration, without initiating execution."""
     manifest_path = _plain_path(manifest_path.absolute())
     audit = manifest_path.parent
     repository = _plain_path(repository_root.absolute())
     manifest = json.loads(manifest_path.read_bytes())
-    if manifest.get("schema_version") != 1:
+    schema = manifest.get("schema_version")
+    if schema not in (1, 2):
         raise ValueError("unsupported readiness manifest schema")
     if manifest.get("live_launch_authorized") is not False:
         raise ValueError("preparation manifest must record live_launch_authorized=false")
@@ -107,26 +144,46 @@ def check_readiness(manifest_path: Path, *, repository_root: Path = ROOT) -> dic
     if (screening.get("status") != "accepted" or not screening.get("reviewer")
             or not screening.get("summary") or not screening.get("reviewed_images")):
         raise ValueError("input screening pending or rejected; an explicit visual review is required")
-    for item in screening["reviewed_images"]:
-        path = _relative(audit, item["path"])
-        if path.suffix.lower() != ".png":
-            raise ValueError("visual review evidence must name PNG files")
-        _match(path, item)
     inputs = _plain_path(Path(manifest["input_root"]))
     if not inputs.is_dir() or inputs == Path(inputs.anchor):
         raise ValueError("input_root must be an existing dedicated directory")
     if not all((_separate(inputs, audit), _separate(inputs, repository), _separate(audit, repository))):
         raise ValueError("inputs, audit and repository must be separate directories")
     admitted = manifest.get("admitted_files")
-    if not isinstance(admitted, list) or len(admitted) != 1 or Path(admitted[0]["path"]).suffix.lower() != ".glb":
-        raise ValueError("this readiness contract admits exactly one original GLB")
-    if screening.get("mesh_sha256") != admitted[0].get("sha256"):
+    if not isinstance(admitted, list) or not admitted:
+        raise ValueError("admitted_files must include one original GLB")
+    if schema == 1:
+        if len(admitted) != 1 or Path(admitted[0]["path"]).suffix.lower() != ".glb":
+            raise ValueError("schema 1 admits exactly one original GLB")
+        roles = {admitted[0]["path"]: "mesh"}
+    else:
+        extensions = {"mesh": ".glb", "auxiliary_image": ".png", "building_declaration": ".json"}
+        roles = {}
+        for item in admitted:
+            name, role = item["path"], item.get("role")
+            if role not in extensions or Path(name).suffix.lower() != extensions[role]:
+                raise ValueError("each input needs an explicit supported role and matching file extension")
+            if name in roles:
+                raise ValueError("duplicate admitted input path")
+            roles[name] = role
+            if role != "mesh" and (not item.get("source_reference") or not item.get("applicability")):
+                raise ValueError("auxiliary inputs need reviewed source_reference and applicability")
+        if list(roles.values()).count("mesh") != 1 or list(roles.values()).count("building_declaration") > 1:
+            raise ValueError("admit exactly one mesh and at most one building declaration")
+    mesh_ref = next(item for item in admitted if roles[item["path"]] == "mesh")
+    if screening.get("mesh_sha256") != mesh_ref.get("sha256"):
         raise ValueError("visual screening does not bind the admitted mesh bytes")
-    expected_names = {admitted[0]["path"]}
+    expected_names = set(roles)
     if _files(inputs) != expected_names:
         raise ValueError("admitted input file allowlist differs; no extra files, including answers, are permitted")
-    mesh = _relative(inputs, admitted[0]["path"])
-    _match(mesh, admitted[0])
+    for item in screening["reviewed_images"]:
+        path = _relative(audit, item["path"])
+        if path.suffix.lower() != ".png":
+            raise ValueError("visual review evidence must name PNG files")
+        _match(path, item)
+    for item in admitted:
+        _match(_relative(inputs, item["path"]), item)
+    mesh = _relative(inputs, mesh_ref["path"])
     _validate_self_contained_glb(mesh)
 
     config_ref = manifest["configuration"]
@@ -134,16 +191,27 @@ def check_readiness(manifest_path: Path, *, repository_root: Path = ROOT) -> dic
     _match(config_path, config_ref)
     raw_config = json.loads(config_path.read_bytes())
     _no_credentials(raw_config)
-    if len(raw_config.get("cases", [])) != 1:
+    raw_cases = raw_config.get("cases")
+    if not isinstance(raw_cases, list) or len(raw_cases) != 1 or not isinstance(raw_cases[0], dict):
         raise ValueError("freeze exactly one case per readiness manifest")
+    _check_raw_input_paths(raw_config, inputs, roles, mesh, schema)
     configuration = load_configuration(config_path)
     case = selected_case(configuration, manifest["case_id"])
     if case["mode"] != "single_model" or case["input_kind"] != "mesh":
         raise ValueError("readiness requires native single_model mesh execution")
     if _plain_path(Path(case["input_root"])) != inputs or resolve_case_input(case) != mesh:
         raise ValueError("configuration does not select the frozen input")
-    if resolve_supplemental_inputs(case) != (None, None) or case.get("floor_plan_images"):
-        raise ValueError("this experiment admits no auxiliary drawings, declarations or floor plans")
+    images, declaration = resolve_supplemental_inputs(case)
+    if schema == 1 and ((images, declaration) != (None, None) or case.get("floor_plan_images")):
+        raise ValueError("schema 1 admits no auxiliary drawings, declarations or floor plans")
+    configured_roles = {mesh.relative_to(inputs).as_posix(): "mesh"}
+    if images is not None:
+        configured_roles.update({image.relative_to(inputs).as_posix(): "auxiliary_image"
+                                 for image in admitted_png_paths(images)})
+    if declaration is not None:
+        configured_roles[declaration.relative_to(inputs).as_posix()] = "building_declaration"
+    if configured_roles != roles:
+        raise ValueError("configured input roles differ from the frozen allowlist")
     if case.get("continuation") is not None or case.get("reader_task") is not None:
         raise ValueError("first experiment cannot inherit an earlier run")
     run_root = _plain_path(Path(case["run_root"]))
@@ -156,12 +224,12 @@ def check_readiness(manifest_path: Path, *, repository_root: Path = ROOT) -> dic
 
     provenance = manifest["provenance"]
     original = _plain_path(Path(provenance["original_glb"]))
-    _match(original, admitted[0])
+    _match(original, mesh_ref)
     conversion_ref = provenance["conversion_only"]
     conversion_path = _relative(audit, conversion_ref["path"])
     _match(conversion_path, conversion_ref)
     conversion = json.loads(conversion_path.read_bytes())
-    if conversion.get("output_sha256") != admitted[0]["sha256"]:
+    if conversion.get("output_sha256") != mesh_ref["sha256"]:
         raise ValueError("original conversion metadata does not bind the admitted GLB")
     for item in manifest.get("audit_artifacts", []):
         _match(_relative(audit, item["path"]), item)
@@ -178,13 +246,14 @@ def check_readiness(manifest_path: Path, *, repository_root: Path = ROOT) -> dic
     return {
         "status": "ready_for_separate_launch_approval", "no_model_calls": True,
         "live_launch_authorized": False, "case_id": case["case_id"], "mesh_sha256": sha256(mesh),
-        "admitted_files": sorted(expected_names), "versions": versions,
+        "admitted_files": sorted(expected_names), "input_roles": roles, "versions": versions,
         "model": case["model"], "provider": case["provider"],
         "reasoning_effort": case.get("reasoning_effort"),
         "mesh_workers_max_concurrent": mesh_worker_concurrency(case),
         "shared_root_limits": case["limits"], "per_response_output_tokens": case["output_tokens"],
         "run_output": str(output), "normal_runtime_argv": command,
-        "scope": "File allowlist and original-asset byte identity; no semantic GT detection or BIM quality approval.",
+        "scope": "Frozen input allowlist, original mesh identity and explicit auxiliary roles; "
+                 "source/applicability are reviewed declarations, not automated building identity or BIM quality approval.",
     }
 
 

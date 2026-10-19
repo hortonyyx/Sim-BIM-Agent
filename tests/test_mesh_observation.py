@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 
 import numpy as np
 from PIL import Image
@@ -46,6 +47,39 @@ def _quad(z: float, color: tuple[int, int, int]) -> trimesh.Trimesh:
         [[1, 1], [2, 1], [2, 2], [1, 2]],
         np.full((2, 2, 3), color, dtype=np.uint8),
     )
+
+
+def _blend_quad(z, color=(255, 0, 0), alpha=128, *, alpha_factor=255):
+    mesh = _quad(z, color)
+    mesh.visual.material = trimesh.visual.material.PBRMaterial(
+        baseColorTexture=Image.fromarray(np.full((2, 2, 4), (*color, alpha), dtype=np.uint8)),
+        baseColorFactor=[255, 255, 255, alpha_factor], alphaMode="BLEND")
+    return mesh
+
+
+def _blend_view(tmp_path, meshes, *, name="blend", width=40, height=40):
+    scene = trimesh.Scene()
+    for index, mesh in enumerate(meshes):
+        scene.add_geometry(mesh, node_name=f"part_{index}", geom_name=f"part_{index}")
+    path = _export(scene, tmp_path/f"{name}.glb")
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    observation = MeshObservation(path)
+    prefix = tmp_path/name
+    image, metadata = observation.render(prefix, eye=[0, 0, 10], target=[0, 0, 0],
+        width_m=4, height_m=2, width_px=width, height_px=height)
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before == observation.mesh_sha256
+    return observation, prefix, image, metadata
+
+
+def _expected_linear_over(layers, background):
+    def decode(rgb):
+        values = np.asarray(rgb, dtype=float)/255
+        return np.where(values <= .04045, values/12.92, ((values+.055)/1.055)**2.4)
+    output = decode(background)
+    for color, alpha in reversed(layers):
+        output = alpha*decode(color) + (1-alpha)*output
+    encoded = np.where(output <= .0031308, output*12.92, 1.055*output**(1/2.4)-.055)
+    return tuple(np.rint(encoded*255).astype(int))
 
 
 def _vertical_quad(
@@ -369,3 +403,123 @@ def test_non_textured_geometry_fails_explicitly(tmp_path: Path) -> None:
     path = _export(trimesh.Scene(mesh), tmp_path / "plain.glb")
     with pytest.raises(ValueError, match="UV-mapped base-color texture"):
         MeshObservation(path)
+
+
+def test_blend_texture_zero_fractional_and_full_alpha_preserve_measurement_semantics(tmp_path):
+    foreground = _blend_quad(1)
+    foreground.visual.material.baseColorTexture = Image.fromarray(np.array(
+        [[[255, 0, 0, 0], [255, 0, 0, 128], [255, 0, 0, 255]]], dtype=np.uint8))
+    mesh, prefix, image, metadata = _blend_view(tmp_path, [foreground, _quad(0, (0, 0, 255))], width=30)
+    pixels = [[5, 20], [15, 20], [25, 20]]
+    queries = mesh.pixel_query(prefix, pixels)['queries']
+    assert image.getpixel(tuple(pixels[0])) == (0, 0, 255)
+    assert image.getpixel(tuple(pixels[1])) == _expected_linear_over([((255, 0, 0), 128/255)], (0, 0, 255))
+    assert image.getpixel(tuple(pixels[2])) == (255, 0, 0)
+    assert queries[0]['hit'] and queries[0]['world_xyz'][2] == 0
+    assert queries[2]['hit'] and queries[2]['world_xyz'][2] == 1
+    assert queries[2]['triangle_surface_evidence']['material_alpha_mode'] == 'BLEND'
+    assert queries[1]['reason'] == 'transparent_composite' and not queries[1]['background']
+    assert queries[1]['measurement_valid'] is False and 'world_xyz' not in queries[1]
+    assert mesh.pixel_query(prefix, pixels[:2])['first_two_distance']['available'] is False
+    assert metadata['rasterizer']['transparent_composite_pixel_count'] == 400
+    assert metadata['rasterizer']['measurement_valid_pixel_count'] == 800
+
+
+@pytest.mark.parametrize('front_mode', ['OPAQUE', 'BLEND'])
+@pytest.mark.parametrize('reverse_order', [False, True])
+def test_fully_opaque_foreground_hides_partial_blend_without_invalidating_points(tmp_path, front_mode, reverse_order):
+    foreground = _quad(2, (20, 200, 50)) if front_mode == 'OPAQUE' else _blend_quad(2, (20, 200, 50), 255)
+    meshes = [foreground, _blend_quad(1), _quad(0, (0, 0, 255))]
+    if reverse_order:
+        meshes.reverse()
+    mesh, prefix, image, metadata = _blend_view(tmp_path, meshes)
+    query = mesh.pixel_query(prefix, [[20, 20]])['queries'][0]
+    assert query['hit'] and query['measurement_valid'] and query['world_xyz'][2] == 2
+    assert image.getpixel((20, 20)) == (20, 200, 50)
+    assert metadata['rasterizer']['transparent_composite_pixel_count'] == 0
+
+
+@pytest.mark.parametrize('reverse_winding', [False, True])
+def test_shared_quad_diagonal_is_blended_once_and_alpha_factor_is_linear(tmp_path, reverse_winding):
+    foreground = _blend_quad(1, alpha_factor=128)
+    if reverse_winding:
+        foreground.faces = foreground.faces[:, ::-1]
+    mesh, prefix, image, metadata = _blend_view(tmp_path, [foreground, _quad(0, (0, 0, 255))])
+    expected = _expected_linear_over([((255, 0, 0), (128/255)**2)], (0, 0, 255))
+    # All 40 diagonal pixel centres sit on the shared triangle edge.
+    assert all(image.getpixel((i, 39-i)) == expected for i in range(40))
+    assert metadata['rasterizer']['blend']['statistics']['peak_pixel_layers'] == 1
+    assert not mesh.pixel_query(prefix, [[20, 19]])['queries'][0]['hit']
+
+
+@pytest.mark.parametrize('reverse_order', [False, True])
+def test_crossing_blend_planes_sort_fragments_per_pixel_not_triangle_centroid(tmp_path, reverse_order):
+    red, green = _blend_quad(0), _blend_quad(0, (0, 255, 0))
+    # Source Y is public Z. These planes cross at x=0 and reverse depth order.
+    red.vertices[:, 1] = red.vertices[:, 0]/4
+    green.vertices[:, 1] = -green.vertices[:, 0]/4
+    meshes = [red, green, _quad(-2, (0, 0, 255))]
+    if reverse_order:
+        meshes.reverse()
+    mesh, prefix, image, _ = _blend_view(tmp_path, meshes)
+    a = 128/255
+    assert image.getpixel((5, 20)) == _expected_linear_over([((0, 255, 0), a), ((255, 0, 0), a)], (0, 0, 255))
+    assert image.getpixel((35, 20)) == _expected_linear_over([((255, 0, 0), a), ((0, 255, 0), a)], (0, 0, 255))
+    assert all(row['reason'] == 'transparent_composite' for row in mesh.pixel_query(prefix, [[5, 20], [35, 20]])['queries'])
+
+
+@pytest.mark.parametrize('alpha,background', [(0, True), (128, False), (255, False)])
+def test_blend_over_empty_background_never_invents_a_surface(tmp_path, alpha, background):
+    mesh, prefix, image, _ = _blend_view(tmp_path, [_blend_quad(1, alpha=alpha)])
+    query = mesh.pixel_query(prefix, [[20, 20]])['queries'][0]
+    assert query.get('background', False) is background
+    assert query['hit'] is (alpha == 255)
+    if alpha == 128:
+        assert query['reason'] == 'transparent_composite'
+    assert image.getpixel((20, 20)) == _expected_linear_over([((255, 0, 0), alpha/255)], _BACKGROUND_FOR_TEST)
+
+
+@pytest.mark.parametrize('budget', ['_MAX_BLEND_TILE_FRAGMENTS', '_MAX_BLEND_TOTAL_FRAGMENTS', '_MAX_BLEND_PIXEL_LAYERS'])
+def test_blend_budget_failure_is_explicit_and_saves_no_partial_observation(tmp_path, monkeypatch, budget):
+    from src.agent.geometry import mesh_observation
+    monkeypatch.setattr(mesh_observation, budget, 1)
+    mesh = MeshObservation(_export(trimesh.Scene([_blend_quad(1), _blend_quad(0)]), tmp_path/'asset.glb'))
+    prefix = tmp_path/'refused'
+    with pytest.raises(ValueError, match='BLEND .*budget exceeded'):
+        mesh.render(prefix, eye=[0, 0, 10], target=[0, 0, 0], width_m=4, height_m=2, width_px=40, height_px=40)
+    assert not any(prefix.with_suffix(suffix).exists() for suffix in ('.png', '.json', '.npz'))
+
+
+@pytest.mark.parametrize('removed', ['measurement_contract', 'transparent_composite_indices'])
+def test_blend_buffer_without_invalidity_contract_is_rejected(tmp_path, removed):
+    mesh, prefix, _, _ = _blend_view(tmp_path, [_blend_quad(1)])
+    with np.load(prefix.with_suffix('.npz'), allow_pickle=False) as data:
+        arrays = {key: data[key] for key in data.files if key != removed}
+    np.savez_compressed(prefix.with_suffix('.npz'), **arrays)
+    with pytest.raises(ValueError, match='measurement contract and invalid indices'):
+        mesh.pixel_query(prefix, [[20, 20]])
+
+
+def test_mask_material_is_still_explicitly_unsupported(tmp_path):
+    mesh = _blend_quad(1)
+    mesh.visual.material.alphaMode = 'MASK'
+    with pytest.raises(ValueError, match='unsupported material alpha mode'):
+        MeshObservation(_export(trimesh.Scene(mesh), tmp_path/'mask.glb'))
+
+
+def test_blend_tiles_have_no_missing_or_duplicated_seams(tmp_path):
+    _, _, image, metadata = _blend_view(tmp_path, [_blend_quad(1), _quad(0, (0, 0, 255))], width=129, height=129)
+    expected = _expected_linear_over([((255, 0, 0), 128/255)], (0, 0, 255))
+    assert np.all(np.asarray(image) == np.asarray(expected))
+    assert metadata['rasterizer']['transparent_composite_pixel_count'] == 129**2
+    assert metadata['rasterizer']['blend']['statistics']['retained_fragments'] == 129**2
+
+
+def test_blend_composites_unrounded_linear_opaque_backing(tmp_path):
+    opaque = _quad(0, (255, 255, 255))
+    opaque.visual.material.baseColorFactor = [64, 128, 192, 255]
+    _, _, image, _ = _blend_view(tmp_path, [_blend_quad(1), opaque])
+    alpha = 128/255
+    linear = alpha*np.array([1, 0, 0])+(1-alpha)*np.array([64, 128, 192])/255
+    expected = np.rint((1.055*linear**(1/2.4)-.055)*255).astype(int)
+    np.testing.assert_array_equal(image.getpixel((20, 20)), expected)

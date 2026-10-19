@@ -174,3 +174,141 @@ def test_symlink_input_root_is_rejected(prepared):
     _write(path, manifest)
     with pytest.raises(ValueError, match="symlink/reparse"):
         readiness.check_readiness(path)
+
+
+def _save_preparation(path, manifest, config):
+    configuration = path.parent / "configuration.json"
+    _write(configuration, config)
+    manifest["configuration"] = _ref(configuration, path.parent)
+    _write(path, manifest)
+
+
+@pytest.fixture
+def mixed(prepared):
+    path, manifest, config, calls = prepared
+    inputs = Path(manifest["input_root"])
+    images = inputs / "auxiliary"
+    images.mkdir()
+    from PIL import Image
+    Image.new("RGB", (12, 8), "white").save(images / "23f.png")
+    declaration = inputs / "building.json"
+    _write(declaration, {"building": "test office", "plan_path": "auxiliary/23f.png",
+                         "plan_scope": "23/F only; no scale or repetition asserted"})
+    manifest["schema_version"] = 2
+    manifest["admitted_files"][0]["role"] = "mesh"
+    for file, role in ((images / "23f.png", "auxiliary_image"), (declaration, "building_declaration")):
+        manifest["admitted_files"].append({**_ref(file, inputs), "role": role,
+            "source_reference": "offline input fixture", "applicability": "23/F; fixture only"})
+    config["cases"][0].update(auxiliary_images="auxiliary", building_input="building.json",
+                              floor_plan_images=["23f.png"])
+    _save_preparation(path, manifest, config)
+    return path, manifest, config, calls
+
+
+def test_mixed_preflight_preserves_explicit_roles_and_native_arguments(mixed):
+    path, _, _, calls = mixed
+    report = readiness.check_readiness(path)
+    assert report["input_roles"] == {"building.glb": "mesh", "auxiliary/23f.png": "auxiliary_image",
+                                      "building.json": "building_declaration"}
+    command = report["normal_runtime_argv"]
+    assert "--images" in command and "--building-input" in command
+    assert command[command.index("--floor-plan-image") + 1] == "23f.png"
+    assert report["no_model_calls"] and not Path(report["run_output"]).exists()
+    assert calls == [(readiness.ROOT, True)]
+
+
+@pytest.mark.parametrize("name", ["auxiliary/23f.png", "building.json"])
+def test_mixed_input_bytes_are_frozen(mixed, name):
+    path, manifest, _, _ = mixed
+    with (Path(manifest["input_root"]) / name).open("ab") as stream:
+        stream.write(b"changed")
+    with pytest.raises(ValueError, match="(size|hash) changed"):
+        readiness.check_readiness(path)
+
+
+def test_unlisted_auxiliary_answer_is_rejected_before_read(mixed, monkeypatch):
+    path, manifest, _, _ = mixed
+    answer = Path(manifest["input_root"]) / "auxiliary" / "old_answer.json"
+    answer.write_text("never inspect", encoding="utf-8")
+    original = Path.open
+
+    def guarded(self, *args, **kwargs):
+        assert self != answer, "unlisted auxiliary contents were read"
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded)
+    with pytest.raises(ValueError, match="allowlist"):
+        readiness.check_readiness(path)
+
+
+@pytest.mark.parametrize("change,reason", [
+    ("unused_plan", "configured input roles differ"),
+    ("unused_declaration", "configured input roles differ"),
+    ("wrong_role", "supported role"),
+    ("missing_source", "source_reference and applicability"),
+    ("missing_scope", "source_reference and applicability"),
+    ("duplicate", "duplicate admitted"),
+    ("legacy", "schema 1 admits exactly one"),
+])
+def test_mixed_preflight_rejects_unbound_or_misconfigured_inputs(mixed, change, reason):
+    path, manifest, config, _ = mixed
+    case = config["cases"][0]
+    if change == "unused_plan":
+        case.pop("auxiliary_images")
+        case.pop("floor_plan_images")
+    elif change == "unused_declaration":
+        case.pop("building_input")
+    elif change == "wrong_role":
+        manifest["admitted_files"][1]["role"] = "building_declaration"
+    elif change == "missing_source":
+        manifest["admitted_files"][1].pop("source_reference")
+    elif change == "missing_scope":
+        manifest["admitted_files"][1].pop("applicability")
+    elif change == "duplicate":
+        manifest["admitted_files"].append(manifest["admitted_files"][1])
+    elif change == "legacy":
+        manifest["schema_version"] = 1
+    _save_preparation(path, manifest, config)
+    with pytest.raises(ValueError, match=reason):
+        readiness.check_readiness(path)
+
+
+@pytest.mark.parametrize("override", ["case_root", "global_root", "declaration_path"])
+def test_configuration_cannot_open_inputs_outside_manifest_before_root_check(mixed, monkeypatch, override):
+    path, manifest, config, _ = mixed
+    outside = path.parent.parent / "historical-unadmitted"
+    outside.mkdir()
+    answer = outside / "building.json"
+    answer.write_text('{"unadmitted":"do not read"}', encoding="utf-8")
+    if override == "case_root":
+        config["cases"][0]["input_root"] = str(outside)
+    elif override == "global_root":
+        config["input_root"] = str(outside)
+    else:
+        config["cases"][0]["building_input"] = str(answer)
+    _save_preparation(path, manifest, config)
+    original = Path.open
+
+    def guarded(self, *args, **kwargs):
+        assert not self.is_relative_to(outside), "outside input was opened before the scope check"
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded)
+    with pytest.raises(ValueError, match="(frozen input_root|escapes)"):
+        readiness.check_readiness(path)
+
+
+def test_audit_input_overlap_fails_before_review_image_is_read(mixed, monkeypatch):
+    path, manifest, config, _ = mixed
+    manifest["input_root"] = str(path.parent)
+    _save_preparation(path, manifest, config)
+    screenshot = path.parent / "reviewed.png"
+    original = Path.open
+
+    def guarded(self, *args, **kwargs):
+        assert self != screenshot, "review image was opened before directory isolation check"
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded)
+    with pytest.raises(ValueError, match="separate directories"):
+        readiness.check_readiness(path)

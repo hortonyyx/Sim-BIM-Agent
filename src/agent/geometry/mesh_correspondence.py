@@ -251,7 +251,10 @@ def compare_mesh_source(mesh, prefix, source, *, pixels=None, grid=None, box=Non
                 'observation_xyz': front['point'].tolist(),
                 'source_xyz': observation_to_source([front['point']], frame, yaw)[0].tolist(),
                 'depth_m': front['depth_m'], 'nearest_polygon_edge_distance_m': front['edge_distance_m']}
-        if not front or not mesh_sample['hit']:
+        if mesh_sample.get('reason') == 'transparent_composite':
+            row['status'] = 'mesh_transparent_composite'
+            row['measurement_invalid_reason'] = mesh_sample['measurement_invalid_reason']
+        elif not front or not mesh_sample['hit']:
             row['status'] = ('neither_hit' if not front and not mesh_sample['hit'] else
                              'mesh_no_hit' if not mesh_sample['hit'] else 'source_no_hit')
         elif boundary_ids is not None and not set(boundary_ids).intersection(row['source']['boundary_ids']):
@@ -290,6 +293,7 @@ def compare_mesh_source(mesh, prefix, source, *, pixels=None, grid=None, box=Non
         'fitted_to_mesh': False, 'fidelity': 'not_evaluated', 'limitations': [
             'Sampled first positive ray hits only, not nearest 3D surface distance or whole-building coverage.',
             'No-hit is unknown, not a zero residual. Near source polygon edges and mesh silhouettes are excluded from aggregate bands.',
+            'Pixels with contributing fractional mesh alpha have no unique measurable surface and are excluded, separately from background/no-hit.',
             'Glazing and closed/unknown doors use the host envelope; explicitly open doors/passages/enclosure regions let rays through.',
             'Unselected source still occludes selected surfaces. Mesh bounds may omit occluders; this uses precisely the saved observation selection.',
             'Source boundaries are the actual exported planar/tessellated geometry, including any declared approximation.',

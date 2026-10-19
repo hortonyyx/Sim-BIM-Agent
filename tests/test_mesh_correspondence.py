@@ -9,7 +9,7 @@ import trimesh
 from src.agent.geometry.mesh_correspondence import compare_mesh_source, file_sha256, load_observation, sample_pixels
 from src.agent.geometry.mesh_observation import MeshObservation
 from src.agent.geometry.source_model import _digest
-from tests.test_mesh_observation import _export, _quad
+from tests.test_mesh_observation import _export, _quad, _blend_quad, _blend_view
 
 
 def _source(mesh, z=.2):
@@ -180,3 +180,29 @@ def test_near_silhouette_is_disclosed_and_excluded_from_bands(scene):
 def test_invalid_sampling_does_not_create_false_residuals(options):
     with pytest.raises(ValueError):
         sample_pixels({'width': 60, 'height': 40}, **options)
+
+
+@pytest.mark.parametrize('source_hit', [False, True])
+def test_fractional_blend_is_distinct_from_missing_mesh_and_excluded_from_all_residuals(tmp_path, source_hit):
+    mesh, prefix, _, _ = _blend_view(tmp_path, [_blend_quad(1), _quad(0, (0, 0, 255))])
+    source = _source(mesh)
+    if not source_hit:
+        source['boundaries'] = []
+        _seal(source)
+    result = compare_mesh_source(mesh, prefix, source, pixels=[[20, 20]])
+    row = result['samples'][0]
+    assert row['status'] == 'mesh_transparent_composite'
+    assert row['source_hit'] is source_hit and row['mesh_hit'] is False
+    assert row['measurement_invalid_reason'] and row['valid_for_residual_summary'] is False
+    assert 'signed_depth_residual_m' not in row
+    assert result['valid_sample_count'] == 0 and result['invalid_sample_count'] == 1
+    assert sum(result['absolute_depth_residual_bands'].values()) == 0
+    assert all(value is None for value in result['depth_residual_summary_m'].values())
+
+
+def test_fully_occluded_blend_does_not_remove_valid_correspondence(tmp_path):
+    mesh, prefix, _, _ = _blend_view(tmp_path, [_blend_quad(2, alpha=255), _blend_quad(1)])
+    result = compare_mesh_source(mesh, prefix, _source(mesh, z=2), pixels=[[20, 20]])
+    assert result['samples'][0]['status'] == 'paired_visible_ray_hits'
+    assert result['valid_sample_count'] == 1
+    assert result['absolute_depth_residual_bands']['within_5cm'] == 1

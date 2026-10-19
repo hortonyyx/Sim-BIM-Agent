@@ -112,6 +112,8 @@ def register_mesh_tools(server, toolkit):
         centres before rendering; excluded/occluded areas are not blank-wall proof.
         Returns an image with equal metres per pixel on both axes (longest side
         1200px) and an observation ID. Read resolution_px for measurement coordinates.
+        Original OPAQUE/BLEND alpha is preserved. Pixels with a contributing
+        fractional-alpha surface are visible but cannot supply a unique surface XYZ.
         """
         for value in (azimuth_degrees, elevation_degrees):
             if not math.isfinite(value):
@@ -164,7 +166,9 @@ def register_mesh_tools(server, toolkit):
     def measure_mesh_pixels(observation: str, pixels: list[list[int]], candidate: str | None = None) -> dict:
         """Read visible original-mesh surface XYZ at pixels of a saved mesh view.
         Integer pixels refer to that view's reported resolution_px, origin upper left.
-        Background has no geometry. Two surface points also return their distance;
+        Background has no geometry. A transparent_composite is not background:
+        contributing fractional alpha makes its XYZ/distance unavailable.
+        Two valid surface points also return their distance;
         texture marks still require your interpretation, and noisy mesh is not BIM truth.
         With a candidate, also convert hits to its explicitly saved mesh_frame;
         no implicit alignment or translation is guessed.

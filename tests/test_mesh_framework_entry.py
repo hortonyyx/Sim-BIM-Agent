@@ -19,6 +19,17 @@ async def _exercise(tmp_path):
     case = _case(tmp_path)
     inputs = Path(case['input_root'])
     mesh = inputs / 'building.glb'
+    # Exercise the actual MCP image/evidence path with partial transparency.
+    import numpy as np
+    from PIL import Image
+    import trimesh
+    scene = trimesh.load(mesh, force='scene')
+    shell = trimesh.creation.box(extents=[1.3, 1.3, 1.3])
+    shell.visual = trimesh.visual.TextureVisuals(uv=np.zeros((len(shell.vertices), 2)),
+        material=trimesh.visual.material.PBRMaterial(
+            baseColorTexture=Image.new('RGBA', (4, 4), (255, 0, 0, 128)), alphaMode='BLEND'))
+    scene.add_geometry(shell, node_name='transparent_shell')
+    mesh.write_bytes(scene.export(file_type='glb'))
     plan = curved_plan()
     plan['mesh_frame'] = {'mesh_sha256': hashlib.sha256(mesh.read_bytes()).hexdigest(),
         'yaw_degrees': 0, 'translation_m': [0, 0, 0],
@@ -46,7 +57,7 @@ async def _exercise(tmp_path):
     workers = {'compare': [
         _response('w1', 'view_mesh_section', {'height_m': 0.1, 'candidate': 'candidate_01'}),
         _response('w2', 'compare_mesh_source_pixels', {'candidate': 'candidate_01', 'observation': 'mesh_001',
-                                                     'grid': [3, 3]}),
+                                                     'grid': [8, 8]}),
         _response('w3', answer=json.dumps(worker_answer)),
     ]}
     parent_script, worker_script = tmp_path / 'parent.json', tmp_path / 'workers.json'
@@ -79,6 +90,12 @@ async def _exercise(tmp_path):
     section_files = list(out.rglob('section_001.json'))
     comparisons = list(out.rglob('correspondence_001.json'))
     assert section_files and comparisons
+    comparison = json.loads(comparisons[0].read_bytes())
+    assert comparison['counts'].get('mesh_transparent_composite', 0) > 0
+    assert all(row['valid_for_residual_summary'] is False
+               and 'signed_depth_residual_m' not in row
+               and 'absolute_depth_residual_m' not in row for row in comparison['samples']
+               if row['status'] == 'mesh_transparent_composite')
     before = (out / 'events.jsonl').read_bytes()
     args.resume = True
     resumed = await runtime_entry.execute(args)

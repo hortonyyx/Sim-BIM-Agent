@@ -29,6 +29,10 @@ _MAX_IMAGE_SIDE = 1600
 _MAX_IMAGE_PIXELS = _MAX_IMAGE_SIDE**2
 _MAX_VIEW_SPAN_M = 1_000_000.0
 _MAX_CANDIDATE_FACE_ID_SAMPLE = 12
+_BLEND_TILE_SIDE = 64
+_MAX_BLEND_TILE_FRAGMENTS = 131_072
+_MAX_BLEND_TOTAL_FRAGMENTS = 8_000_000
+_MAX_BLEND_PIXEL_LAYERS = 64
 _BACKGROUND = np.array([238, 242, 246], dtype=np.uint8)
 _Y_UP_TO_Z_UP = np.array(
     [
@@ -48,6 +52,8 @@ class _MeshPart:
     uv: np.ndarray
     texture: Image.Image
     base_color_factor: np.ndarray
+    alpha_mode: str
+    alpha_factor: float
     node_name: str
     geometry_name: str
     face_offset: int
@@ -187,7 +193,7 @@ def _weighted_axial_mean_degrees(angles: np.ndarray, weights: np.ndarray) -> flo
 
 def _material_texture(
     mesh: trimesh.Trimesh, label: str
-) -> tuple[Image.Image, np.ndarray]:
+) -> tuple[Image.Image, np.ndarray, str, float]:
     if mesh.visual.kind != "texture":
         raise ValueError(
             f"{label} uses unsupported visual kind {mesh.visual.kind!r}; "
@@ -205,16 +211,17 @@ def _material_texture(
     if image is None or not isinstance(image, Image.Image):
         raise ValueError(f"{label} has UVs but no supported base-color texture image")
     alpha_mode = getattr(material, "alphaMode", None)
-    if alpha_mode not in (None, "OPAQUE"):
+    if alpha_mode not in (None, "OPAQUE", "BLEND"):
         raise ValueError(
             f"{label} uses unsupported material alpha mode {alpha_mode!r}"
         )
     rgba = image.convert("RGBA")
     alpha_min, alpha_max = rgba.getchannel("A").getextrema()
-    if alpha_min != 255 or alpha_max != 255:
+    if alpha_mode != "BLEND" and (alpha_min != 255 or alpha_max != 255):
         raise ValueError(
-            f"{label} has transparency; alpha blending is not supported by this rasterizer"
+            f"{label} has texture alpha without an explicit supported BLEND material"
         )
+    alpha_factor = 1.0
     factor = getattr(material, "baseColorFactor", None)
     if factor is None:
         factor_rgb = np.ones(3, dtype=np.float64)
@@ -226,12 +233,15 @@ def _material_texture(
             factor_array = factor_array / 255.0
         if np.any(factor_array < 0.0) or np.any(factor_array > 1.0):
             raise ValueError(f"{label} has an out-of-range baseColorFactor")
-        if len(factor_array) == 4 and factor_array[3] < 1.0:
+        if len(factor_array) == 4:
+            alpha_factor = float(factor_array[3])
+        if alpha_mode != "BLEND" and alpha_factor < 1.0:
             raise ValueError(
-                f"{label} has transparent baseColorFactor; alpha blending is unsupported"
+                f"{label} has transparent baseColorFactor without an explicit BLEND material"
             )
         factor_rgb = factor_array[:3]
-    return rgba.convert("RGB"), factor_rgb
+    return (rgba if alpha_mode == "BLEND" else rgba.convert("RGB"),
+            factor_rgb, alpha_mode or "OPAQUE", alpha_factor)
 
 
 def _apply_linear_rgb_factor(
@@ -239,19 +249,150 @@ def _apply_linear_rgb_factor(
 ) -> np.ndarray:
     """Apply glTF's linear baseColorFactor to sRGB texture samples."""
 
+    return _encode_linear_rgb(_decode_srgb(sampled_srgb) * factor_linear[None, :])
+
+
+def _decode_srgb(sampled_srgb: np.ndarray) -> np.ndarray:
     srgb = sampled_srgb.astype(np.float64) / 255.0
-    linear = np.where(
+    return np.where(
         srgb <= 0.04045,
         srgb / 12.92,
         ((srgb + 0.055) / 1.055) ** 2.4,
     )
-    factored = np.clip(linear * factor_linear[None, :], 0.0, 1.0)
+
+
+def _encode_linear_rgb(linear: np.ndarray) -> np.ndarray:
+    factored = np.clip(linear, 0.0, 1.0)
     encoded = np.where(
         factored <= 0.0031308,
         factored * 12.92,
         1.055 * factored ** (1.0 / 2.4) - 0.055,
     )
     return np.rint(encoded * 255.0).clip(0, 255).astype(np.uint8)
+
+
+def _blend_over_opaque(selected, *, eye, target, right, up, forward, span,
+                       colors, linear_backing, depth, face_buffer, world_buffer):
+    """Bounded per-pixel fragment sorting, without modifying source geometry.
+
+    Tiles bound temporary fragment storage. A half-open edge convention assigns
+    a shared triangle edge once, including a textured quad's diagonal. Distinct
+    coincident faces remain distinct; exact depth ties use global face ID.
+    """
+    height, width = depth.shape
+    view_width, view_height = span
+    prepared = []
+    for part, vertices, face_ids in selected:
+        if part.alpha_mode != "BLEND" or not len(face_ids):
+            continue
+        triangles = vertices[part.faces[face_ids]]
+        relative = triangles - target
+        sx, sy = relative @ right, relative @ up
+        depths = (triangles - eye) @ forward
+        denominator = ((sy[:, 1]-sy[:, 2])*(sx[:, 0]-sx[:, 2])
+                       + (sx[:, 2]-sx[:, 1])*(sy[:, 0]-sy[:, 2]))
+        columns = (sx/view_width + .5)*width - .5
+        rows = (.5-sy/view_height)*height - .5
+        # Use floating boxes until clipping to avoid integer overflow off screen.
+        boxes = np.column_stack((np.maximum(0, np.ceil(columns.min(axis=1)-1e-9)),
+            np.minimum(width-1, np.floor(columns.max(axis=1)+1e-9)),
+            np.maximum(0, np.ceil(rows.min(axis=1)-1e-9)),
+            np.minimum(height-1, np.floor(rows.max(axis=1)+1e-9))))
+        usable = ((np.abs(denominator) > 1e-14) & (boxes[:, 0] <= boxes[:, 1])
+                  & (boxes[:, 2] <= boxes[:, 3]) & (depths.max(axis=1) > 1e-9))
+        prepared.append((part, triangles, part.uv[part.faces[face_ids]], face_ids,
+                         sx, sy, depths, denominator, boxes, usable))
+    candidate_faces = sum(int(item[-1].sum()) for item in prepared)
+    invalid = np.zeros((height, width), dtype=bool)
+    total_fragments = 0
+    peak_tile_fragments = 0
+    peak_pixel_layers = 0
+    for row_min in range(0, height, _BLEND_TILE_SIDE):
+        row_max = min(row_min + _BLEND_TILE_SIDE, height)
+        for col_min in range(0, width, _BLEND_TILE_SIDE):
+            col_max = min(col_min + _BLEND_TILE_SIDE, width)
+            tile_width = col_max-col_min
+            grid_x, grid_y = np.meshgrid(
+                ((np.arange(col_min, col_max)+.5)/width-.5)*view_width,
+                (.5-(np.arange(row_min, row_max)+.5)/height)*view_height)
+            fragments = []
+            tile_fragments = 0
+            for part, triangles, uv, face_ids, sx_all, sy_all, depths, denominators, boxes, usable in prepared:
+                in_tile = (usable & (boxes[:, 0] < col_max) & (boxes[:, 1] >= col_min)
+                           & (boxes[:, 2] < row_max) & (boxes[:, 3] >= row_min))
+                texture = np.asarray(part.texture)
+                for i in np.flatnonzero(in_tile):
+                    sx, sy, denom = sx_all[i], sy_all[i], denominators[i]
+                    w0 = ((sy[1]-sy[2])*(grid_x-sx[2]) + (sx[2]-sx[1])*(grid_y-sy[2]))/denom
+                    w1 = ((sy[2]-sy[0])*(grid_x-sx[2]) + (sx[0]-sx[2])*(grid_y-sy[2]))/denom
+                    weights = (w0, w1, 1-w0-w1)
+                    inside = np.ones(grid_x.shape, dtype=bool)
+                    for weight, (a, b) in zip(weights, ((1, 2), (2, 0), (0, 1)), strict=True):
+                        dx, dy = (sx[b]-sx[a])*np.sign(denom), (sy[b]-sy[a])*np.sign(denom)
+                        inclusive = dy > 0 or (dy == 0 and dx < 0)
+                        inside &= (weight > 1e-10) | ((np.abs(weight) <= 1e-10) & inclusive)
+                    candidate_depth = sum(weight*depths[i, j] for j, weight in enumerate(weights))
+                    active = (inside & (candidate_depth > 1e-9)
+                              & (candidate_depth < depth[row_min:row_max, col_min:col_max]))
+                    rr, cc = np.nonzero(active)
+                    if not len(rr):
+                        continue
+                    bary = np.column_stack([weight[active] for weight in weights])
+                    sampled_uv = bary @ uv[i]
+                    tx = np.floor(np.mod(sampled_uv[:, 0], 1)*texture.shape[1]).astype(np.int64)
+                    ty = np.floor(np.mod(1-sampled_uv[:, 1], 1)*texture.shape[0]).astype(np.int64)
+                    rgba = texture[ty, tx]
+                    alpha = rgba[:, 3].astype(np.float64)/255 * part.alpha_factor
+                    nonzero = alpha > 0
+                    count = int(nonzero.sum())
+                    if not count:
+                        continue
+                    tile_fragments += count
+                    total_fragments += count
+                    if (tile_fragments > _MAX_BLEND_TILE_FRAGMENTS
+                            or total_fragments > _MAX_BLEND_TOTAL_FRAGMENTS):
+                        raise ValueError("BLEND fragment budget exceeded; use a smaller view or resolution; no partial observation saved")
+                    fragments.append((
+                        (rr[nonzero]*tile_width+cc[nonzero]).astype(np.int32),
+                        candidate_depth[active][nonzero],
+                        _decode_srgb(rgba[nonzero, :3])*part.base_color_factor[None, :],
+                        alpha[nonzero],
+                        np.full(count, part.face_offset+int(face_ids[i]), dtype=np.int32),
+                        bary[nonzero] @ triangles[i]))
+            if not fragments:
+                continue
+            flat, fragment_depth, rgb, alpha, identities, points = (
+                np.concatenate([fragment[j] for fragment in fragments]) for j in range(6))
+            order = np.lexsort((identities, fragment_depth, flat))
+            flat, rgb, alpha, identities, points = (
+                array[order] for array in (flat, rgb, alpha, identities, points))
+            unique, starts, counts = np.unique(flat, return_index=True, return_counts=True)
+            maximum_layers = int(counts.max())
+            if maximum_layers > _MAX_BLEND_PIXEL_LAYERS:
+                raise ValueError("BLEND per-pixel layer budget exceeded; no partial observation saved")
+            peak_tile_fragments = max(peak_tile_fragments, tile_fragments)
+            peak_pixel_layers = max(peak_pixel_layers, maximum_layers)
+            transmission = np.ones(len(unique), dtype=np.float64)
+            composite = np.zeros((len(unique), 3), dtype=np.float64)
+            partial = np.zeros(len(unique), dtype=bool)
+            for layer in range(maximum_layers):
+                groups = np.flatnonzero((counts > layer) & (transmission > 0))
+                indices = starts[groups]+layer
+                a = alpha[indices]
+                partial[groups] |= (a > 0) & (a < 1)
+                composite[groups] += (transmission[groups]*a)[:, None]*rgb[indices]
+                transmission[groups] *= 1-a
+            rows = row_min + unique//tile_width
+            columns = col_min + unique % tile_width
+            composite += transmission[:, None]*linear_backing[rows, columns]
+            colors[rows, columns] = _encode_linear_rgb(composite)
+            # Alpha-zero fragments never entered this list. The closest remaining
+            # fragment is a measurable hit only if no fractional alpha contributes.
+            face_buffer[rows, columns] = np.where(partial, -1, identities[starts])
+            world_buffer[rows, columns] = np.where(partial[:, None], np.nan, points[starts])
+            invalid[rows, columns] = partial
+    return invalid, {"candidate_faces": candidate_faces, "retained_fragments": total_fragments,
+                     "peak_tile_fragments": peak_tile_fragments, "peak_pixel_layers": peak_pixel_layers}
 
 
 class MeshObservation:
@@ -284,7 +425,7 @@ class MeshObservation:
                 raise ValueError(f"{label} has invalid or empty POSITION data")
             if faces.ndim != 2 or faces.shape[1:] != (3,) or not len(faces):
                 raise ValueError(f"{label} has invalid or empty triangle indices")
-            texture, base_color_factor = _material_texture(mesh, label)
+            texture, base_color_factor, alpha_mode, alpha_factor = _material_texture(mesh, label)
             uv = np.asarray(mesh.visual.uv, dtype=np.float64)
             if not np.isfinite(vertices).all() or not np.isfinite(uv).all():
                 raise ValueError(f"{label} has non-finite position or UV data")
@@ -301,6 +442,8 @@ class MeshObservation:
                     uv=uv,
                     texture=texture,
                     base_color_factor=base_color_factor,
+                    alpha_mode=alpha_mode,
+                    alpha_factor=alpha_factor,
                     node_name=str(node_name),
                     geometry_name=str(geometry_name),
                     face_offset=face_offset,
@@ -349,6 +492,11 @@ class MeshObservation:
             "local_face_id": local_face_id,
             "node_name": part.node_name,
             "geometry_name": part.geometry_name,
+            "material_alpha_mode": part.alpha_mode,
+            "material_geometry_caveat": (
+                "Original carrier triangle; texture alpha does not cut or remove its geometry."
+                if part.alpha_mode == "BLEND" else None
+            ),
             "triangle_vertices_xyz": triangle.tolist(),
             "triangle_centroid_xyz": triangle.mean(axis=0).tolist(),
             "triangle_area_m2": doubled_area / 2.0,
@@ -413,6 +561,10 @@ class MeshObservation:
             "scene_instance_count": len(self._parts),
             "selected_vertex_count": selected_vertices,
             "selected_face_count": selected_faces,
+            "selected_material_face_counts": {
+                mode: sum(len(ids) for part, _, ids in selected if part.alpha_mode == mode)
+                for mode in ("OPAQUE", "BLEND")
+            },
             "bounds": None if geometric_bounds is None else geometric_bounds.tolist(),
             "selection_bounds": None if clip is None else clip.tolist(),
             "selection_method": (
@@ -426,7 +578,8 @@ class MeshObservation:
             ),
             "evidence_caveat": (
                 "Bounds and counts describe the supplied surface mesh only; they do not "
-                "establish floors, rooms, enclosure, or a true footprint."
+                "establish floors, rooms, enclosure, or a true footprint. BLEND texture "
+                "alpha affects display and pixel measurement, not the original carrier geometry."
             ),
         }
 
@@ -645,7 +798,8 @@ class MeshObservation:
                 "differently semantic surfaces; its area share, angular concentration, "
                 "and projection extent do not make it a fitted wall, a reliable wall "
                 "edge, or a true coordinate axis. Use tight bounds or explicit face IDs "
-                "and inspect the underlying surface evidence."
+                "and inspect the underlying surface evidence. Areas include original "
+                "BLEND carrier triangles, not only their texture-visible coverage."
             ),
         }
 
@@ -725,10 +879,17 @@ class MeshObservation:
         depth = np.full((image_height, image_width), np.inf, dtype=np.float64)
         face_buffer = np.full((image_height, image_width), -1, dtype=np.int32)
         world_buffer = np.full((image_height, image_width, 3), np.nan, dtype=np.float32)
+        has_blend = any(part.alpha_mode == "BLEND" and len(ids) for part, _, ids in selected)
+        linear_backing = None
+        if has_blend:
+            linear_backing = np.empty((image_height, image_width, 3), dtype=np.float64)
+            linear_backing[:] = _decode_srgb(_BACKGROUND)
         texture_arrays: dict[int, np.ndarray] = {}
         visible_candidate_faces = 0
 
         for part, vertices, local_face_ids in selected:
+            if part.alpha_mode == "BLEND":
+                continue
             texture_key = id(part.texture)
             texture = texture_arrays.setdefault(texture_key, np.asarray(part.texture))
             triangles = vertices[part.faces[local_face_ids]]
@@ -807,9 +968,21 @@ class MeshObservation:
                 colors[global_rows, global_cols] = _apply_linear_rgb_factor(
                     texture[texture_y, texture_x, :3], part.base_color_factor
                 )
+                if linear_backing is not None:
+                    linear_backing[global_rows, global_cols] = (
+                        _decode_srgb(texture[texture_y, texture_x, :3])*part.base_color_factor[None, :])
                 face_buffer[global_rows, global_cols] = part.face_offset + int(local_face_id)
                 world_buffer[global_rows, global_cols] = points.astype(np.float32)
 
+        invalid = np.zeros((image_height, image_width), dtype=bool)
+        blend_statistics = None
+        if has_blend:
+            invalid, blend_statistics = _blend_over_opaque(
+                selected, eye=camera_eye, target=camera_target, right=right, up=camera_up,
+                forward=forward, span=(view_width, view_height), colors=colors,
+                linear_backing=linear_backing, depth=depth, face_buffer=face_buffer,
+                world_buffer=world_buffer)
+            visible_candidate_faces += blend_statistics["candidate_faces"]
         image = Image.fromarray(colors, mode="RGB")
         prefix = Path(out_prefix).expanduser().resolve()
         prefix.parent.mkdir(parents=True, exist_ok=True)
@@ -826,6 +999,8 @@ class MeshObservation:
             face_ids=face_buffer.reshape(-1)[hit_flat],
             mesh_sha256=np.asarray(self.mesh_sha256),
             operation_yaw_degrees=np.asarray(_validated_yaw(yaw_degrees)),
+            measurement_contract=np.asarray("opaque-or-unambiguous-blend-v1"),
+            transparent_composite_indices=np.flatnonzero(invalid.reshape(-1)).astype(np.int32),
         )
 
         pixel_dx = view_width / image_width
@@ -875,14 +1050,27 @@ class MeshObservation:
                     "to sRGB; this is not PBR-lighting or backface-culling faithful"
                 ),
                 "candidate_faces_overlapping_view": visible_candidate_faces,
-                "visible_pixel_count": int(len(hit_flat)),
+                "visible_pixel_count": int(len(hit_flat)+invalid.sum()),
+                "measurement_valid_pixel_count": int(len(hit_flat)),
+                "transparent_composite_pixel_count": int(invalid.sum()),
+                "blend": {
+                    "method": "per-pixel depth sorted linear RGB over; zero alpha skipped; half-open triangle edges",
+                    "depth_ties": "OPAQUE wins equal depth; distinct BLEND faces ordered by global face ID",
+                    "measurement": "Any contributing fractional alpha invalidates the single surface point; fully occluded and zero-alpha fragments do not",
+                    "tile_side_px": _BLEND_TILE_SIDE,
+                    "maximum_tile_fragments": _MAX_BLEND_TILE_FRAGMENTS,
+                    "maximum_total_fragments": _MAX_BLEND_TOTAL_FRAGMENTS,
+                    "maximum_pixel_layers": _MAX_BLEND_PIXEL_LAYERS,
+                    "budget_failure": "explicit refusal before writing observation files; no fragment truncation",
+                    "statistics": blend_statistics,
+                },
             },
             "selection_bounds": None if clip is None else clip.tolist(),
             "artifacts": {
                 "png": str(png_path),
                 "metadata_json": str(json_path),
                 "pixel_buffer_npz": str(npz_path),
-                "pixel_buffer_layout": "sorted flat pixel indices with compact world XYZ and global face IDs",
+                "pixel_buffer_layout": "sorted measurable flat pixel indices with compact world XYZ and global face IDs; separate sorted transparent-composite invalid indices",
             },
         }
         json_path.write_text(
@@ -927,6 +1115,14 @@ class MeshObservation:
                 if "operation_yaw_degrees" in data.files
                 else None
             )
+            has_contract = "measurement_contract" in data.files
+            if (has_contract and str(data["measurement_contract"].item()) != "opaque-or-unambiguous-blend-v1"):
+                raise ValueError("unsupported render measurement contract")
+            if ((has_contract or any(part.alpha_mode == "BLEND" for part in self._parts))
+                    and (not has_contract or "transparent_composite_indices" not in data.files)):
+                raise ValueError("BLEND-aware render measurement contract and invalid indices are required")
+            invalid_indices = (np.asarray(data["transparent_composite_indices"], dtype=np.int64)
+                               if "transparent_composite_indices" in data.files else np.empty(0, dtype=np.int64))
         if image_shape.shape != (2,) or np.any(image_shape <= 0):
             raise ValueError(f"invalid image shape in render pixel buffer: {npz_path}")
         if (
@@ -934,6 +1130,11 @@ class MeshObservation:
             or world_points.shape != (len(hit_indices), 3)
             or face_ids.shape != (len(hit_indices),)
             or (len(hit_indices) and np.any(hit_indices[1:] <= hit_indices[:-1]))
+            or invalid_indices.ndim != 1
+            or (len(invalid_indices) and np.any(invalid_indices[1:] <= invalid_indices[:-1]))
+            or np.any(hit_indices < 0) or np.any(hit_indices >= int(np.prod(image_shape)))
+            or np.any(invalid_indices < 0) or np.any(invalid_indices >= int(np.prod(image_shape)))
+            or np.intersect1d(hit_indices, invalid_indices, assume_unique=True).size
         ):
             raise ValueError(f"invalid compact arrays in render pixel buffer: {npz_path}")
 
@@ -965,6 +1166,7 @@ class MeshObservation:
                 result = {
                     "pixel": [column, row],
                     "hit": True,
+                    "measurement_valid": True,
                     "world_xyz": point.tolist(),
                     "face_id": face_id,
                 }
@@ -984,7 +1186,16 @@ class MeshObservation:
                 results.append(result)
                 hit_points.append(point)
             else:
-                results.append({"pixel": [column, row], "hit": False, "background": True})
+                invalid_location = int(np.searchsorted(invalid_indices, flat_index))
+                transparent = (invalid_location < len(invalid_indices)
+                               and invalid_indices[invalid_location] == flat_index)
+                result = {"pixel": [column, row], "hit": False,
+                          "measurement_valid": False, "background": not transparent}
+                if transparent:
+                    result["reason"] = "transparent_composite"
+                    result["measurement_invalid_reason"] = (
+                        "A fractional-alpha fragment contributes to this displayed pixel; no unique mesh surface point is assigned.")
+                results.append(result)
                 hit_points.append(None)
 
         pairwise: dict[str, Any] | None = None
@@ -1008,7 +1219,7 @@ class MeshObservation:
                     {
                         "available": False,
                         "distance_m": None,
-                        "reason": "both of the first two pixels must hit the mesh",
+                        "reason": "both of the first two pixels must have an unambiguous measurable mesh hit",
                     }
                 )
         return {
