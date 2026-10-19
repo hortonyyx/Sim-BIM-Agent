@@ -46,4 +46,6 @@ Go按订阅记账，保留供应商实报tokens，不套Paratera单价、不生�
 
 随后按用户授权完成[原读图任务长请求复测](../reports/2026-10-19_reader_connection_retest.md)：新官方路径下，GLM平面及MiMo平面/北立面仍复现等待响应头时EOF，均早于450秒上限。Go长请求问题尚未解决；现有证据不能区分本机代理路径、网关或上游责任。
 
+2026-10-19追加[相同失败请求代理/直连对照](../reports/2026-10-19_go_proxy_direct_ab.md)：已核对端点、鉴权、自有UA、稳定session与当前官方文档；没有查到强制流式要求。当前HttpChatAdapter默认继承环境/系统代理；本机又启用Meta TUN/fake-IP，不能将trust_env=False等同真实直连。诊断在不改系统设置的前提下，单socket绑定物理网卡并保留TLS域名验证。原GLM第5请求逐字节重放，代理60.242秒EOF、物理直连20.577秒200；2请求、37,030已知tokens另1未知，0工具执行。优先怀疑代理路径，但单组先后/高缓存/服务波动不足以定位本地代理或证明多分钟/整任务稳定；产品默认网络设置尚未更改。
+
 官方依据：[Go端点、会话和模型说明](https://opencode.ai/v2/docs/console/go/)、[OpenCode模型元数据](https://models.dev/api.json)、[标准Responses工具循环](https://developers.openai.com/api/docs/guides/function-calling)、[无状态推理历史](https://developers.openai.com/api/docs/guides/reasoning)。
