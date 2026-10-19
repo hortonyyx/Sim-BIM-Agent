@@ -1448,7 +1448,9 @@ class Runtime:
                 image_detail_supported = not (self.versions.remote_model.route_id == "opencode-go"
                     and self.model == "mimo-v2.6-flash")
                 _, _, shown, _ = convert_tool_result(call.call_id, raw, self.store,
-                    image_detail_supported=image_detail_supported)
+                    image_detail_supported=image_detail_supported,
+                    original_image_detail=("high" if self.versions.remote_model.route_id == "paratera"
+                                           else "original"))
             except Exception:
                 self.store.append(ToolExecutionPayload(call_id=call.call_id,
                     tool_name=call.tool_name, full_arguments=call.full_arguments,

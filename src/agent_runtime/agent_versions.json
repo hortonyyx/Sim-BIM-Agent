@@ -29,7 +29,7 @@
     "-m",
     "src.agent.version_fingerprints"
   ],
-  "current_runtime_version": "runtime-v28-20261019",
+  "current_runtime_version": "runtime-v30-20261019",
   "current_domain_version": "domain-v113-20261018",
   "runtime_versions": {
     "runtime-v1-20261007": {
@@ -4905,6 +4905,378 @@
         "src/agent_runtime/opencode_go.py": {
           "kind": "runtime",
           "sha256": "e21e7e89d9d1d033647451a01eda4b4ca1370a9169b1667954e04ad53f3ed9c7"
+        },
+        "src/agent_runtime/output_limits.py": {
+          "kind": "runtime",
+          "sha256": "04ebd9b7081f2ede28ba45f5d61415c624ea51c86f3db40dfc89ec6d17e47541"
+        },
+        "src/agent_runtime/providers.py": {
+          "kind": "runtime",
+          "sha256": "637ce34fd57de18a327fbd330bfb05cb0f95eefd0e18d7ea8a485ee3185da2bb"
+        },
+        "src/agent_runtime/responses.py": {
+          "kind": "runtime",
+          "sha256": "58341a2ef8452d7c9b62edf0fe454d582de67056decb01bf3641d7edcaef3781"
+        },
+        "src/agent_runtime/route_dispatch.json": {
+          "kind": "runtime",
+          "sha256": "884ef0d4ab9a56107cfc9e78950e96013e73c99b6389106edf62140b43884f92"
+        },
+        "src/agent_runtime/run_paths.py": {
+          "kind": "runtime",
+          "sha256": "b798f665a323bf4bf5404fd4c7d5e3d225159d0401d32f43ea5212050e06285f"
+        },
+        "src/agent_runtime/store.py": {
+          "kind": "runtime",
+          "sha256": "d759545f328053c02512ebbe46e2030ea447ec76b7a09b48c66e023674655941"
+        },
+        "src/agent_runtime/timing.py": {
+          "kind": "runtime",
+          "sha256": "de2111e8ff646712154c4533b52f43e2909316627842f1f4f0b390b7ba13919d"
+        },
+        "src/agent_runtime/versions.py": {
+          "kind": "runtime",
+          "sha256": "4b6ad76114f4e9ab00c7f4f84cc48f213ae6dcb5bb7fa9b04428218f94a8d1c4"
+        },
+        "src/harness_contracts/__init__.py": {
+          "kind": "runtime",
+          "sha256": "2822bf713051b751970c0e079f6e13df2bf8d8f9461145673baca54c0a927747"
+        },
+        "src/harness_contracts/base.py": {
+          "kind": "runtime",
+          "sha256": "5df2815acf3d1d03f5fff7f904e119989091c60b7e553da9517cc8a73a042c20"
+        },
+        "src/harness_contracts/budget.py": {
+          "kind": "runtime",
+          "sha256": "348467b10eed57d693a01c047e2e23f3daf0a1a8a39f1d6592cf31efbc82550b"
+        },
+        "src/harness_contracts/events.py": {
+          "kind": "runtime",
+          "sha256": "6e686416455a04ebeee7bfb058a357cea4d34a9153ac2a93ce3e9108264c7050"
+        },
+        "src/harness_contracts/incremental.py": {
+          "kind": "runtime",
+          "sha256": "79eaa128b22b8e4c4205dfedc035c662b9e1974710252cdf9bee4847c4ea7404"
+        },
+        "src/harness_contracts/refs.py": {
+          "kind": "runtime",
+          "sha256": "d22c4442a3970c4b13bbd1a6a78ff23e25a707dd331f84111f03b1784456a549"
+        },
+        "src/harness_contracts/roles.py": {
+          "kind": "runtime",
+          "sha256": "08080b3efb84d2345920380f509ad50685b438bd53c8cd0e6fa54a82a70d9c67"
+        },
+        "src/harness_contracts/usage.py": {
+          "kind": "runtime",
+          "sha256": "193d31d451f5914e12166589b860052d4d62874f2b3949d14a2a45265df749ce"
+        },
+        "src/harness_contracts/validation.py": {
+          "kind": "runtime",
+          "sha256": "f544544de7ec5c1458b63dd18f792fabc7986bcab63457b80b08717d75dd6dba"
+        },
+        "src/utils/file_lock.py": {
+          "kind": "runtime",
+          "sha256": "4826e78aa4204551a09c9c6961e5a87edfa933605e6dab6f7110ec58908c6eaf"
+        },
+        "uv.lock": {
+          "kind": "runtime",
+          "sha256": "966c62ae883ed8705081ea63dabd6a38dba33a1591f83f535890e1c6ae29e19e"
+        }
+      }
+    },
+    "runtime-v29-20261019": {
+      "source_commit": "36a91732770f14510ed35d6ee3fb1a54b33b071a",
+      "coverage": "automatic_directories",
+      "files": {
+        "pyproject.toml": {
+          "kind": "runtime",
+          "sha256": "f8ef35d9010d70968d1eaf66929c4b2127ff6a112fd83e8db6d115142848ca9b"
+        },
+        "src/__init__.py": {
+          "kind": "runtime",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "src/agent_runtime/__init__.py": {
+          "kind": "runtime",
+          "sha256": "4918215bfac9a0974a2600798d987f7cf83c5b9bd4c6dc64d2b814ddde1bb8bc"
+        },
+        "src/agent_runtime/accounting.py": {
+          "kind": "runtime",
+          "sha256": "0e5ae24346c92918eedf854794509df59b776820364a20f1d5749c17c273ac95"
+        },
+        "src/agent_runtime/adapter.py": {
+          "kind": "runtime",
+          "sha256": "746eb283d26955aa59294c487a3b830c57e1ce8b5df15073321baeb303248b58"
+        },
+        "src/agent_runtime/agent_registry.py": {
+          "kind": "runtime",
+          "sha256": "4505806d38082e6fb7799c0dc5bd1a0ac0916a04b2e8f7d1516a9160b22cdb55"
+        },
+        "src/agent_runtime/anthropic.py": {
+          "kind": "runtime",
+          "sha256": "6dfdf4b548232ed77cb9ba4d1a26ca737a2322cb3edfb10bccb2a1373e828e06"
+        },
+        "src/agent_runtime/anthropic_binding.py": {
+          "kind": "runtime",
+          "sha256": "7a7213186683cbd7a607d78f00c469a7dcec0d201cdc51ed44ac6fc2418431c1"
+        },
+        "src/agent_runtime/budget.py": {
+          "kind": "runtime",
+          "sha256": "e31d1fef46efd0a346fa70ae06beb056fa8074c3aa7207ddbf45c96acf224ae6"
+        },
+        "src/agent_runtime/budget_projection.py": {
+          "kind": "runtime",
+          "sha256": "d6a95640de2215a53ef7b8ceba34327b0cbd6dbedc02fb66b1fa3bc43f9eb267"
+        },
+        "src/agent_runtime/budget_recovery.py": {
+          "kind": "runtime",
+          "sha256": "15306934e24c72c93a01ce0d7919f4e8a1e42adc703a12303532de99f2bc8ab8"
+        },
+        "src/agent_runtime/call_quota.py": {
+          "kind": "runtime",
+          "sha256": "9e0832b7ce16c3b80a9a30c42910400e67fbb87eac4dc5abed63d7d23ddd2dde"
+        },
+        "src/agent_runtime/connections.py": {
+          "kind": "runtime",
+          "sha256": "864b2d29f87dc86cabd452cc4d5fd8bd161575592a7ba0bddf2985d8e83d9591"
+        },
+        "src/agent_runtime/context.py": {
+          "kind": "runtime",
+          "sha256": "bc8c49ddd940623cbb69514e4a1b6acc7be7a085a2318f6ab5e54dc898da46f2"
+        },
+        "src/agent_runtime/continuation.py": {
+          "kind": "runtime",
+          "sha256": "ef9813d246f9796259d17cb5643cd4bf5a2fc162ad7a56c55f13f2c214a776b8"
+        },
+        "src/agent_runtime/control.py": {
+          "kind": "runtime",
+          "sha256": "b59e36be6cf4ed7fe97cec0b630704363fe4b9e8543bee49fafa2f12792a876b"
+        },
+        "src/agent_runtime/dispatch.py": {
+          "kind": "runtime",
+          "sha256": "b6086b8ab216879dbe95797fa8c93aee2d0ed97769fbe5653e4eb89608001295"
+        },
+        "src/agent_runtime/estimation.py": {
+          "kind": "runtime",
+          "sha256": "9219bb0c49cec5888cc442432de13fda2852a448740c73840fd843297c4bf78d"
+        },
+        "src/agent_runtime/failures.py": {
+          "kind": "runtime",
+          "sha256": "567c18b5ddf6828b80c5311385ded800ef5abaf53af1d0557d29e32ebd4ead9b"
+        },
+        "src/agent_runtime/image_capture.py": {
+          "kind": "runtime",
+          "sha256": "9f5e7b79a33a851e0ff9829dda453342f6772427ee258b9818257f52dfd50721"
+        },
+        "src/agent_runtime/json_tree.py": {
+          "kind": "runtime",
+          "sha256": "53dc74751df46f4c85e14ed18756ee0786c3eeafe79970571962ba55aa21bd50"
+        },
+        "src/agent_runtime/loop.py": {
+          "kind": "runtime",
+          "sha256": "709347689febb3fc1786cfb4e4b8abe92c53154e220ef6f81b1b25eeb9ac3396"
+        },
+        "src/agent_runtime/mcp_tools.py": {
+          "kind": "runtime",
+          "sha256": "7b461e59e84e18e80f680933a6df3bf1b590f7896bba58d704f8a6834ede334c"
+        },
+        "src/agent_runtime/model_profiles.json": {
+          "kind": "runtime",
+          "sha256": "dc8e09b1851ec74cdf28d3da65cbe718abd85026fce8363f6448ea4fbc188bcd"
+        },
+        "src/agent_runtime/openai_subscription.py": {
+          "kind": "runtime",
+          "sha256": "8d7b1c4339de794473802b924bf50e726f7b13a9ee6b0ff9bf6cec57974e739a"
+        },
+        "src/agent_runtime/opencode_go.py": {
+          "kind": "runtime",
+          "sha256": "c62f84bcab3e6eb101ede1e71d78ab1dde6a7c7dacc13f25311c203a8d097656"
+        },
+        "src/agent_runtime/output_limits.py": {
+          "kind": "runtime",
+          "sha256": "04ebd9b7081f2ede28ba45f5d61415c624ea51c86f3db40dfc89ec6d17e47541"
+        },
+        "src/agent_runtime/providers.py": {
+          "kind": "runtime",
+          "sha256": "637ce34fd57de18a327fbd330bfb05cb0f95eefd0e18d7ea8a485ee3185da2bb"
+        },
+        "src/agent_runtime/responses.py": {
+          "kind": "runtime",
+          "sha256": "58341a2ef8452d7c9b62edf0fe454d582de67056decb01bf3641d7edcaef3781"
+        },
+        "src/agent_runtime/route_dispatch.json": {
+          "kind": "runtime",
+          "sha256": "884ef0d4ab9a56107cfc9e78950e96013e73c99b6389106edf62140b43884f92"
+        },
+        "src/agent_runtime/run_paths.py": {
+          "kind": "runtime",
+          "sha256": "b798f665a323bf4bf5404fd4c7d5e3d225159d0401d32f43ea5212050e06285f"
+        },
+        "src/agent_runtime/store.py": {
+          "kind": "runtime",
+          "sha256": "d759545f328053c02512ebbe46e2030ea447ec76b7a09b48c66e023674655941"
+        },
+        "src/agent_runtime/timing.py": {
+          "kind": "runtime",
+          "sha256": "de2111e8ff646712154c4533b52f43e2909316627842f1f4f0b390b7ba13919d"
+        },
+        "src/agent_runtime/versions.py": {
+          "kind": "runtime",
+          "sha256": "4b6ad76114f4e9ab00c7f4f84cc48f213ae6dcb5bb7fa9b04428218f94a8d1c4"
+        },
+        "src/harness_contracts/__init__.py": {
+          "kind": "runtime",
+          "sha256": "2822bf713051b751970c0e079f6e13df2bf8d8f9461145673baca54c0a927747"
+        },
+        "src/harness_contracts/base.py": {
+          "kind": "runtime",
+          "sha256": "5df2815acf3d1d03f5fff7f904e119989091c60b7e553da9517cc8a73a042c20"
+        },
+        "src/harness_contracts/budget.py": {
+          "kind": "runtime",
+          "sha256": "348467b10eed57d693a01c047e2e23f3daf0a1a8a39f1d6592cf31efbc82550b"
+        },
+        "src/harness_contracts/events.py": {
+          "kind": "runtime",
+          "sha256": "6e686416455a04ebeee7bfb058a357cea4d34a9153ac2a93ce3e9108264c7050"
+        },
+        "src/harness_contracts/incremental.py": {
+          "kind": "runtime",
+          "sha256": "79eaa128b22b8e4c4205dfedc035c662b9e1974710252cdf9bee4847c4ea7404"
+        },
+        "src/harness_contracts/refs.py": {
+          "kind": "runtime",
+          "sha256": "d22c4442a3970c4b13bbd1a6a78ff23e25a707dd331f84111f03b1784456a549"
+        },
+        "src/harness_contracts/roles.py": {
+          "kind": "runtime",
+          "sha256": "08080b3efb84d2345920380f509ad50685b438bd53c8cd0e6fa54a82a70d9c67"
+        },
+        "src/harness_contracts/usage.py": {
+          "kind": "runtime",
+          "sha256": "193d31d451f5914e12166589b860052d4d62874f2b3949d14a2a45265df749ce"
+        },
+        "src/harness_contracts/validation.py": {
+          "kind": "runtime",
+          "sha256": "f544544de7ec5c1458b63dd18f792fabc7986bcab63457b80b08717d75dd6dba"
+        },
+        "src/utils/file_lock.py": {
+          "kind": "runtime",
+          "sha256": "4826e78aa4204551a09c9c6961e5a87edfa933605e6dab6f7110ec58908c6eaf"
+        },
+        "uv.lock": {
+          "kind": "runtime",
+          "sha256": "966c62ae883ed8705081ea63dabd6a38dba33a1591f83f535890e1c6ae29e19e"
+        }
+      }
+    },
+    "runtime-v30-20261019": {
+      "source_commit": "36a91732770f14510ed35d6ee3fb1a54b33b071a",
+      "coverage": "automatic_directories",
+      "files": {
+        "pyproject.toml": {
+          "kind": "runtime",
+          "sha256": "f8ef35d9010d70968d1eaf66929c4b2127ff6a112fd83e8db6d115142848ca9b"
+        },
+        "src/__init__.py": {
+          "kind": "runtime",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "src/agent_runtime/__init__.py": {
+          "kind": "runtime",
+          "sha256": "4918215bfac9a0974a2600798d987f7cf83c5b9bd4c6dc64d2b814ddde1bb8bc"
+        },
+        "src/agent_runtime/accounting.py": {
+          "kind": "runtime",
+          "sha256": "0e5ae24346c92918eedf854794509df59b776820364a20f1d5749c17c273ac95"
+        },
+        "src/agent_runtime/adapter.py": {
+          "kind": "runtime",
+          "sha256": "46091ceec3a899f1d470b41d8c90a51351b4af7dcad8081cc62fd82d6c04f95e"
+        },
+        "src/agent_runtime/agent_registry.py": {
+          "kind": "runtime",
+          "sha256": "4505806d38082e6fb7799c0dc5bd1a0ac0916a04b2e8f7d1516a9160b22cdb55"
+        },
+        "src/agent_runtime/anthropic.py": {
+          "kind": "runtime",
+          "sha256": "6dfdf4b548232ed77cb9ba4d1a26ca737a2322cb3edfb10bccb2a1373e828e06"
+        },
+        "src/agent_runtime/anthropic_binding.py": {
+          "kind": "runtime",
+          "sha256": "7a7213186683cbd7a607d78f00c469a7dcec0d201cdc51ed44ac6fc2418431c1"
+        },
+        "src/agent_runtime/budget.py": {
+          "kind": "runtime",
+          "sha256": "e31d1fef46efd0a346fa70ae06beb056fa8074c3aa7207ddbf45c96acf224ae6"
+        },
+        "src/agent_runtime/budget_projection.py": {
+          "kind": "runtime",
+          "sha256": "d6a95640de2215a53ef7b8ceba34327b0cbd6dbedc02fb66b1fa3bc43f9eb267"
+        },
+        "src/agent_runtime/budget_recovery.py": {
+          "kind": "runtime",
+          "sha256": "15306934e24c72c93a01ce0d7919f4e8a1e42adc703a12303532de99f2bc8ab8"
+        },
+        "src/agent_runtime/call_quota.py": {
+          "kind": "runtime",
+          "sha256": "9e0832b7ce16c3b80a9a30c42910400e67fbb87eac4dc5abed63d7d23ddd2dde"
+        },
+        "src/agent_runtime/connections.py": {
+          "kind": "runtime",
+          "sha256": "864b2d29f87dc86cabd452cc4d5fd8bd161575592a7ba0bddf2985d8e83d9591"
+        },
+        "src/agent_runtime/context.py": {
+          "kind": "runtime",
+          "sha256": "bc8c49ddd940623cbb69514e4a1b6acc7be7a085a2318f6ab5e54dc898da46f2"
+        },
+        "src/agent_runtime/continuation.py": {
+          "kind": "runtime",
+          "sha256": "ef9813d246f9796259d17cb5643cd4bf5a2fc162ad7a56c55f13f2c214a776b8"
+        },
+        "src/agent_runtime/control.py": {
+          "kind": "runtime",
+          "sha256": "b59e36be6cf4ed7fe97cec0b630704363fe4b9e8543bee49fafa2f12792a876b"
+        },
+        "src/agent_runtime/dispatch.py": {
+          "kind": "runtime",
+          "sha256": "b6086b8ab216879dbe95797fa8c93aee2d0ed97769fbe5653e4eb89608001295"
+        },
+        "src/agent_runtime/estimation.py": {
+          "kind": "runtime",
+          "sha256": "9219bb0c49cec5888cc442432de13fda2852a448740c73840fd843297c4bf78d"
+        },
+        "src/agent_runtime/failures.py": {
+          "kind": "runtime",
+          "sha256": "567c18b5ddf6828b80c5311385ded800ef5abaf53af1d0557d29e32ebd4ead9b"
+        },
+        "src/agent_runtime/image_capture.py": {
+          "kind": "runtime",
+          "sha256": "9f5e7b79a33a851e0ff9829dda453342f6772427ee258b9818257f52dfd50721"
+        },
+        "src/agent_runtime/json_tree.py": {
+          "kind": "runtime",
+          "sha256": "53dc74751df46f4c85e14ed18756ee0786c3eeafe79970571962ba55aa21bd50"
+        },
+        "src/agent_runtime/loop.py": {
+          "kind": "runtime",
+          "sha256": "56831d8e9d17b8d3ca8e4f20b67361fe01580b62a57c9e0a573493ad68a3849c"
+        },
+        "src/agent_runtime/mcp_tools.py": {
+          "kind": "runtime",
+          "sha256": "7b461e59e84e18e80f680933a6df3bf1b590f7896bba58d704f8a6834ede334c"
+        },
+        "src/agent_runtime/model_profiles.json": {
+          "kind": "runtime",
+          "sha256": "dc8e09b1851ec74cdf28d3da65cbe718abd85026fce8363f6448ea4fbc188bcd"
+        },
+        "src/agent_runtime/openai_subscription.py": {
+          "kind": "runtime",
+          "sha256": "8d7b1c4339de794473802b924bf50e726f7b13a9ee6b0ff9bf6cec57974e739a"
+        },
+        "src/agent_runtime/opencode_go.py": {
+          "kind": "runtime",
+          "sha256": "c62f84bcab3e6eb101ede1e71d78ab1dde6a7c7dacc13f25311c203a8d097656"
         },
         "src/agent_runtime/output_limits.py": {
           "kind": "runtime",

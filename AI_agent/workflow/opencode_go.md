@@ -4,7 +4,7 @@
 
 ## 凭据与配置
 
-本机私有文件为 `D:/Sim-BIM-Agent/local-connections/opencode-go/credentials.env`，只读两个变量：`OPENCODE_GO_BASE_URL`（固定为`https://opencode.ai/inference/go/v1`）和`OPENCODE_GO_API_KEY`。不读取环境变量作回退，不展开env插值，不把key写到配置、journal或发布包。
+本机私有文件为 `D:/Sim-BIM-Agent/local-connections/opencode-go/credentials.env`，只读两个变量：`OPENCODE_GO_BASE_URL`（固定为`https://opencode.ai/inference/go/v1`）和`OPENCODE_GO_API_KEY`。该base是凭据的订阅范围与模型目录入口，不直接拼接推理路径；实际推理base按下表协议选择。不读取环境变量作回退，不展开env插值，不把key写到配置、journal或发布包。
 
 可复制 [Go配置示例](../../product/config.opencode-go.example.json)，修改实际输入和输出目录，再执行产品`check/run`。原 [默认配置](../../product/config.example.json)仍是6 Sol，两个示例不互相改写历史结果。Go的Kimi K3默认省略思考档和采样参数，按服务默认运行；当前只接纳明确的`max`思考档，不能把6 Sol的`high`原样套过去。
 
@@ -12,11 +12,13 @@ Haiku整案采用独立的 [流程贯通配置](../../product/config.opencode-go
 
 ## 已接入型号与协议
 
-| 精确model ID | API |
-|---|---|
-| `glm-5.3-flash`、`kimi-k3`、`mimo-v2.6-flash` | `/chat/completions` |
-| `minimax-m3`、`qwen3.8-max`、`claude-haiku-5-5` | `/messages` |
-| `gpt-6-luna` | `/responses` |
+| 精确model ID | 推理base | API |
+|---|---|---|
+| `glm-5.3-flash`、`kimi-k3`、`mimo-v2.6-flash` | `https://opencode.ai/inference/go/openai/v1` | `/chat/completions` |
+| `minimax-m3`、`qwen3.8-max`、`claude-haiku-5-5` | `https://opencode.ai/inference/go/anthropic/v1` | `/messages` |
+| `gpt-6-luna` | `https://opencode.ai/inference/go/openai/v1` | `/responses` |
+
+2026-10-19按官方协议路径修正，`ConnectionDescriptor.base_url`记录实际推理base，传输器拒绝目录base及不匹配的协议base。旧运行绑定旧路由/版本，不能原地换线路恢复；新验证使用新运行目录。目录查询仍是`https://opencode.ai/inference/go/v1/models`。
 
 这七个ID有明确协议、参数和预算profile；2026-10-19实时Go目录返回37个型号，不代表全部已接线。其他ID在模型请求前拒绝，不猜协议或接受未知实验型号。GPT-6 Sol不在已配置Go目录中。
 
@@ -39,5 +41,7 @@ Go按订阅记账，保留供应商实报tokens，不套Paratera单价、不生�
 第一轮环境检查：40模型目录HTTP200，GLM工具调用和续接、Kimi合成小图通过；3模型请求，751实报tokens，0整案。该记录位于`D:/Sim-BIM-Agent/local-connections/opencode-go/verification.json`。
 
 本轮接线验证记录见 [接线报告](../reports/2026-10-15_opencode_go/README.md)。协议闭环、CLI配置、订阅记账和并发配置分别验证；整楼图纸保真、模型比较和其他目录型号的可用性不由接口检查替代。
+
+2026-10-19连接修复与小图片/工具续接验收见[连接修复报告](../reports/2026-10-19_provider_connection_repair.md)。小请求成功不能证明此前长请求的EOF已彻底消失；本轮没有增加重试、超时或切换默认代理。
 
 官方依据：[Go端点、会话和模型说明](https://opencode.ai/v2/docs/console/go/)、[OpenCode模型元数据](https://models.dev/api.json)、[标准Responses工具循环](https://developers.openai.com/api/docs/guides/function-calling)、[无状态推理历史](https://developers.openai.com/api/docs/guides/reasoning)。

@@ -102,6 +102,23 @@ def reasoning_history_messages(messages: list[dict], policy: str, message_source
             for i, message in enumerate(messages)]
 
 
+def _paratera_chat_messages(store, messages, sources):
+    """Project the local original-resolution hint onto the supported wire enum."""
+    projected, projected_sources = copy.deepcopy(messages), list(sources)
+    for i, message in enumerate(projected):
+        changes = []
+        content = message.get("content")
+        for j, block in enumerate(content if isinstance(content, list) else []):
+            if block.get("type") == "image_url" and block["image_url"].get("detail") == "original":
+                block["image_url"]["detail"] = "high"
+                changes.append({"content_index": j, "from": "original", "to": "high"})
+        if changes:
+            projected_sources[i] = store.source("paratera-image-detail-projection", {
+                "original_source": sources[i].model_dump(mode="json"),
+                "projected_display_hints": changes, "image_bytes_changed": False})
+    return projected, projected_sources
+
+
 def prepare_request(*, store: EventStore, model: str, messages: list[dict],
                     message_sources: list, tools: list[dict], tool_source,
                     parameters: dict, versions, image_originals: dict | None = None,
@@ -146,6 +163,8 @@ def prepare_request(*, store: EventStore, model: str, messages: list[dict],
     if versions.remote_model.route_id == "opencode-go":
         from .opencode_go import chat_messages
         messages, message_sources = chat_messages(store, model, messages, message_sources)
+    elif versions.remote_model.route_id == "paratera":
+        messages, message_sources = _paratera_chat_messages(store, messages, message_sources)
     body = {"model": model, "messages": copy.deepcopy(messages),
             "stream": False, "n": 1, **copy.deepcopy(parameters)}
     if versions.remote_model.route_id == "deepseek":
@@ -356,13 +375,14 @@ def parse_response(raw: Any, request_event_id: str, store: EventStore,
     return ParsedResponse(payload, assistant, finish, error)
 
 
-def convert_tool_result(call_id: str, raw: dict, store: EventStore, *, image_detail_supported=True):
+def convert_tool_result(call_id: str, raw: dict, store: EventStore, *, image_detail_supported=True,
+                        original_image_detail="original"):
     """Chat tool messages hold text; exact images follow all ID acknowledgements.
 
     Return the full presentation including image blocks, not just a summary.
     Unsupported MCP content is a visible protocol error, never silently dropped.
     """
-    texts, pictures, image_refs, omitted_hints = [], [], [], []
+    texts, pictures, image_refs, omitted_hints, projected_hints = [], [], [], [], []
     for part in raw.get("content", []):
         if part.get("type") == "text":
             texts.append(part["text"])
@@ -376,7 +396,10 @@ def convert_tool_result(call_id: str, raw: dict, store: EventStore, *, image_det
                 if not isinstance(detail, str) or detail not in {"auto", "low", "high", "original"}:
                     raise ValueError("unsupported MCP image detail")
                 if image_detail_supported:
-                    image_url["detail"] = detail
+                    image_url["detail"] = original_image_detail if detail == "original" else detail
+                    if image_url["detail"] != detail:
+                        projected_hints.append({"image_index": len(image_refs) - 1,
+                            "from": detail, "to": image_url["detail"]})
                 else:
                     omitted_hints.append({"image_index": len(image_refs) - 1, "detail": detail})
             pictures += [{"type": "text", "text": f"Tool image: tool_call_id={call_id}."},
@@ -409,6 +432,8 @@ def convert_tool_result(call_id: str, raw: dict, store: EventStore, *, image_det
         "conversion": "MCP image blocks moved to a user message after all tool-call replies; bytes unchanged"}
     if omitted_hints:
         presentation["omitted_image_display_hints"] = omitted_hints
+    if projected_hints:
+        presentation["projected_image_display_hints"] = projected_hints
     return message, pictures, presentation, image_refs
 
 

@@ -30,7 +30,8 @@ def test_go_credentials_and_public_identity_never_become_paratera(tmp_path, monk
     connection = resolve_connection('opencode-go', private(tmp_path), model='kimi-k3')
     public = connection.descriptor.model_route('kimi-k3')
     assert public['billing_mode'] == 'subscription'
-    assert public['base_url'] == BASE_URL and public['adapter_kind'] == 'openai_chat_completions'
+    assert public['base_url'] == 'https://opencode.ai/inference/go/openai/v1'
+    assert public['adapter_kind'] == 'openai_chat_completions'
     assert 'private-go-key' not in json.dumps(public) and 'private-go-key' not in repr(connection)
     with pytest.raises(ValueError, match='explicit credentials'):
         resolve_connection('opencode-go', None, model='kimi-k3')
@@ -74,13 +75,29 @@ def test_go_transport_uses_own_agent_stable_session_exact_wire_and_no_redirect(t
         assert seen[0].headers['x-opencode-session']==session
         assert seen[0].headers['user-agent']=='Sim-BIM-Agent/work-model'
         assert seen[0].headers['authorization']=='Bearer private-go-key'
-        expected={'glm-5.3-flash':'/chat/completions','mimo-v2.6-flash':'/chat/completions','minimax-m3':'/messages','gpt-6-luna':'/responses'}[model]
-        assert str(seen[0].url)==BASE_URL+expected
+        expected={'glm-5.3-flash':'/openai/v1/chat/completions',
+                  'mimo-v2.6-flash':'/openai/v1/chat/completions',
+                  'minimax-m3':'/anthropic/v1/messages',
+                  'gpt-6-luna':'/openai/v1/responses'}[model]
+        assert str(seen[0].url)=='https://opencode.ai/inference/go'+expected
+        assert str(seen[0].url).startswith(connection.descriptor.base_url + '/')
         assert 'anthropic-beta' not in seen[0].headers
         if model=='minimax-m3':
             assert seen[0].headers['anthropic-version']=='2023-06-01'
         await adapter.close()
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('base_url,protocol', [
+    (BASE_URL, 'openai_chat_completions'),
+    ('https://opencode.ai/inference/go/openai/v1', 'anthropic_messages'),
+    ('https://opencode.ai/inference/go/anthropic/v1', 'openai_responses'),
+    ('https://opencode.ai/inference/openai/v1', 'openai_chat_completions'),
+])
+def test_go_rejects_catalog_cross_protocol_and_non_subscription_transport(base_url, protocol):
+    with pytest.raises(ValueError, match='unreviewed OpenCode Go transport'):
+        HttpGoAdapter(base_url=base_url, api_key='offline-test-key', protocol=protocol,
+                      session_id='cb6130de-46b0-4f0c-9baa-cb8fc04892d9')
 
 
 def native_response(model, *, tool=False):

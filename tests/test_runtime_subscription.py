@@ -1,11 +1,16 @@
 """Offline routing, credential isolation, wire audit and subscription budgets."""
 
 import asyncio
+import base64
+import copy
 import hashlib
+import io
 import json
 from pathlib import Path
 
+import httpx
 import pytest
+from PIL import Image
 
 from src.agent.runtime_entry import parser, runtime_model_profile
 from src.agent.runtime_configuration import argv_for, load_configuration
@@ -14,6 +19,67 @@ from src.agent_runtime.loop import RunLimits
 from src.agent_runtime.providers import (GLM_SUBSCRIPTION,
     GLM_SUBSCRIPTION_BASE_URL, provider_parameters, subscription_credentials)
 from test_agent_runtime import MESSAGES, response, runtime
+
+
+def test_paratera_standard_image_detail_preserves_pixels_sources_and_tool_continuation(tmp_path):
+    """A real 400 counterexample: local original hint is not a wire enum."""
+    from src.agent_runtime.adapter import HttpChatAdapter
+    engine = runtime(tmp_path, [], limits=RunLimits(model_calls=2, tool_calls=1, seconds=30, tokens=200000))
+    engine.model = 'GLM-5.3-Flash'
+    engine.parameters = provider_parameters('paratera', model=engine.model,
+                                            output_tokens=32000, reasoning_effort='high')
+    engine.versions = engine.versions.model_copy(update={'remote_model':
+        engine.versions.remote_model.model_copy(update={'route_id':'paratera','remote_alias':engine.model})})
+    buffer = io.BytesIO()
+    Image.new('RGB', (8,8), 'green').save(buffer, format='PNG')
+    encoded = base64.b64encode(buffer.getvalue()).decode()
+    messages = copy.deepcopy(MESSAGES)
+    messages[-1]['content'] = [{'type':'text','text':'Read the images, then use view once.'}, *[
+        {'type':'image_url','image_url':{'url':'data:image/png;base64,'+encoded,'detail':detail}}
+        for detail in ('low','high','auto','original')]]
+    original = copy.deepcopy(messages)
+    call_tool = engine.tools.call_tool
+    async def hinted_tool(name, arguments):
+        raw = await call_tool(name, arguments)
+        raw['content'][0]['_meta'] = {'codex/imageDetail':'original'}
+        return raw
+    engine.tools.call_tool = hinted_tool
+    sent = []
+    def server(request):
+        body = json.loads(request.content)
+        sent.append(body)
+        for message in body['messages']:
+            content = message.get('content')
+            for block in content if isinstance(content,list) else []:
+                if block.get('type')=='image_url' and block['image_url'].get('detail')=='original':
+                    return httpx.Response(400, json={'error':{'code':'400',
+                        'message':'messages.content.image_url.detail supports low, high, auto'}})
+        return httpx.Response(200, json=response(('view-1','view',{})) if len(sent)==1 else response(text='OK'))
+    async def scenario():
+        adapter = HttpChatAdapter(base_url='https://fake.example.test/v1', api_key='offline-test-key',
+                                  transport=httpx.MockTransport(server))
+        engine.adapter = adapter
+        try:
+            with engine.store:
+                receipt = await engine.run(messages)
+                assert receipt['status']=='completed' and receipt['model_calls']==2
+                assert receipt['usage_complete'] and receipt['tool_calls']==1
+                assert messages==original
+                assert [b['image_url']['detail'] for b in sent[0]['messages'][1]['content'][1:]]==['low','high','auto','high']
+                requests=[e.payload for e in engine.store.events if e.payload.event_type=='adapter_request']
+                assert [len(r.images) for r in requests]==[4,5]
+                assert all(i.original.sha256==i.sent.sha256 for r in requests for i in r.images)
+                assert any(i.source.source_id=='paratera-image-detail-projection' for i in requests[0].injected_content)
+                execution=next(e.payload for e in engine.store.events if e.payload.event_type=='tool_execution')
+                raw=engine.store.resolve(execution.raw_result)
+                shown=engine.store.resolve(execution.shown_result)
+                assert raw['content'][0]['_meta']['codex/imageDetail']=='original'
+                assert shown['image_blocks'][-1]['image_url']['detail']=='high'
+                assert shown['projected_image_display_hints']==[{'image_index':0,'from':'original','to':'high'}]
+                engine.store.validate()
+        finally:
+            await adapter.close()
+    asyncio.run(scenario())
 
 
 def subscription_engine(tmp_path, responses, **kwargs):

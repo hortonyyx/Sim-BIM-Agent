@@ -19,7 +19,14 @@ from .estimation import estimate_chat_request, get_model_profile
 from .store import json_bytes
 
 PROVIDER = "opencode-go"
+# Subscription/catalog scope retained in explicit credential files. Inference
+# bases are protocol-specific; the catalog URL is not a chat/messages base.
 BASE_URL = "https://opencode.ai/inference/go/v1"
+PROTOCOL_BASE_URLS = {
+    "openai_chat_completions": "https://opencode.ai/inference/go/openai/v1",
+    "anthropic_messages": "https://opencode.ai/inference/go/anthropic/v1",
+    "openai_responses": "https://opencode.ai/inference/go/openai/v1",
+}
 # Admitted IDs have model profiles and explicit protocol contracts.
 # Other catalog entries, including experimental IDs, fail before a model request.
 MODELS = {
@@ -37,6 +44,12 @@ def model_contract(model):
     if not isinstance(model, str) or model not in MODELS:
         raise ValueError("OpenCode Go model has no admitted protocol/profile; use one of: " + ", ".join(MODELS))
     return MODELS[model]
+
+
+def inference_base_url(protocol):
+    if protocol not in PROTOCOL_BASE_URLS:
+        raise ValueError("unreviewed OpenCode Go transport protocol")
+    return PROTOCOL_BASE_URLS[protocol]
 
 
 def credentials(path):
@@ -125,7 +138,7 @@ def model_profile(model):
 
 class HttpGoAdapter(HttpChatAdapter):
     def __init__(self, *, base_url, api_key, protocol, session_id, transport=None):
-        if base_url != BASE_URL or protocol not in {"openai_chat_completions", "anthropic_messages", "openai_responses"}:
+        if base_url != inference_base_url(protocol):
             raise ValueError("unreviewed OpenCode Go transport route")
         uuid.UUID(session_id)
         super().__init__(base_url=base_url, api_key=api_key, transport=transport)

@@ -29,7 +29,7 @@
 
 读图员交付包括结构数据、采用值图、原图回叠、`local_review` 和未解决项。立面先 `trial_elevation_reading`，看图后提交试稿ID；平面看实际试建图后提交。调度员复用局部检查，完成匹配/装配并在 `finish_bim` 携带建筑合理性判断。提交成功后自动结束任务。检查是模型自报，独立图纸质量另评。单模型入口仍支持无时间硬截止，分工入口仍要求有限 `limits.seconds`。
 
-OpenCode Go订阅使用独立的`provider: "opencode-go"`，示例为`config.opencode-go.example.json`。支持GLM-5.3-Flash、Kimi K3、MiniMax M3、Qwen3.8 Max、Claude Haiku 5.5及GPT-6 Luna，按型号选择协议；目录中的其他型号尚未接纳。凭据由显式`credentials_file`提供`OPENCODE_GO_BASE_URL`和`OPENCODE_GO_API_KEY`，服务端点固定为`https://opencode.ai/inference/go/v1`。单模型和图纸分工都可使用Go，订阅用量与Paratera按量用量分别记录。接口可用不代表整楼图纸质量已验收。
+OpenCode Go订阅使用独立的`provider: "opencode-go"`，示例为`config.opencode-go.example.json`。支持GLM-5.3-Flash、Kimi K3、MiMo V2.6 Flash、MiniMax M3、Qwen3.8 Max、Claude Haiku 5.5及GPT-6 Luna，按型号选择协议；目录中的其他型号尚未接纳。凭据由显式`credentials_file`提供`OPENCODE_GO_BASE_URL`和`OPENCODE_GO_API_KEY`。凭据base固定为订阅/目录范围`https://opencode.ai/inference/go/v1`；推理使用该订阅下的`/go/openai/v1`或`/go/anthropic/v1`，由程序按协议选择。单模型和图纸分工都可使用Go，订阅用量与Paratera按量用量分别记录。接口可用不代表整楼图纸质量已验收。
 
 Haiku可复制`config.opencode-go-haiku.example.json`：单模型`claude-haiku-5-5/medium`、64,000输出tokens。使用时修改输入、输出及范围，并用`floor_plan_images`列出实际平面PNG文件名。当前为恢复基线后的精简检查流程，离线验证通过；唯一真实整案在13分44秒因Go HTTP 429 / GoUsageLimitError中断，没有finish，自动保留的候选不能算正式交付。中间结果30空间、54/61开口，仍有错拆和漏窗，后半流程与速度尚待完整实跑验证。历史8分39秒基线漏一窗且多数窗高有偏差；历史28分54秒版本完成61个开口及34个外开口高度，但有平面偏差，两者自检范围不同。原`high/32,000`设置出现连续截断。以上不表示稳定质量或速度达标；默认6 Sol配置保持。
 

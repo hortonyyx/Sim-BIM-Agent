@@ -12,7 +12,7 @@ from PIL import Image
 
 from src.agent_runtime.context import ContextPolicy, StateEntry
 from src.agent_runtime.loop import RunLimits
-from src.agent_runtime.opencode_go import BASE_URL, HttpGoAdapter
+from src.agent_runtime.opencode_go import HttpGoAdapter, inference_base_url
 from src.agent_runtime.providers import provider_parameters
 from src.agent_runtime.adapter import prepare_request
 from src.agent_runtime.anthropic import convert_messages
@@ -95,7 +95,7 @@ def engine_for(tmp_path, server, *, mode, tools=None):
                 epistemic_status="computed", source_refs=(active._event_source(event),),
                 revision=len(active.tools.calls)))
         engine.context_update = update
-    engine.adapter = HttpGoAdapter(base_url=BASE_URL, api_key="offline-test-key", protocol="anthropic_messages",
+    engine.adapter = HttpGoAdapter(base_url=inference_base_url("anthropic_messages"), api_key="offline-test-key", protocol="anthropic_messages",
         session_id="cb6130de-46b0-4f0c-9baa-cb8fc04892d9", transport=httpx.MockTransport(server))
     return engine
 

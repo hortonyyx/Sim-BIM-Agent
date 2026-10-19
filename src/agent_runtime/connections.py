@@ -117,11 +117,11 @@ def resolve_connection(provider: str, credentials_file: Path | None,
                        *, chatgpt_auth_dir: Path | None = None, model=None) -> ResolvedConnection:
     """Resolve one reviewed live route without exposing its credential."""
     if provider == OPENCODE_GO:
-        from .opencode_go import credentials, model_contract
+        from .opencode_go import credentials, inference_base_url, model_contract
         protocol = model_contract(model)[0]
-        base_url, key = credentials(credentials_file)
+        _, key = credentials(credentials_file)
         return ResolvedConnection(descriptor=ConnectionDescriptor(route_id=provider,
-            base_url=base_url, billing_mode="subscription", adapter_kind=protocol), api_key=key)
+            base_url=inference_base_url(protocol), billing_mode="subscription", adapter_kind=protocol), api_key=key)
     if provider == CHATGPT_SUBSCRIPTION:
         from .openai_subscription import SubscriptionCredentials
         return ResolvedConnection(descriptor=ConnectionDescriptor(
