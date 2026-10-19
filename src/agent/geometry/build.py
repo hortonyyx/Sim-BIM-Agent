@@ -223,6 +223,8 @@ def build_geometry(
     capability_profile: str = "rectangular",
     window_host_proof: VerifiedWindowHostProof | None = None,
 ) -> BuildingGeometry:
+    if geom.schema_version == "source_polygon_v1":
+        raise ValueError("source_polygon_v1 requires the source BIM builder; this geometry-to-EnergyPlus adapter is not supported")
     geom, proof_artifact = verify_geometry_input(geom, window_host_proof)
     is_b5 = str(geom.schema_version) == "3"
     if is_b5:

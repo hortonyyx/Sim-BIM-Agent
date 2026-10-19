@@ -77,7 +77,7 @@ def _axis_aligned(shape: Polygon) -> bool:
     )
 
 
-def _boundary_frame(boundary: dict):
+def _boundary_frame(boundary: dict, *, allow_nonorthogonal=False):
     """Return projection/lift functions for one supported source plane.
 
     Wall coordinates remain ``(distance along wall, z)``.  Horizontal floor
@@ -111,9 +111,12 @@ def _boundary_frame(boundary: dict):
         _fail(f"boundary {boundary.get('id')}: unsupported geometry type {geometry_type!r}")
 
     parent = project(vertices)
-    if parent is None or not parent.is_valid or parent.area <= EPS ** 2 or not _axis_aligned(parent):
+    if parent is None or not parent.is_valid or parent.area <= EPS ** 2:
+        _fail(f"boundary {boundary.get('id')}: invalid {plane_name} parent plane")
+    if not allow_nonorthogonal and not _axis_aligned(parent):
         _fail(f"boundary {boundary.get('id')}: only orthogonal {plane_name} planes are supported")
-    return {"project": project, "lift": lift, "parent": parent, "plane_name": plane_name}
+    return {"project": project, "lift": lift, "parent": parent, "plane_name": plane_name,
+            "allow_nonorthogonal": allow_nonorthogonal}
 
 
 class _DictBoundary:
@@ -127,7 +130,7 @@ def _shape_from_vertices(vertices: list[list[float]], frame: dict, *, target: st
     shape = frame["project"](vertices)
     if shape is None or not shape.is_valid or shape.area <= EPS ** 2:
         _fail(f"{target}: vertices must form a nonempty planar polygon on its source {frame['plane_name']}")
-    if not _axis_aligned(shape):
+    if not frame["allow_nonorthogonal"] and not _axis_aligned(shape):
         _fail(f"{target}: only orthogonal {frame['plane_name']}-plane regions are supported")
     if not frame["parent"].buffer(EPS).covers(shape):
         _fail(f"{target}: region lies outside its source boundary")
@@ -189,7 +192,7 @@ def _map_boundary_part(part: Polygon, frame: dict, other: dict) -> tuple[dict, P
     if len(rows) != 1:
         _fail(f"boundary {other['id']}: unable to preserve shared-region geometry")
     row = rows[0]
-    other_frame = _boundary_frame(other)
+    other_frame = _boundary_frame(other, allow_nonorthogonal=frame["allow_nonorthogonal"])
     exterior = other_frame["project"](row["vertices"])
     holes = [other_frame["project"](ring) for ring in row["holes"]]
     if exterior is None or any(hole is None for hole in holes):
@@ -213,7 +216,7 @@ def _validate_reciprocal_openings(source: dict, entries_by_boundary: dict[str, l
         if open_shape.is_empty:
             continue
         boundary = boundaries[bid]
-        frame = _boundary_frame(boundary)
+        frame = _boundary_frame(boundary, allow_nonorthogonal=source.get("geometry_capability", {}).get("profile") == "simple_polygon")
         contact_shapes = []
         for other_id, regions in _relation_regions(source, bid):
             other = boundaries.get(other_id)
@@ -229,7 +232,8 @@ def _validate_reciprocal_openings(source: dict, entries_by_boundary: dict[str, l
                     list(exterior.exterior.coords),
                     [list(hole.exterior.coords) for hole in holes],
                 )
-                if not patch.is_valid or patch.area <= EPS ** 2 or not _axis_aligned(patch):
+                if (not patch.is_valid or patch.area <= EPS ** 2
+                        or (not frame["allow_nonorthogonal"] and not _axis_aligned(patch))):
                     _fail(f"boundary {bid}: relation contains invalid contact geometry")
                 contact_shapes.append(patch)
                 shared_open = open_shape.intersection(patch)
@@ -325,7 +329,7 @@ def apply_source_enclosure(base_source: dict, declaration: dict | None) -> dict:
         boundary = boundaries.get(bid)
         if boundary is None:
             _fail(f"{target}: names unknown boundary {bid}")
-        frame = _boundary_frame(boundary)
+        frame = _boundary_frame(boundary, allow_nonorthogonal=result.get("geometry_capability", {}).get("profile") == "simple_polygon")
         condition = row.get("condition")
         if condition not in _CONDITIONS:
             _fail(f"boundary {bid}: condition must be open or unknown")
@@ -363,7 +367,7 @@ def apply_source_enclosure(base_source: dict, declaration: dict | None) -> dict:
                 if left["shape"].intersection(right["shape"]).area > EPS ** 2:
                     _fail(f"boundary {bid}: enclosure regions overlap")
         boundary = boundaries[bid]
-        frame = _boundary_frame(boundary)
+        frame = _boundary_frame(boundary, allow_nonorthogonal=result.get("geometry_capability", {}).get("profile") == "simple_polygon")
         opening_shapes = _opening_shapes(result, boundary, frame)
         for entry in entries:
             for opening in opening_shapes:

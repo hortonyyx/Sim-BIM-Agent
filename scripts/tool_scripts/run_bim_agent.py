@@ -612,6 +612,10 @@ def delivery_tool_reply(result: dict) -> dict:
         floors = result['floor_completeness']
         minimal['floor_completeness'] = {key: floors[key] for key in (
             'complete_building', 'missing_candidate_images', 'floor_scope_source')}
+    if 'mesh_review' in result:
+        minimal['mesh_review'] = {key: result['mesh_review'][key] for key in
+            ('status', 'complete_building', 'coverage', 'record_sha256', 'fidelity')
+            if key in result['mesh_review']}
     if 'facade_counts' in result:
         counts = result['facade_counts']
         minimal['facade_counts'] = {key: counts[key] for key in ('summary', 'delivery_blocked', 'status', 'reason') if key in counts}
@@ -886,6 +890,9 @@ class Toolkit:
         result["building_precision"] = building_precision(self, candidate, source)
         from scripts.tool_scripts.bim_agent_budget import saved_floor_status
         result["floor_completeness"] = saved_floor_status(self, candidate)
+        if self.manifest.get('mesh_input'):
+            from scripts.tool_scripts.bim_agent_mesh_review import mesh_review_status
+            result['mesh_review'] = mesh_review_status(self, candidate)
         # Keep full claims in their files; summarize unresolved execution in handoff.
         result["claim_applications"] = [{key: row.get(key) for key in
             ("id", "parent_candidate", "candidate", "claim_ids", "status", "error", "parameters_without_claims")}
@@ -3071,9 +3078,17 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
             other MCP clients may continue and select another candidate.
             Carry the final architectural judgment in reviews_json after inspecting
             this saved candidate. Complete intended edits before this call.
+            For native mesh, reviews_json may be {"mesh_review":{"coverage":
+            "whole_building" or "partial","summary":"what was checked and remains
+            uncertain","overlay_ids":["overlay_001"]}}. Cite current source overlays
+            you inspected; no prescribed camera count. This is model-reported scope,
+            not independent quality approval. Missing/partial/stale mesh scope does
+            not complete the runtime even when a useful candidate is saved.
             """
             from scripts.tool_scripts.bim_agent_process_reviews import carry_reviews, require_process_reviews
-            carry_reviews(toolkit, reviews_json, candidate)
+            from scripts.tool_scripts.bim_agent_mesh_review import carry_mesh_review
+            if carry_mesh_review(toolkit, candidate, reviews_json) is None:
+                carry_reviews(toolkit, reviews_json, candidate)
             require_process_reviews(toolkit, candidate)
             result = toolkit.delivery(candidate, selection_origin="agent_selected",
                 generation_status={"state": "in_progress", "handoff_saved": True,
@@ -3087,6 +3102,9 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
             artifacts = {name: digest(run / name) for name in (
                 "inputs.json", "delivery_selection.json", "delivery.json", "delivery.html",
                 f"{candidate}/source_model.json", f"{candidate}/viewer.html")}
+            mesh_review_path = run / candidate / 'mesh_review.json'
+            if toolkit.manifest.get('mesh_input') and mesh_review_path.is_file():
+                artifacts[f'{candidate}/mesh_review.json'] = digest(mesh_review_path)
             from scripts.tool_scripts.bim_agent_replies import compact_reply
             return compact_reply(run, "finish_bim", {
                 **delivery_tool_reply(result), "delivery_artifact_sha256": artifacts,

@@ -28,8 +28,18 @@ from tests.test_runtime_r3 import LocalClient, PLAN
 def test_plan_cannot_review_a_trial_in_the_same_model_response(environment, monkeypatch):
     store, make = environment
     _isolated_recovery_trials(monkeypatch, {})
+    plan = example()
+    # This formal reader trial must satisfy the current wall contract before
+    # exercising whether its returned images reached a later model request.
+    plan["wall_metadata"] = [
+        {"target": target, "thickness_m": thickness, "reference_side": side,
+         "evidence_status": "inferred", "basis": "Synthetic fixture wall assumption",
+         "source_refs": ["north.png: synthetic fixture"]}
+        for target, thickness, side in (
+            ("footprint:*", 0.2, "outer_face"), ("partition:*", 0.1, "centerline"))
+    ]
     adapter = ScriptedAdapter([response(
-        ("trial", "trial_plan_bim", {"plan": example()}),
+        ("trial", "trial_plan_bim", {"plan": plan}),
         ("premature", "submit_plan_reading", {"trial_id": "latest", "local_review": {
             "summary": "This response cannot have inspected the trial images it is about to create."}}),
     )])

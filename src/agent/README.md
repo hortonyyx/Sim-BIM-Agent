@@ -19,9 +19,14 @@ EnergyPlus graph. The product model is `work model + runtime + domain`.
 
 These are responsibilities, not a required sequence or six new wrapper packages.
 Methods may compose shared tools; roles are chosen for tasks, not for the three
-research categories. Current role division supports drawings. Mesh methods are
-being explored; mixed-input planning, photo generation and automatic detail
-selection are not implemented by this cleanup.
+research categories. Current role division supports drawings. Mesh single-model
+configuration accepts an original GLB with optional PNGs and a user declaration;
+the coordinator chooses shared tools directly. Mesh workers, photo generation and
+automatic detail selection are not implemented. Simple polygon prisms use the
+explicit source_polygon_v1 input contract with the same source builder and viewer;
+curves, footprint holes and height-varying spaces remain unsupported. Mesh overlays
+can scope arbitrary source hosts and test source visibility, without certifying
+alignment to the original mesh.
 
 ## Retained code and history
 

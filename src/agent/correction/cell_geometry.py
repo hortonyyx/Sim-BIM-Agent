@@ -59,7 +59,7 @@ def _is_ccw(coords: Iterable[tuple[float, float]]) -> bool:
 
 
 def cell_polygon_vertices(
-    cell: Any, *, allow_closed: bool = False
+    cell: Any, *, allow_closed: bool = False, minimum_vertices: int = 4
 ) -> list[tuple[float, float]] | None:
     raw = _raw_polygon(cell)
     if raw is None:
@@ -67,8 +67,8 @@ def cell_polygon_vertices(
     cid = _cell_id(cell)
     if not isinstance(raw, list):
         raise ValueError(f"cell {cid}: polygon must be a list of [x, y] vertices")
-    if len(raw) < 4:
-        raise ValueError(f"cell {cid}: polygon must contain at least 4 vertices")
+    if len(raw) < minimum_vertices:
+        raise ValueError(f"cell {cid}: polygon must contain at least {minimum_vertices} vertices")
     pts = [_as_pair(p, cid, i) for i, p in enumerate(raw)]
     if pts[0] == pts[-1]:
         if not allow_closed:
@@ -76,8 +76,8 @@ def cell_polygon_vertices(
                 f"cell {cid}: polygon must not repeat the first vertex at the end"
             )
         pts = pts[:-1]
-        if len(pts) < 4:
-            raise ValueError(f"cell {cid}: polygon must contain at least 4 vertices")
+        if len(pts) < minimum_vertices:
+            raise ValueError(f"cell {cid}: polygon must contain at least {minimum_vertices} vertices")
     return pts
 
 
@@ -151,8 +151,9 @@ def cell_polygon(
     require_bbox_match: bool = True,
     allow_cw: bool = False,
     allow_closed: bool = False,
+    require_orthogonal: bool = True,
 ) -> Polygon:
-    pts = cell_polygon_vertices(cell, allow_closed=allow_closed)
+    pts = cell_polygon_vertices(cell, allow_closed=allow_closed, minimum_vertices=4 if require_orthogonal else 3)
     if pts is None:
         pts = _rect_vertices(cell)
     cid = _cell_id(cell)
@@ -168,7 +169,7 @@ def cell_polygon(
         # (edge_is_axis_aligned), not a re-derived local condition -- the judge
         # calls classify_edge_orthogonality on the same epsilon, so an edge this
         # gate admits can never be branded a topology break downstream.
-        if not edge_is_axis_aligned(dx, dy):
+        if require_orthogonal and not edge_is_axis_aligned(dx, dy):
             raise ValueError(f"cell {cid}: polygon edge {i} is not orthogonal")
         if min_edge_length_m is not None and length < min_edge_length_m - _EPS:
             raise ValueError(

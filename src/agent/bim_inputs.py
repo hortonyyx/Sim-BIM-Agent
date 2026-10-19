@@ -41,6 +41,7 @@ IMPLEMENTATION_FILES = (
     'src/agent/geometry/component_attributes.py',
     'src/agent/geometry/reader_wall_metadata.py',
     'scripts/tool_scripts/bim_agent_mesh.py',
+    'scripts/tool_scripts/bim_agent_mesh_review.py',
     'scripts/tool_scripts/bim_agent_inference.py',
     'src/agent/geometry/mesh_observation.py',
     'src/agent/geometry/mesh_bim_frame.py',
@@ -55,6 +56,8 @@ IMPLEMENTATION_FILES = (
     'src/agent/geometry/source_elevation_overlay.py',
     'src/agent/geometry/source_plan_view.py',
     'src/agent/geometry/source_bim.py',
+    'src/agent/geometry/source_schema.py',
+    'src/agent/geometry/source_visibility.py',
     'src/agent/geometry/wall_reference.py',
     'src/agent/geometry/dimension_chain.py',
     'src/agent/geometry/facade_span_comparison.py',
@@ -79,6 +82,39 @@ def digest(path: Path) -> str:
 
 def dump(path: Path, value) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def validate_png(path: Path) -> list[int]:
+    """Validate the actual PNG payload, returning its decoded image dimensions."""
+    try:
+        with PILImage.open(path) as picture:
+            if picture.format != "PNG":
+                raise ValueError("file content is not PNG")
+            size = list(picture.size)
+            picture.verify()
+        # PNG verify checks structure/checksums; load also checks compressed pixels.
+        with PILImage.open(path) as picture:
+            picture.load()
+        return size
+    except (OSError, SyntaxError, ValueError, PILImage.DecompressionBombError) as error:
+        raise ValueError(f"input image is not a valid readable PNG: {path.name}") from error
+
+
+def admitted_png_paths(directory: Path) -> list[Path]:
+    """Admit only direct PNG children; linked files cannot escape this directory."""
+    directory = directory.resolve()
+    if not directory.is_dir():
+        raise ValueError("images input must be a directory containing PNG files")
+    paths = sorted(directory.glob("*.png"))
+    if not paths:
+        raise ValueError("images input directory must contain at least one PNG file")
+    for path in paths:
+        if not path.resolve().is_relative_to(directory):
+            raise ValueError("input image escapes its admitted case directory")
+        if not path.is_file():
+            raise ValueError(f"input PNG must be a regular file: {path.name}")
+        validate_png(path)
+    return paths
 
 
 def prepare_bim_inputs(run: Path, *, images_path: Path | None, mesh_path: Path | None,
@@ -106,17 +142,18 @@ def prepare_bim_inputs(run: Path, *, images_path: Path | None, mesh_path: Path |
             raise ValueError("--resume-plan must name an existing JSON file")
     elif plan_image:
         raise ValueError("--plan-image requires --resume-plan")
+    image_paths = admitted_png_paths(images_path) if images_path is not None else []
+    if not image_paths and mesh_path is None:
+        raise ValueError("provide PNG drawings or a native --mesh GLB")
     run = run.resolve()
     run.mkdir(parents=True, exist_ok=False)
     (run/"images").mkdir()
     images = {}
-    for path in sorted(images_path.glob("*.png")) if images_path else []:
+    for path in image_paths:
         target = run/"images"/path.name
         shutil.copy2(path,target)
-        with PILImage.open(target) as im: size=list(im.size)
+        size = validate_png(target)
         images[path.name] = {"size":size,"sha256":digest(target)}
-    if not images and mesh_path is None:
-        raise ValueError("provide PNG drawings or a native --mesh GLB")
     mesh_input = None
     if mesh_path is not None:
         from scripts.tool_scripts.bim_agent_mesh import freeze_mesh
@@ -170,7 +207,7 @@ def prepare_bim_inputs(run: Path, *, images_path: Path | None, mesh_path: Path |
                                  "authorized original PNG images, user scope, and optional saved generated "
                                  "proposal; no building declaration and no GT/evaluation"
                              )}
-    if image_kind == "drawings":
+    if image_kind == "drawings" and mesh_input is None:
         from src.agent.geometry.lite_bim_regularization import DEFAULT_LITE_GRID_M
         # This is a run policy, not a claim extracted from scope or model JSON.
         # Historical manifests without it retain their original behaviour.

@@ -163,6 +163,55 @@ def test_mesh_frame_and_overlay_reach_stdio_and_preserve_saved_geometry(tmp_path
     assert original.read_bytes() == original_bytes
 
 
+def test_simple_polygon_reaches_shared_mesh_tools_and_saved_handoff(tmp_path, monkeypatch):
+    from test_source_simple_polygon import proposal
+    from test_bim_agent_tools import _full_delivery_result
+    _, run, _ = _prepare(tmp_path, monkeypatch, images=True)
+    value = proposal()
+    value['mesh_frame'] = dict(mesh_sha256=runner.Toolkit(run).manifest['mesh_input']['sha256'],
+        yaw_degrees=0, translation_m=[0,0,0], reason='synthetic fixture only',
+        source_refs=['synthetic case coordinates, no fidelity claim'])
+
+    async def scenario():
+        async with _server_session(run, readonly=False) as session:
+            built = _json_result(await session.call_tool('build_bim', {'proposal_json': json.dumps(value)}))
+            assert built['source_geometry_ready'], built
+            candidate = built['candidate']
+            saved = json.loads((run/candidate/'source_model.json').read_bytes())
+            viewed = await session.call_tool('view_mesh', {'azimuth_degrees':45, 'elevation_degrees':0,
+                'target':[1,1,1.5], 'width_m':8, 'height_m':5})
+            assert not viewed.isError, viewed
+            observation = json.loads(viewed.content[1].text)['observation']
+            host = saved['opening_hosts']['window'][0]
+            overlay = await session.call_tool('overlay_mesh_candidate', {
+                'candidate':candidate, 'observation':observation, 'boundary_ids':[host]})
+            assert not overlay.isError, overlay
+            record = json.loads(overlay.content[1].text)
+            assert record['visibility'] == 'visible'
+            assert record['visible_opening_count'] == 1
+            projection = json.loads((run/record['complete_projection_file']).read_bytes())
+            assert next(row for row in projection['objects'] if row['id'] == 'window')['host_boundary_id'] == host
+            delivery = _full_delivery_result(run, await session.call_tool('finish_bim', {'candidate':candidate}))
+            assert delivery['source_model_sha256'] == saved['source_model_sha256']
+            assert (run/candidate/'viewer.html').is_file()
+    asyncio.run(scenario())
+
+
+def test_new_polygon_contract_cannot_bypass_explicit_drawing_grid(tmp_path, monkeypatch):
+    from test_source_simple_polygon import proposal
+    _, run, _ = _prepare(tmp_path, monkeypatch)
+    manifest_path = run/'inputs.json'
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest['lite_bim_grid_step_m'] = .1
+    manifest_path.write_text(json.dumps(manifest), encoding='utf-8')
+    value = proposal()
+    # One off-grid opening remains valid geometry on its slanted host.
+    value['geometry']['openings'][1]['p1'] = [3.53, .47]
+    result = runner.Toolkit(run).build(value)
+    assert result['error_stage'] == 'source_hard_constraints', result
+    assert not result['source_geometry_ready']
+
+
 def test_large_candidate_reads_are_scoped_paged_and_complete(tmp_path, monkeypatch):
     from test_bim_agent_tools import _two_room_proposal
     import copy

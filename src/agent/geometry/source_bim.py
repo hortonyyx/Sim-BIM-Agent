@@ -16,7 +16,7 @@ from shapely.ops import unary_union
 from src.agent.correction.schema import CorrectedGeometry, SourceOpening
 from src.agent.correction.cell_geometry import cell_polygon
 from src.agent.geometry.build import verify_geometry_input
-from src.agent.geometry.capability import require_supported_geometry_contract, schema_supports, FEATURE_CELL_POLYGON
+from src.agent.geometry.capability import require_supported_geometry_contract, schema_supports, FEATURE_CELL_POLYGON, FEATURE_SIMPLE_POLYGON
 from src.agent.geometry.modelling import Surface, _FACADE_NORMAL, _legacy_cardinal_window_verts, _newell, _orient
 from src.agent.geometry.openings import _frame, _lift, _project
 from src.agent.geometry.source_model import _digest, source_primitives
@@ -136,6 +136,7 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
     its valid space geometry to be inspected.
     """
     require_supported_geometry_contract(geom, capability_profile)
+    simple_polygon = schema_supports(geom, FEATURE_SIMPLE_POLYGON)
     geom, proof_artifact = verify_geometry_input(geom, window_host_proof)
     findings = []
 
@@ -165,7 +166,7 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
             poly = Polygon(coords)
             if not poly.is_valid or poly.area <= EPS ** 2:
                 raise ValueError(f"space {cell.id}: invalid or empty footprint")
-            if any(abs(a[0]-b[0]) > EPS and abs(a[1]-b[1]) > EPS for a,b in zip(coords, coords[1:]+coords[:1])):
+            if not simple_polygon and any(abs(a[0]-b[0]) > EPS and abs(a[1]-b[1]) > EPS for a,b in zip(coords, coords[1:]+coords[:1])):
                 raise ValueError(f"space {cell.id}: non-orthogonal source geometry is not supported yet")
 
     # Reuse polygon validity/bounds checks, without the legacy EP kernel's
@@ -173,7 +174,7 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
     from src.agent.geometry.reader_wall_metadata import thickness_breakpoints
     wall_breakpoints = thickness_breakpoints(wall_readings or [])
     spaces, boundaries, polygons, by_space = source_primitives(
-        geom, polygon_builder=cell_polygon,
+        geom, polygon_builder=lambda cell: cell_polygon(cell, require_orthogonal=not simple_polygon),
         wall_breakpoints=wall_breakpoints)
     from src.agent.roles import require_role
     for space in spaces:
@@ -362,8 +363,9 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
                         space_ids=sids, exterior=not others, vertices=vertices, connectivity=aperture.state,
                         source_refs=aperture.source_refs, assumptions=aperture.assumptions))
         bindings[aperture.id] = [owner.id] + [b.id for b in others]
-        connections.append({"opening_id": aperture.id, "kind": aperture.kind, "space_ids": sids,
-                            "exterior": not others, "state": aperture.state})
+        if aperture.kind != "window":
+            connections.append({"opening_id": aperture.id, "kind": aperture.kind, "space_ids": sids,
+                                "exterior": not others, "state": aperture.state})
 
     by_host = {}
     for opening in openings:
@@ -409,6 +411,12 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
     }
     if opening_segment_groups:
         payload['opening_segment_groups'] = opening_segment_groups
+    if simple_polygon:
+        payload['geometry_capability'] = {
+            'profile': 'simple_polygon', 'input_schema': geom.schema_version,
+            'scope': 'straight-edged simple polygon prisms; vertical walls and horizontal floor/ceiling planes',
+            'not_supported': ['curved boundaries', 'footprint holes', 'sloping or height-varying spaces'],
+        }
     from src.agent.geometry.source_naming import build_public_names
     from src.agent.roles import CATALOG, CATALOG_PATH
     payload["public_names"] = build_public_names(payload)

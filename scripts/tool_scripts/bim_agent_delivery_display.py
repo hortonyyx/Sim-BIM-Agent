@@ -242,7 +242,15 @@ def render_delivery_html(result: dict, source: dict) -> str:
     if run_status.get("error"):
         run_note += " " + text_html(run_status["error"])
     floor_status = result["floor_completeness"]
-    if floor_status["complete_building"] is False:
+    mesh_review = result.get('mesh_review')
+    if mesh_review is not None:
+        if mesh_review.get('complete_building'):
+            run_note += " 调度员已声明本稿覆盖整栋建筑，声明与当前模型及回叠证据一致；这不代表独立精度验收通过。"
+        else:
+            run_note += " 本稿尚无有效的整栋范围声明，保留为局部或待核查交付。"
+        if mesh_review.get('summary'):
+            run_note += " " + text_html(mesh_review['summary'])
+    elif floor_status["complete_building"] is False:
         run_note += " 本稿不完整：尚缺楼层图 " + text_html(", ".join(floor_status["missing_candidate_images"])) + "。"
     elif floor_status["complete_building"] is True:
         run_note += " 已覆盖预期楼层图；这不证明房间、门窗或高度正确。"

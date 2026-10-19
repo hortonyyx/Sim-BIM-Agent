@@ -162,7 +162,7 @@ def export_source_proposal(proposal: dict, out_dir: Path, *, provenance: dict | 
         check_geometry_scale(geom.model_dump(mode="json"))
         source = build_source_bim(
             geom,
-            capability_profile="orthogonal_polygon",
+            capability_profile="simple_polygon" if geom.schema_version == "source_polygon_v1" else "orthogonal_polygon",
             enclosure_declaration=enclosure,
             wall_readings=proposal.get('wall_readings'),
         )

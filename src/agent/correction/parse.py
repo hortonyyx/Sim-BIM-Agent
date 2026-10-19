@@ -98,6 +98,11 @@ def ensure_corrected_geometry(value: dict | CorrectedGeometry) -> CorrectedGeome
     # profiles can register a future read-only legacy schema while still keeping
     # genuinely unknown versions fail-closed.
     from src.agent.geometry.capability import SUPPORTED_SCHEMA_VERSIONS
+    from src.agent.correction.constants import SCHEMA_VERSION_SOURCE_POLYGON
+    version = str(value.get("schema_version", "1") if isinstance(value, dict) else value.schema_version)
+    if version == SCHEMA_VERSION_SOURCE_POLYGON:
+        from src.agent.geometry.source_schema import SourcePolygonGeometry
+        return SourcePolygonGeometry.model_validate(value if isinstance(value, dict) else value.model_dump())
     if isinstance(value, dict):
         version = str(value.get("schema_version", "1"))
         if version == "3":

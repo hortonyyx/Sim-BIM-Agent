@@ -169,7 +169,8 @@ def reject_source_proposal(toolkit, proposal, *, plan_assembly=None, parent=None
             if isinstance(footprint, dict):
                 floor.footprint = FootprintRing.model_validate(footprint)
         check_geometry_scale(geom.model_dump(mode="json"))
-        source = build_source_bim(geom, capability_profile="orthogonal_polygon",
+        profile = 'simple_polygon' if geom.schema_version == 'source_polygon_v1' else 'orthogonal_polygon'
+        source = build_source_bim(geom, capability_profile=profile,
                                  enclosure_declaration=enclosure)
     except (ValueError, TypeError, KeyError):
         return None

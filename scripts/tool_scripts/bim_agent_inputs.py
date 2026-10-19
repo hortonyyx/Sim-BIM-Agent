@@ -64,16 +64,24 @@ def _inventory_associations(declaration: dict, images: dict) -> list[dict]:
     return rows
 
 
-def freeze_building_input(source: Path, run: Path, images: dict) -> dict:
-    """Copy one JSON declaration byte-for-byte and describe its provenance."""
-    source = source.resolve()
+def read_building_input(source: Path) -> tuple[bytes, dict]:
+    """Read only the explicitly admitted UTF-8 declaration, never its path fields."""
+    if not source.is_file():
+        raise ValueError("building input must name an existing JSON file")
     raw = source.read_bytes()
     try:
-        declaration = json.loads(raw)
+        declaration = json.loads(raw.decode("utf-8-sig"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError(f"building input must be valid UTF-8 JSON: {error}") from error
     if not isinstance(declaration, dict):
         raise ValueError("building input must be a JSON object")
+    return raw, declaration
+
+
+def freeze_building_input(source: Path, run: Path, images: dict) -> dict:
+    """Copy one JSON declaration byte-for-byte and describe its provenance."""
+    source = source.resolve()
+    raw, declaration = read_building_input(source)
 
     frozen = run / FROZEN_BUILDING_INPUT
     frozen.write_bytes(raw)
@@ -101,7 +109,7 @@ def freeze_building_input(source: Path, run: Path, images: dict) -> dict:
             ),
         },
         "conflict_policy": (
-            "The agent must compare declarations with supplied drawing evidence, preserve the "
+            "The agent must compare declarations with supplied mesh, image and other evidence, preserve the "
             "conflict or uncertainty, and decide its modelling effect explicitly."
         ),
     }

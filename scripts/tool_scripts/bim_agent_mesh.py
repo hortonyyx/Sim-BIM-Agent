@@ -231,13 +231,19 @@ def register_mesh_tools(server, toolkit):
 
     @server.tool()
     def overlay_mesh_candidate(candidate: str, observation: str, floor_id: str | None = None,
-                                exterior_only: bool = True):
+                                exterior_only: bool = True, visibility: str = 'visible',
+                                boundary_ids: list[str] | None = None):
         """Overlay actual source BIM on an existing original-mesh camera view.
         First save its explicit mesh_frame; no automatic fit or text-note parsing.
-        Magenta source wall edges, green windows, orange doors. X-ray source lines
-        include hidden geometry (no source depth test), so use floor_id/side views
-        for clarity. The underlying original raster remains unchanged. This view
-        neither certifies alignment nor establishes missing mesh as open/solid.
+        Magenta source wall edges, green windows, orange doors. Default visible
+        filters by actual host facing and saved source geometry depth; with
+        exterior_only=False interior inspection is two-sided. Optional
+        xray includes hidden edges. boundary_ids scopes arbitrary wall hosts,
+        without a cardinal facade assumption. Full source still occludes scoped
+        views. Glazing is an envelope; open enclosure regions and explicitly open
+        passages/doors are excluded. Unknown or closed door states still occlude.
+        Visibility does not compare source depth with the original mesh or certify
+        alignment; all projected objects and their visibility remain in the record.
         """
         from src.agent.geometry.mesh_bim_frame import render_mesh_bim_overlay
         mesh()
@@ -247,7 +253,8 @@ def register_mesh_tools(server, toolkit):
         source = json.loads(source_path.read_text())
         with PILImage.open(prefix.with_suffix('.png')) as original:
             picture, record = render_mesh_bim_overlay(original, metadata, source,
-                floor_id=floor_id, exterior_only=exterior_only)
+                floor_id=floor_id, exterior_only=exterior_only,
+                visibility=visibility, boundary_ids=boundary_ids)
         folder = toolkit.run / 'mesh_overlays'; folder.mkdir(exist_ok=True)
         overlay_id = f'overlay_{len(list(folder.glob("overlay_*.json")))+1:03d}'
         image_path = folder / f'{overlay_id}.png'
@@ -256,6 +263,7 @@ def register_mesh_tools(server, toolkit):
             image_file=image_path.relative_to(toolkit.run).as_posix(),
             image_sha256=hashlib.sha256(image_path.read_bytes()).hexdigest(),
             observation_metadata_sha256=hashlib.sha256(prefix.with_suffix('.json').read_bytes()).hexdigest(),
+            observation_image_sha256=hashlib.sha256(prefix.with_suffix('.png').read_bytes()).hexdigest(),
             source_file_sha256=hashlib.sha256(source_path.read_bytes()).hexdigest())
         (folder / f'{overlay_id}.json').write_text(json.dumps(record, indent=2) + '\n')
         summary = {k: v for k, v in record.items() if k != 'objects'}

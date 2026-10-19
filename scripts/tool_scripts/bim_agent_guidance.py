@@ -1,8 +1,9 @@
 """Instructions given to the BIM working model, assembled by input type.
 
-What goes where: CORE holds the task, acceptance and non-negotiable rules;
+What goes where: the shared core template holds non-negotiable rules; CORE and
+MESH_CORE supply the input-specific priorities and coordinate frame.
 DRAWING_METHOD (also served as the reconstruction reference), MESH_VIEWS and
-PHOTOS hold input-specific knowledge; all modalities share CORE, TOOLS and
+PHOTOS hold input-specific knowledge; all modalities share the core rules, TOOLS and
 DELIVERY. TOOLS is an index (each
 tool's description holds its contract); FINISHING and DELIVERY hold what a
 delivery must satisfy. REFERENCES hold formats and interfaces only. Checks the
@@ -20,14 +21,30 @@ from __future__ import annotations
 # and view inputs keep their inference of missing interiors.
 # C2: the first full review found CORE's unconditional look-again instruction
 # contradicted T1's final 15% rule. Use that bounded finishing rule throughout.
-CORE = """Build a viewable lightweight BIM of the target building from the supplied
-inputs. You choose observations, tools and revisions; no tool sequence is fixed.
-
-What matters, in order: the actual physical spaces and the partitions between
+_DRAWING_PRIORITIES = """What matters, in order: the actual physical spaces and the partitions between
 them; each floor's shape and level; every door and window with its position,
 width and height on its real wall; and door connectivity. Room-use precision has
 lower priority; declare a known or plausible use with its basis while describing
-the room, without using that use to invent a partition. No EnergyPlus objects or materials.
+the room, without using that use to invent a partition."""
+
+_MESH_PRIORITIES = """Prioritize the observed exterior: overall envelope, relationships among building
+parts, floor levels, setbacks and terraces, and exterior windows on their actual
+host surfaces with correct positions, sizes and counts. For interiors without direct
+evidence, produce a reasonable layout and circulation at the requested simplification;
+the unknown true room count is not a target. Preserve interior facts supplied by
+reliable auxiliary evidence. Record plausible uses with their basis."""
+
+_DRAWING_FRAME = "Units are metres; x east, y north, z absolute world height on every floor."
+_MESH_FRAME = """Units are metres; use one explicit source frame with z up and absolute heights on
+every floor. Preserve the native mesh-to-BIM relation, or the supplied projection
+and transform for prepared views. Local x/y need not be geographic east/north.
+Relate auxiliary inputs to this frame using their evidence; a view or a filename
+does not define north."""
+
+_CORE_TEMPLATE = """Build a viewable lightweight BIM of the target building from the supplied
+inputs. You choose observations, tools and revisions; no tool sequence is fixed.
+
+{priorities} No EnergyPlus objects or materials.
 - Preserve evidence of physical partitions; furniture or use alone does not
   establish a wall. Missing interiors may be explicitly inferred at the requested
   simplification. Keep each real space whole: never split it into boxes or add false walls
@@ -47,11 +64,16 @@ the room, without using that use to invent a partition. No EnergyPlus objects or
   Centring, equal spacing, symmetry or copying never count as observation.
 - Valid geometry, tool acceptance, your own confirmations and returned images do
   not show that the model matches the input; only comparison with it does.
-Units are metres; x east, y north, z absolute world height on every floor.
+{frame}
 Image positions are ORIGINAL pixels: read them from a view's grid labels, or
 convert a returned-image pixel with that view's crop origin and
 original_pixels_per_returned_pixel. Keep object IDs stable.
 """
+
+# Mesh shares physical/evidence constraints with drawings, but does not inherit
+# drawing reconstruction priorities or an unestablished geographic orientation.
+CORE = _CORE_TEMPLATE.format(priorities=_DRAWING_PRIORITIES, frame=_DRAWING_FRAME)
+MESH_CORE = _CORE_TEMPLATE.format(priorities=_MESH_PRIORITIES, frame=_MESH_FRAME)
 
 # 09-30 replacement of v1. Failures targeted: v1 required row-by-row magnified reading
 # before any build, so first drafts still came after 41-77 calls (run69-94) and later
@@ -146,9 +168,15 @@ no prior generated model is an observation.
 """
 
 # A5-T replaces the 15,808-character legacy mesh guide. Shared rules now come
-# from CORE/TOOLS/DELIVERY; detailed native-frame and inference contracts stay in
+# from the core template/TOOLS/DELIVERY; native-frame and inference contracts stay in
 # partial_inference. This removes drift in claims, budgets and finishing rules.
-MESH_METHOD = MESH_VIEWS + """Use inspect_mesh/view_mesh for the admitted native asset, keeping its metric
+MESH_METHOD = MESH_VIEWS + """You are the orchestrator and can do the work directly: decide which inputs and
+tools resolve the current question, the precision needed, and what to inspect or
+revise. The current native entry has no dedicated mesh worker dispatcher; perform
+mesh work directly with the tools exposed in this run. Observing, building and
+checking need no fixed phases.
+
+Use inspect_mesh/view_mesh for the admitted native asset, keeping its metric
 frame and camera metadata. Prepared images use their supplied projection, not
 an invented plan scale. Observe the building envelope and opening patterns;
 record missing interiors as architectural inference at the requested detail.
@@ -156,9 +184,15 @@ Use record_inference for assumptions and repeated templates with exceptions;
 build_parametric_bim expands the declaration, and inspect_parametric_plan plus
 audit_inference_candidate compare the saved spaces/openings to that declaration.
 Check source counts, extents, connections and visible facades after assembly.
-For drawing images supplied with a mesh, use the reconstruction reference for
-those images. An untextured or unseen patch alone does not prove an opening or
-an opaque wall. Preserve reliable observations when choosing a simple inference.
+Interpret auxiliary plans, relationship sketches and text by the information each
+part supplies. One image may combine reliable dimensions, approximate proportions
+and spatial relationships. Use the reconstruction reference only for regions that
+actually provide measured drawing geometry. A sketch's line lengths, angles and
+widths are not measurements; use explicit dimensions only within their stated scope.
+Do not require pixel calibration to use a relationship sketch. Preserve the difference
+between user-confirmed facts, user guesses and your assumptions. An untextured or
+unseen patch alone does not prove an opening or an opaque wall. Preserve reliable
+observations when choosing a simple inference.
 """
 
 # v1 gave the drawing method to any image; photos are not measured drawings.
@@ -378,7 +412,7 @@ def filter_tool_catalog(tools, *, review_detail=False, continuation=False):
 def build_guide(*, images=None, mesh=False, review_detail=False, continuation=False):
     """System prompt for one run. images is drawings, mesh_views, photos, unknown or None."""
     mesh_mode = mesh or images == "mesh_views"
-    parts = [CORE]
+    parts = [MESH_CORE if mesh_mode else CORE]
     if mesh_mode:
         parts.append(MESH_METHOD)
     elif images == "unknown":
@@ -662,8 +696,25 @@ x/y bounding intervals. These rooms must stay intact. Rooms cover each floor
 without gaps/overlap: use an explicitly declared representative wall plane to
 abstract thickness. Do not add fake interior walls or floor void closures.
 Keep source_refs on cells/windows when available and list assumptions clearly.
-The current tool supports orthogonal floors; explicitly report unsupported
-geometry. The example numbers/counts are unrelated to the supplied drawings.
+Schemas 1/2 keep their orthogonal contracts. For simple straight-edged polygons,
+build_bim accepts geometry.schema_version="source_polygon_v1" using the SAME source
+BIM builder. Each floor must supply footprint:{"vertices":[[x,y],...]} and each
+polygon cell supplies >=3 CCW unclosed vertices plus its true x/y bounding intervals.
+Slanted exterior windows use geometry.openings (not cardinal facade/span windows):
+{"id":"W_slant","kind":"window","space_id":"room","other_space_id":null,
+"p1":[3.5,0.5],"p2":[2.5,1.5],"z":[1,2],"source_refs":["explicit local evidence"]}.
+Endpoints must lie on one complete actual wall host; z is world absolute height.
+Doors and unfilled passages use the same endpoints with kind door/open and the
+actual other_space_id, or null for outdoors. Windows do not create traversable
+connections. Edit these windows with update_opening, not update_window.
+This contract supports vertical prism spaces and horizontal floors/ceilings, not
+true curves, footprint holes, sloped walls or changing cross-sections within one
+space. Per-floor footprints, spanning_space_ids and explicit open enclosure regions
+use the existing shared contact mechanisms. Parametric templates and cardinal
+elevation views retain their own limits; use native mesh camera/host overlays for
+oblique facades. An explicit mesh_frame may define local XY instead of geographic
+east/north. Report unsupported geometry; never silently approximate it as confirmed.
+The example numbers/counts are unrelated to the supplied building.
 """,
     'edits': """revise_bim takes candidate plus an operations_json list. Operations include:
 {"op":"set_space_role","space_id":"F1_left","role":"office",
@@ -873,6 +924,17 @@ when the supplied exterior or mesh evidence does not reveal the whole building.
 The model chooses the observations, architectural interpretation, level of detail
 and revisions. Deterministic tools measure, expand repeated declarations, build
 hosts, preserve IDs and report geometry; they do not choose the interpretation.
+The orchestrator may perform the work itself. Only use worker delegation when an
+explicitly configured tool is available; the current mesh entry exposes direct work.
+
+AUXILIARY INPUTS. Assign a purpose and precision to each relevant piece of evidence,
+including local plans, hand sketches and text. A diagram may establish adjacency,
+core continuity or a terrace without supplying metric geometry. Do not infer measured
+lengths, angles or wall thicknesses from hand-drawn strokes. A stated dimension
+applies only to the object or region it describes; it does not calibrate unrelated
+parts of the sheet. When an auxiliary region is a reliable measured drawing, use the
+reconstruction reference for that region and relate its coordinates to the mesh frame.
+Keep user-confirmed information, user speculation and model assumptions distinct.
 
 NATIVE MESH EVIDENCE. When inputs contains a mesh_input, inspect_mesh, view_mesh and
 measure_mesh_pixels access the admitted ORIGINAL textured GLB. Choose cameras,
@@ -900,8 +962,27 @@ implicit frame. Translation cannot repair a wrong orientation. Frame correction
 does not establish footprint, height, rooms or openings. revise_bim preserves the
 frame, and obsolete frame notes must be explicitly replaced. overlay_mesh_candidate
 projects the ACTUAL saved source edges onto a saved mesh view without fitting;
-hidden edges are X-ray lines. Use suitable whole-building, side, top and local views
-to distinguish orientation, displacement and shape errors.
+its default visibility='visible' filters by host facing and occlusion by the saved
+source geometry. boundary_ids can select arbitrary wall hosts, including oblique
+ones; other source geometry still occludes them. Inspect the returned host IDs and
+visible edge samples: projected objects that are not visible remain in the record.
+This visibility test does not compare depth with the original mesh and does not
+establish alignment or observed window identity. Optional visibility='xray' also
+shows hidden source edges; never count every green frame as a window visible on the
+current facade. Use suitable whole-building, side, top and local views to distinguish
+orientation, displacement and shape errors.
+
+NATIVE MESH HANDOFF. After inspecting the intended final saved source and its
+overlays, finish_bim can carry reviews_json as a JSON object:
+{"mesh_review":{"coverage":"whole_building","summary":"Scope checked, architectural
+interpretation and remaining uncertainty","overlay_ids":["overlay_001"]}}.
+Use coverage="partial" for unfinished scope. Choose relevant current overlays;
+there is no fixed camera count or required sequence. Code binds the declaration
+to the actual source, original inputs and reviewed image bytes. This is your scope
+judgment, not an independent accuracy verdict. A current whole_building declaration
+plus source validation status='pass' and a saved viewer permits completion. Missing, partial or stale
+declarations remain useful saved handoffs but do not finish the runtime. Drawing
+floor completeness stays a separate field and may be unknown for a mesh input.
 
 OBSERVATION AND INFERENCE. Separate what the source shows, what it constrains, what
 you infer, what you deliberately simplify and what remains unresolved. Missing or
@@ -935,12 +1016,12 @@ by orientation, thermal convenience or rectangular decomposition.
 
 Facade windows constrain room depth, bay rhythm and where partitions can meet the
 exterior. Partition ends must respect observed apertures and intervening wall strips;
-never clip, merge or swallow a window to make a room fit. For fine detail and a plausible
-repeated enclosed-office layout, start from a room per structural bay/window group
-when width and depth are usable. Larger multi-bay rooms need a use or spatial reason;
-merging plausible separate rooms to reduce object count is a simplification to declare.
-A window group is an aperture, not each pane. Visible open space, room use, circulation,
-corner conditions and explicit user information can support a different layout.
+never clip, merge or swallow a window to make a room fit. Window groups do not
+determine the number of rooms. Choose plausible room sizes and circulation from
+building use, the requested simplification and available interior information;
+unsupported interior subdivisions need no reconstruction. A window group is an
+aperture, not each pane. Visible open space, room use, circulation, corner conditions
+and explicit user information can support different layouts.
 Preserve exceptional windows rather than forcing every storey or facade into one template.
 
 Assign common room types from get_bim_reference('room_types') using building context,

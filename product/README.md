@@ -37,6 +37,10 @@ Haiku可复制`config.opencode-go-haiku.example.json`：单模型`claude-haiku-5
 
 `input_kind: "images"` 要求 `input` 指向至少包含一张可读 PNG 的目录；该目录直接包含的每个 `*.png` 都必须是有效图片文件，不能引用目录外的图片。图片不递归读取，目前不接收 JPEG 或 PDF。`floor_plan_images` 如有填写，必须使用这些 PNG 的准确文件名。单模型的 `input_kind: "mesh"` 要求 `input` 指向现有的 `.glb` 文件；分工模式目前仅接收图纸图片。`check` 只做配置及输入文件预检，不验证图纸识读质量或网格几何是否可用于建模。
 
+Mesh 开发入口见 [配置示例](config.mesh.example.json)：同一 `single_model` 可同时提供 `auxiliary_images`（辅助 PNG 目录）和 `building_input`（UTF-8 JSON 对象），均限定在本案 `input_root` 内；没有对应材料时删除该字段。声明可记录用途、层段、已知尺寸、草图含义和不确定性，用户确认、用户推测与模型假设分别写清。声明中的路径只是文字，不会自动加载其他文件。PNG 内容和声明会冻结并记录哈希，草图不自动触发精确量测或整楼 10 cm 规整。
+
+初版 mesh 由调度员自主选择共用工具并直接工作，尚未接通 mesh worker。整体外形、楼层关系和外窗优先，未知内部按合理性核查。回叠默认按实际源 BIM 宿主和几何遮挡显示，可按墙面 ID 选择局部，仍保留隐藏对象记录；`xray` 模式可显示背面。可见性不代表与原 mesh 的精度已经通过。当前新增简单斜边多边形能力不含真曲线、带孔空间、斜墙或沿高度变截面的空间；桌面安装支持范围以其版本为准。
+
 ChatGPT 订阅通过 `auth login` 使用用户自己的账号授权。凭据由本机专用存储保护，不打包进程序；默认存储位置保留 `%LOCALAPPDATA%/EnergyPlus-Agent/openai-subscription`。已有授权不需随版本更新重新登录。GLM 订阅和 Paratera 通过运行配置指定独立凭据文件，不能把密钥写入发布文件。
 
 ## 更新与回滚

@@ -10,6 +10,21 @@ from scripts.tool_scripts.bim_agent_budget import fallback_selection
 from scripts.tool_scripts.run_bim_agent import Toolkit
 
 
+def _delivery_scope(manifest: dict, delivery: dict) -> dict:
+    """Keep drawing coverage and model-reported mesh scope distinguishable."""
+    if manifest.get("mesh_input"):
+        review = delivery.get("mesh_review", {})
+        return {
+            "complete_building": (review.get("status") == "current"
+                and review.get("coverage") == "whole_building"
+                and review.get("complete_building") is True),
+            "scope_basis": "mesh_model_reported_review",
+            "mesh_review": {key: review[key] for key in
+                ("status", "coverage", "fidelity", "review_file", "record_sha256") if key in review},
+        }
+    return {"complete_building": delivery["floor_completeness"]["complete_building"]}
+
+
 def completed_building_handoff(engine) -> dict | None:
     """Attest the last explicit finish against the exact files it handed off.
 
@@ -46,8 +61,11 @@ def completed_building_handoff(engine) -> dict | None:
             return None
         run = engine.tools.run_directory
         expected = result.get("delivery_artifact_sha256", {})
+        manifest = json.loads((run / "inputs.json").read_bytes())
         names = {"inputs.json", "delivery_selection.json", "delivery.json", "delivery.html",
                  f"{candidate}/source_model.json", f"{candidate}/viewer.html"}
+        if manifest.get("mesh_input") and (run / candidate / "mesh_review.json").is_file():
+            names.add(f"{candidate}/mesh_review.json")
         if set(expected) != names:
             return None
         contents = {name: (run / name).read_bytes() for name in names}
@@ -61,15 +79,25 @@ def completed_building_handoff(engine) -> dict | None:
                 or any(row.get("source_model_sha256") != source_hash for row in (source, selection, delivery, result))
                 or any(row.get("candidate") != candidate for row in (selection, delivery))
                 or delivery.get("selection_origin") != "agent_selected"
-                or delivery.get("floor_completeness", {}).get("complete_building") is not True
                 or delivery.get("source_validation", {}).get("status") != "pass"
                 or delivery.get("viewer") != f"{candidate}/viewer.html"
                 or delivery.get("source_model") != f"{candidate}/source_model.json"
                 or not delivery.get("viewer_exists")):
             return None
+        scope = _delivery_scope(manifest, delivery)
+        if scope["complete_building"] is not True:
+            return None
+        if manifest.get("mesh_input"):
+            from scripts.tool_scripts.bim_agent_mesh_review import mesh_review_status
+            # The seventh handoff artifact binds the self-reported judgment;
+            # its source/mesh/overlay evidence must still be current as well.
+            if mesh_review_status(Toolkit(run), candidate) != delivery.get("mesh_review"):
+                return None
         return {"origin": "domain_tool", "tool_name": "finish_bim", "event_id": event.event_id,
                 "candidate": candidate, "source_model_sha256": source_hash,
-                "artifact_sha256": expected}
+                "artifact_sha256": expected,
+                **({"scope_basis": scope["scope_basis"], "mesh_review": scope["mesh_review"]}
+                   if manifest.get("mesh_input") else {})}
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
@@ -99,7 +127,7 @@ def finalize_building(run: Path, *, reason: str, elapsed_seconds: float) -> dict
         delivery = toolkit.delivery(chosen, selection_origin=origin, generation_status=generation)
         return {"status": "delivered", "delivery": {
             "candidate": chosen, "selection_origin": origin,
-            "complete_building": delivery["floor_completeness"]["complete_building"],
+            **_delivery_scope(toolkit.manifest, delivery),
             "report": "bim/delivery.json", "viewer": "bim/delivery.html"}}
     except (OSError, ValueError, KeyError, TypeError) as error:
         # Keep the stop reason and saved sources inspectable if handoff fails.
@@ -121,6 +149,9 @@ def finalize_runtime_building(engine, reason: str) -> dict:
             # selection without claiming that the unfinished batch completed.
             return {"status": "delivered", "reused_handoff": True, "completion_valid": True, "delivery": {
                 "candidate": verified["candidate"], "selection_origin": "agent_selected",
-                "complete_building": True, "report": "bim/delivery.json", "viewer": "bim/delivery.html"}}
+                "complete_building": True,
+                **({"scope_basis": verified["scope_basis"], "mesh_review": verified["mesh_review"]}
+                   if "scope_basis" in verified else {}),
+                "report": "bim/delivery.json", "viewer": "bim/delivery.html"}}
     return finalize_building(engine.tools.run_directory, reason=reason,
         elapsed_seconds=engine.elapsed_seconds())

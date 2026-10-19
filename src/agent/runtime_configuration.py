@@ -52,8 +52,8 @@ def context_arguments(case: dict) -> list[str]:
     return result
 
 
-def resolve_case_input(case: dict) -> Path:
-    """Resolve one admitted case; an external input root must be explicit."""
+def _resolve_input_path(case: dict, field: str) -> Path:
+    """All explicitly named input assets use the same bounded input root."""
     configured = case.get("input_root")
     root = ROOT.resolve() if configured is None else Path(configured).expanduser()
     if not root.is_absolute():
@@ -61,39 +61,49 @@ def resolve_case_input(case: dict) -> Path:
     root = root.resolve()
     if root == Path(root.anchor):
         raise ValueError("input_root must be a dedicated directory, not a filesystem root")
-    target = (root / case["input"]).resolve()
+    requested = case.get(field)
+    if not isinstance(requested, str) or not requested.strip():
+        raise ValueError(f"{field} must be a nonempty input path")
+    target = (root / requested).resolve()
     if not target.is_relative_to(root):
-        raise ValueError("input escapes the worktree" if configured is None
-                         else "input escapes its configured input_root")
+        raise ValueError(f"{field} escapes the worktree" if configured is None
+                         else f"{field} escapes its configured input_root")
     if not target.exists():
         raise ValueError(f"input does not exist: {target}")
+    return target
+
+
+def resolve_case_input(case: dict) -> Path:
+    """Resolve one admitted case; an external input root must be explicit."""
+    target = _resolve_input_path(case, "input")
     kind = case.get("input_kind")
     if kind == "images":
-        from PIL import Image
-
-        if not target.is_dir():
-            raise ValueError("images input must be a directory containing PNG files")
-        images = sorted(target.glob("*.png"))
-        if not images:
-            raise ValueError("images input directory must contain at least one PNG file")
-        for image in images:
-            if not image.resolve().is_relative_to(target):
-                raise ValueError("input image escapes its admitted case directory")
-            if not image.is_file():
-                raise ValueError(f"input PNG must be a regular file: {image.name}")
-            try:
-                with Image.open(image) as picture:
-                    if picture.format != "PNG":
-                        raise ValueError("file content is not PNG")
-                    picture.verify()
-            except (OSError, SyntaxError, ValueError, Image.DecompressionBombError) as error:
-                raise ValueError(f"input image is not a valid readable PNG: {image.name}") from error
+        from src.agent.bim_inputs import admitted_png_paths
+        admitted_png_paths(target)
     elif kind == "mesh":
         if not target.is_file() or target.suffix.lower() != ".glb":
             raise ValueError("mesh input must be a regular .glb file")
     else:
         raise ValueError("input_kind must be images or mesh")
     return target
+
+
+def resolve_supplemental_inputs(case: dict) -> tuple[Path | None, Path | None]:
+    """Resolve explicit auxiliary PNGs and a user declaration, without discovery."""
+    images = declaration = None
+    if case.get("auxiliary_images") is not None:
+        if case.get("mode") != "single_model" or case.get("input_kind") != "mesh":
+            raise ValueError("auxiliary_images requires single_model mesh input")
+        from src.agent.bim_inputs import admitted_png_paths
+        images = _resolve_input_path(case, "auxiliary_images")
+        admitted_png_paths(images)
+    if case.get("building_input") is not None:
+        if case.get("mode") not in {"single_model", "role_division"}:
+            raise ValueError("building_input supports single_model and role_division only")
+        from scripts.tool_scripts.bim_agent_inputs import read_building_input
+        declaration = _resolve_input_path(case, "building_input")
+        read_building_input(declaration)
+    return images, declaration
 
 
 def load_configuration(path: Path, *, low_output_limit_reason: str | None = None) -> dict:
@@ -117,7 +127,8 @@ def load_configuration(path: Path, *, low_output_limit_reason: str | None = None
             raise ValueError(f"unsupported run mode {mode!r}")
         if type(case.get("process_reviews", False)) is not bool:
             raise ValueError("process_reviews must be a boolean")
-        if case.get("process_reviews") and (mode != "single_model" or case.get("image_kind") != "drawings"):
+        if case.get("process_reviews") and (mode != "single_model" or case.get("image_kind") != "drawings"
+                                            or case.get("input_kind") != "images"):
             raise ValueError("process_reviews currently requires single_model drawings")
         continuation = case.get("continuation")
         if case.get("reader_task") is not None:
@@ -203,6 +214,7 @@ def load_configuration(path: Path, *, low_output_limit_reason: str | None = None
             raise ValueError("case exceeds the configuration's time ceiling")
         validate_budget(case)
         target = resolve_case_input(case)
+        auxiliary_images, _ = resolve_supplemental_inputs(case)
         if case.get("run_root") is not None and mode not in {"single_model", "role_division"}:
             raise ValueError("explicit run_root supports single_model and role_division only")
         if case.get("run_root") is not None:
@@ -210,7 +222,8 @@ def load_configuration(path: Path, *, low_output_limit_reason: str | None = None
         resolve_run_output(ROOT / case["output"] if case.get("run_root") is None else Path(case["output"]), repository_root=ROOT,
                            run_root=case.get("run_root"))
         floors = case.get("floor_plan_images")
-        admitted_images = {image.name for image in target.glob("*.png")} if case["input_kind"] == "images" else set()
+        image_directory = target if case["input_kind"] == "images" else auxiliary_images
+        admitted_images = {image.name for image in image_directory.glob("*.png")} if image_directory else set()
         if floors is not None and (not isinstance(floors, list) or any(
                 not isinstance(name, str) or Path(name).name != name
                 or name not in admitted_images for name in floors)):
@@ -286,6 +299,11 @@ def argv_for(case: dict, *, resume: bool = False) -> list[str]:
         if name in limits:
             argv += ["--" + name.replace("_", "-"), str(limits[name])]
     argv += [source_flag, str(resolve_case_input(case))]
+    auxiliary_images, building_input = resolve_supplemental_inputs(case)
+    if auxiliary_images is not None:
+        argv += ["--images", str(auxiliary_images)]
+    if building_input is not None:
+        argv += ["--building-input", str(building_input)]
     for name in case.get("floor_plan_images", []):
         argv += ["--floor-plan-image", name]
     if case["mode"] == "single_model":

@@ -2,6 +2,26 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_mesh_delivery_review.py": {
+      "group": "targeted",
+      "reason": "Mesh scope declarations bind current source, original inputs and reviewed overlays without claiming independent fidelity"
+    },
+    "tests/test_mesh_runtime_completion.py": {
+      "group": "targeted",
+      "reason": "Shared runtime completion and fallback distinguish current mesh scope from drawing floor coverage"
+    },
+    "tests/test_mesh_input_admission.py": {
+      "group": "targeted",
+      "reason": "Mesh plus explicit auxiliary images and user declarations, immutable admission and path boundaries"
+    },
+    "tests/test_source_simple_polygon.py": {
+      "group": "targeted",
+      "reason": "Shared simple polygon source BIM, oblique hosts, contacts, enclosure and saved revisions"
+    },
+    "tests/test_source_visibility.py": {
+      "group": "targeted",
+      "reason": "Saved source host visibility, occlusion, arbitrary camera frames and auditable hidden openings"
+    },
     "tests/test_go_direct.py": {
       "group": "targeted",
       "reason": "Go-only physical interface and DNS routing, provider isolation, TLS and deadlines"

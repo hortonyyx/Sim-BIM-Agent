@@ -153,6 +153,28 @@ def time_status(toolkit, *, now=None):
 
 def fallback_selection(toolkit):
     status = saved_floor_status(toolkit)
+    if toolkit.manifest.get("mesh_input"):
+        from scripts.tool_scripts.bim_agent_mesh_review import mesh_review_status
+        candidates = sorted(toolkit.run.glob("candidate_*/source_model.json"))
+        seed = toolkit.run / "seed/source_model.json"
+        if seed.is_file():
+            candidates.insert(0, seed)
+        complete = []
+        for source_path in candidates:
+            try:
+                report = _read(source_path.with_name("report.json"))
+                _read(source_path.with_name("proposal.json"))
+                if not report.get("source_geometry_ready") or not source_path.with_name("viewer.html").is_file():
+                    continue
+                review = mesh_review_status(toolkit, source_path.parent.name)
+                if (review.get("status") == "current" and review.get("coverage") == "whole_building"
+                        and review.get("complete_building") is True):
+                    complete.append(source_path.parent.name)
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                # A partial/changed evidence save does not hide earlier usable work.
+                continue
+        return (complete[-1], "latest_complete_mesh_review_fallback_not_agent_selected") if complete else (
+            status["latest_saved_candidate"], "latest_saved_fallback_not_agent_selected")
     full = status["latest_complete_candidate"]
     return (full or status["latest_saved_candidate"],
             "latest_complete_fallback_not_agent_selected" if full else "latest_saved_fallback_not_agent_selected")

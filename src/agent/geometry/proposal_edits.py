@@ -65,8 +65,8 @@ def _validate_proposal(proposal: dict) -> dict:
     if not isinstance(geometry, dict):
         raise TypeError("proposal.geometry must be an object")
     version = str(geometry.get("schema_version", "1"))
-    if version not in {"1", "2"}:
-        raise ValueError("proposal geometry must use legacy schema_version 1 or 2")
+    if version not in {"1", "2", "source_polygon_v1"}:
+        raise ValueError("proposal geometry must use schema_version 1, 2 or source_polygon_v1")
     _notes(proposal["assumptions"], field="assumptions")
     _notes(proposal["unresolved"], field="unresolved")
     if "mesh_frame" in proposal:
@@ -227,7 +227,11 @@ def _add_opening(geometry: dict, operation: dict) -> dict:
     if not isinstance(row, dict):
         raise ValueError("add_opening: opening must be an object")
     row["source_refs"] = refs
-    row = WallOpening.model_validate(row).model_dump(mode="json")
+    if geometry.get("schema_version") == "source_polygon_v1":
+        from src.agent.geometry.source_schema import SourceWallOpening
+        row = SourceWallOpening.model_validate(row).model_dump(mode="json")
+    else:
+        row = WallOpening.model_validate(row).model_dump(mode="json")
     if any(o["id"] == row["id"] for field in ("windows", "openings") for o in geometry.get(field, [])):
         raise ValueError("add_opening: opening id already exists")
     geometry.setdefault("openings", []).append(row)
@@ -266,7 +270,7 @@ def _finite_coordinate(value: object, *, operation: str) -> float:
     return float(value)
 
 
-def _polygon_ring_and_bbox(value: object, *, operation: str, space_id: str) -> tuple[list[list[float]], list[float], list[float]]:
+def _polygon_ring_and_bbox(value: object, *, operation: str, space_id: str, minimum_vertices=4) -> tuple[list[list[float]], list[float], list[float]]:
     """Validate an edit ring enough to derive its legacy bbox without repairing it.
 
     Full source-space validity (orthogonality, winding, coverage and opening
@@ -274,8 +278,8 @@ def _polygon_ring_and_bbox(value: object, *, operation: str, space_id: str) -> t
     particular, this helper never closes, reorders, snaps, or otherwise
     changes a supplied ring.
     """
-    if not isinstance(value, list) or len(value) < 4:
-        raise ValueError(f"{operation}: space {space_id!r} polygon must contain at least four [x, y] vertices")
+    if not isinstance(value, list) or len(value) < minimum_vertices:
+        raise ValueError(f"{operation}: space {space_id!r} polygon must contain at least {minimum_vertices} [x, y] vertices")
     ring: list[list[float]] = []
     for index, point in enumerate(value):
         if not isinstance(point, (list, tuple)) or len(point) != 2:
@@ -325,7 +329,8 @@ def _reshape_spaces(proposal: dict, geometry: dict, operation: dict) -> dict:
         if identity in seen_ids:
             raise ValueError(f"reshape_spaces: duplicate space id {identity!r}")
         seen_ids.add(identity)
-        ring, x, y = _polygon_ring_and_bbox(row.get("polygon"), operation=name, space_id=identity)
+        ring, x, y = _polygon_ring_and_bbox(row.get("polygon"), operation=name, space_id=identity,
+            minimum_vertices=3 if geometry.get("schema_version") == "source_polygon_v1" else 4)
         replacements.append((identity, ring, x, y))
 
     cells_by_id = {
@@ -357,12 +362,12 @@ def _reshape_spaces(proposal: dict, geometry: dict, operation: dict) -> dict:
     }
 
 
-def _cell_shape(cell: dict, *, operation: str) -> Polygon:
+def _cell_shape(cell: dict, *, operation: str, require_orthogonal=True) -> Polygon:
     """Return one existing cell's complete plan shape under the shared contract."""
     try:
         shape = cell_polygon(SimpleNamespace(
             id=cell.get("id"), polygon=cell.get("polygon"), x=cell.get("x"), y=cell.get("y"),
-        ))
+        ), require_orthogonal=require_orthogonal)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{operation}: source space {cell.get('id')!r} has invalid geometry: {exc}") from exc
     if shape.geom_type != "Polygon" or shape.interiors:
@@ -417,8 +422,9 @@ def _replace_space_region(proposal: dict, geometry: dict, operation: dict) -> di
     if len(matches) != 1:
         raise ValueError("replace_space_region: spaces must occur together on exactly one floor")
     floor, target_cell, neighbor_cell = matches[0]
-    old_target = _cell_shape(target_cell, operation=name)
-    old_neighbor = _cell_shape(neighbor_cell, operation=name)
+    require_orthogonal = geometry.get("schema_version") != "source_polygon_v1"
+    old_target = _cell_shape(target_cell, operation=name, require_orthogonal=require_orthogonal)
+    old_neighbor = _cell_shape(neighbor_cell, operation=name, require_orthogonal=require_orthogonal)
     if old_target.intersection(old_neighbor).area > _LOCAL_PARTITION_AREA_TOLERANCE_M2:
         raise ValueError("replace_space_region: source spaces overlap instead of sharing a partition")
     if old_target.boundary.intersection(old_neighbor.boundary).length <= _LOCAL_PARTITION_TOLERANCE_M:
@@ -426,8 +432,10 @@ def _replace_space_region(proposal: dict, geometry: dict, operation: dict) -> di
     old_region = unary_union([old_target, old_neighbor])
     old_region = _single_hole_free_polygon(old_region, operation=name, name="source two-space union")
 
-    ring, x, y = _polygon_ring_and_bbox(operation.get("polygon"), operation=name, space_id=space_id)
-    new_target = _cell_shape({"id": space_id, "polygon": ring, "x": x, "y": y}, operation=name)
+    ring, x, y = _polygon_ring_and_bbox(operation.get("polygon"), operation=name, space_id=space_id,
+        minimum_vertices=4 if require_orthogonal else 3)
+    new_target = _cell_shape({"id": space_id, "polygon": ring, "x": x, "y": y}, operation=name,
+                           require_orthogonal=require_orthogonal)
     new_target = _single_hole_free_polygon(new_target, operation=name, name="replacement polygon")
     if new_target.difference(old_region).area > _LOCAL_PARTITION_AREA_TOLERANCE_M2:
         raise ValueError("replace_space_region: replacement polygon extends outside the original two-space region")
