@@ -118,7 +118,8 @@ def test_domain_provider_tracks_live_role_guidance_without_changing_single_model
     from src.agent.version_fingerprints import domain_fingerprints
     from src.agent.runtime_roles.guidance import ROLE_GUIDANCE
     before = asyncio.run(domain_fingerprints())
-    assert len(before["mode_fingerprints"]) == 7
+    assert len(before["mode_fingerprints"]) == 9
+    assert {"mesh_workers/coordinator", "mesh_workers/observer"} <= set(before["mode_fingerprints"])
     registered = agent_version_record(ROOT)
     assert before["mode_fingerprints"] == registered["mode_fingerprints"]
     assert before["tool_catalog_sha256"] == registered["tool_catalog_sha256"]

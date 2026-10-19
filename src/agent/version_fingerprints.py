@@ -25,6 +25,8 @@ from src.agent.runtime_roles.readers import ReaderTools
 from src.agent.runtime_roles.elevation import ElevationReaderTools, ELEVATION_COORDINATES
 from src.agent.runtime_roles.coordinates import READER_COORDINATES
 from src.agent.runtime_roles.session import RoleSession
+from src.agent.runtime_mesh_workers import mesh_worker_tool_specs, mesh_worker_task_payload, WORKER_GUIDANCE
+from scripts.tool_scripts.bim_agent_guidance import MESH_WORKERS
 from src.agent_runtime.mcp_tools import McpToolClient
 from src.agent_runtime.store import EventStore
 from src.agent_runtime.loop import RunLimits
@@ -182,7 +184,15 @@ async def domain_fingerprints(root=ROOT):
                 guides["claude_code/worker"] = {name: {key: worker[key] for key in ("description", "prompt")}
                                                for name, worker in workers.items()}
             modes[f"single_model/{mode}"] = _fingerprint(projections, guides, tasks)
+            if mode == "coordinator_mesh":
+                modes["mesh_workers/coordinator"] = _fingerprint(
+                    {key: [*value, *mesh_worker_tool_specs()] for key, value in projections.items()},
+                    {"base": guides, "optional_workers": MESH_WORKERS}, tasks)
         limits = RunLimits(model_calls=1, tool_calls=1, seconds=1, tokens=1)
+        modes["mesh_workers/observer"] = _fingerprint(
+            filter_tool_catalog(raw_catalogs["readonly_mesh"]), WORKER_GUIDANCE,
+            mesh_worker_task_payload({"request": "<frozen-task>", "inputs": "<frozen-inputs>",
+                                      "source_snapshot": "<optional-source-snapshot>"}, limits))
         with EventStore(base / "roles", run_id="fingerprints", task_id="coordinator",
                         budget_limit=limits.ledger_limit()) as store:
             frozen = _Catalog(raw_catalogs["coordinator"], base / "coordinator")

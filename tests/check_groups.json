@@ -2,6 +2,22 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_mesh_workers.py": {
+      "group": "targeted",
+      "reason": "Optional native mesh delegation, shared budgets, durable task identity and recovery"
+    },
+    "tests/test_mesh_worker_evidence.py": {
+      "group": "targeted",
+      "reason": "Frozen mesh worker scope and real image, measurement and source evidence bindings"
+    },
+    "tests/test_mesh_worker_entry.py": {
+      "group": "targeted",
+      "reason": "Native mesh configuration and real MCP scripted parent/worker completion and accounting"
+    },
+    "tests/test_mesh_readonly_overlay.py": {
+      "group": "targeted",
+      "reason": "Read-only candidate projections, source host inventory and bounded immutable report reads"
+    },
     "tests/test_mesh_delivery_review.py": {
       "group": "targeted",
       "reason": "Mesh scope declarations bind current source, original inputs and reviewed overlays without claiming independent fidelity"

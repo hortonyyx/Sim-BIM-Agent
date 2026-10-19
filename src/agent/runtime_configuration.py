@@ -32,6 +32,18 @@ ALLOWED_ENTRYPOINTS = {
 }
 
 
+def mesh_worker_concurrency(case: dict) -> int:
+    """Optional same-route observers share the native coordinator's root budget."""
+    value = case.get("mesh_workers")
+    if value is None:
+        return 0
+    if (case.get("mode") != "single_model" or case.get("input_kind") != "mesh"
+            or not isinstance(value, dict) or set(value) != {"max_concurrent"}
+            or type(value["max_concurrent"]) is not int or value["max_concurrent"] <= 0):
+        raise ValueError("mesh_workers requires single_model mesh input and positive max_concurrent")
+    return value["max_concurrent"]
+
+
 def context_arguments(case: dict) -> list[str]:
     """Omitted/null values use adaptive capacity, never a made-up large cap."""
     result = []
@@ -125,6 +137,7 @@ def load_configuration(path: Path, *, low_output_limit_reason: str | None = None
         mode = case.get("mode")
         if mode not in ALLOWED_ENTRYPOINTS:
             raise ValueError(f"unsupported run mode {mode!r}")
+        mesh_worker_concurrency(case)
         if type(case.get("process_reviews", False)) is not bool:
             raise ValueError("process_reviews must be a boolean")
         if case.get("process_reviews") and (mode != "single_model" or case.get("image_kind") != "drawings"
@@ -283,6 +296,8 @@ def argv_for(case: dict, *, resume: bool = False) -> list[str]:
     argv += ["--no-time-limit"] if budget.seconds is None else ["--seconds", str(limits["seconds"])]
     if case.get("process_reviews"):
         argv += ["--process-reviews"]
+    if mesh_worker_concurrency(case):
+        argv += ["--mesh-workers", str(mesh_worker_concurrency(case))]
     if case.get("chatgpt_auth_dir"):
         argv += ["--chatgpt-auth-dir", str(Path(case["chatgpt_auth_dir"]).expanduser().resolve())]
     if case.get("run_root") is not None:

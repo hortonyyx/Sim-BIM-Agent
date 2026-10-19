@@ -13,6 +13,7 @@ EnergyPlus graph. The product model is `work model + runtime + domain`.
 | Role definitions, artifacts and role tools | [runtime_roles](runtime_roles/__init__.py) |
 | Role guidance | [runtime_roles/guidance.py](runtime_roles/guidance.py) |
 | Runtime integration and configuration | [runtime_entry.py](runtime_entry.py), [runtime_configuration.py](runtime_configuration.py) |
+| Optional read-only mesh tasks | [dispatch](runtime_mesh_workers.py), [frozen evidence](runtime_mesh_evidence.py); shared Runtime and root budget |
 | Viewing and delivery | [bim_delivery.py](geometry/bim_delivery.py), [viewer](../../scripts/tool_scripts/render_geometry_viewer.py) |
 | Independent evaluation | [judge](judge/__init__.py); never supplied as work-model answers |
 | Local drawing deliveries and architectural review | [drawing readings](../../scripts/tool_scripts/bim_agent_drawing_readings.py), [process reviews](../../scripts/tool_scripts/bim_agent_process_reviews.py); single-model opt-in |
@@ -21,8 +22,11 @@ These are responsibilities, not a required sequence or six new wrapper packages.
 Methods may compose shared tools; roles are chosen for tasks, not for the three
 research categories. Current role division supports drawings. Mesh single-model
 configuration accepts an original GLB with optional PNGs and a user declaration;
-the coordinator chooses shared tools directly. Mesh workers, photo generation and
-automatic detail selection are not implemented. Simple polygon prisms use the
+the coordinator chooses shared tools directly or delegates optional read-only
+questions using the same configured model and shared budget. Worker advice binds
+actual frozen inputs and an optional source snapshot; only the coordinator edits
+the main BIM. Photo generation and automatic detail selection are not implemented.
+Simple polygon prisms use the
 explicit source_polygon_v1 input contract with the same source builder and viewer;
 curves, footprint holes and height-varying spaces remain unsupported. Mesh overlays
 can scope arbitrary source hosts and test source visibility, without certifying

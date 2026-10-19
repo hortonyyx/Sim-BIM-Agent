@@ -2655,7 +2655,7 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
         return result
 
     @server.tool()
-    def read_candidate_items(candidate: str, collection: Literal["cells", "windows", "openings", "unsupported", "report"], floor_id: str | None = None,
+    def read_candidate_items(candidate: str, collection: Literal["cells", "windows", "openings", "unsupported", "boundaries", "report"], floor_id: str | None = None,
                              offset: int = 0, limit: int | None = None, report_file: str = "",
                              json_pointer: str | None = None) -> dict:
         """Read exact saved proposal cells, windows, openings or unsupported records.
@@ -2663,9 +2663,14 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
         candidate="" and offset/limit in characters (limit up to 12000).
         Optional json_pointer browses that exact report as bounded JSON; offset
         then counts container children or text characters. Follow returned next.
+        collection=boundaries reads actual saved source boundary IDs, vertices,
+        adjacency and opening_ids, with source file/model hashes. Wall IDs can
+        scope overlay_mesh_candidate. floor_id includes spanning spaces. Large
+        boundary records expose a bounded view and immutable details_file.
         Each cell includes floor_id. Read next_offset for more; page_is_partial
         means this is not a complete build_bim input. Prefer revise_bim to keep
-        unexamined objects. This reads the proposal, not mesh/GT observations.
+        unexamined objects. Other collections read the proposal. These are saved
+        model records, not original mesh/GT observations.
         """
         if limit is None:
             limit = 8000 if collection == 'report' else 20
@@ -2674,37 +2679,69 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
             return read_report(toolkit.run, report_file, offset, limit, json_pointer=json_pointer)
         if json_pointer is not None:
             raise ValueError('json_pointer requires collection=report and its saved report_file')
-        if collection not in {'cells','windows','openings','unsupported'}:
-            raise ValueError('collection must be cells, windows, openings or unsupported')
+        if collection not in {'cells','windows','openings','unsupported','boundaries'}:
+            raise ValueError('collection must be cells, windows, openings, unsupported or boundaries')
         if not 1 <= limit <= 50 or offset < 0:
             raise ValueError('requires offset >= 0 and limit 1..50')
-        proposal_path = toolkit.candidate_path(candidate)/'proposal.json'
-        geometry = json.loads(proposal_path.read_bytes())['geometry']
-        if floor_id is not None and floor_id not in {f['name'] for f in geometry['floors']}:
-            raise ValueError('unknown floor_id')
-        floors = [f for f in geometry['floors'] if floor_id is None or f['name'] == floor_id]
-        cells = [{**c,'floor_id':f['name']} for f in floors for c in f['cells']]
-        ids = {c['id'] for c in cells}
-        items = (cells if collection == 'cells' else
-            [r for r in geometry.get('unsupported', []) if floor_id is None or r.get('floor_id') == floor_id]
-            if collection == 'unsupported' else
-            [w for w in geometry.get('windows',[]) if floor_id is None or w['floor'] == floor_id]
-            if collection == 'windows' else
-            [o for o in geometry.get('openings',[]) if floor_id is None or o['space_id'] in ids
-             or o.get('other_space_id') in ids])
+        path = toolkit.candidate_path(candidate)
+        if collection == 'boundaries':
+            from src.agent.geometry.source_model import _digest
+            source_raw = (path/'source_model.json').read_bytes()
+            source = json.loads(source_raw)
+            expected = _digest({k: v for k, v in source.items() if k != 'source_model_sha256'})
+            if source.get('schema_version') not in {'source_bim_v2', 'source_bim_v3'} or source.get('source_model_sha256') != expected:
+                raise ValueError('invalid source BIM schema or digest')
+            if floor_id is not None and floor_id not in {f['id'] for f in source['floors']}:
+                raise ValueError('unknown floor_id')
+            spaces = {s['id']: s for s in source['spaces']}
+            ids = {s['id'] for s in spaces.values() if floor_id is None or s['floor_id'] == floor_id}
+            if floor_id is not None:
+                floor = next(f for f in source['floors'] if f['id'] == floor_id)
+                ids.update(floor.get('spanning_space_ids', []))
+            openings_by_host = {}
+            for opening_id, hosts in source.get('opening_hosts', {}).items():
+                for host in hosts:
+                    openings_by_host.setdefault(host, []).append(opening_id)
+            items = [{**boundary, 'floor_id': spaces[boundary['space_id']]['floor_id'],
+                      'opening_ids': openings_by_host.get(boundary['id'], [])}
+                     for boundary in source['boundaries'] if boundary['space_id'] in ids]
+            identity = {'source_file_sha256': hashlib.sha256(source_raw).hexdigest(),
+                        'source_model_sha256': expected}
+        else:
+            proposal_path = path/'proposal.json'
+            geometry = json.loads(proposal_path.read_bytes())['geometry']
+            if floor_id is not None and floor_id not in {f['name'] for f in geometry['floors']}:
+                raise ValueError('unknown floor_id')
+            floors = [f for f in geometry['floors'] if floor_id is None or f['name'] == floor_id]
+            cells = [{**c,'floor_id':f['name']} for f in floors for c in f['cells']]
+            ids = {c['id'] for c in cells}
+            items = (cells if collection == 'cells' else
+                [r for r in geometry.get('unsupported', []) if floor_id is None or r.get('floor_id') == floor_id]
+                if collection == 'unsupported' else
+                [w for w in geometry.get('windows',[]) if floor_id is None or w['floor'] == floor_id]
+                if collection == 'windows' else
+                [o for o in geometry.get('openings',[]) if floor_id is None or o['space_id'] in ids
+                 or o.get('other_space_id') in ids])
+            identity = {'proposal_sha256':digest(proposal_path)}
         page = []
         for item in items[offset:offset+limit]:
             if len(json.dumps(page+[item])) > 18000:
                 if not page:
+                    if collection == 'boundaries':
+                        page.append(item)  # Immutable report browsing bounds large source records.
+                        break
                     raise ValueError('single object exceeds reply size; exact proposal remains on disk')
                 break
             page.append(item)
-        result = {'candidate':candidate,'proposal_sha256':digest(proposal_path),
+        result = {'candidate':candidate, **identity,
             'collection':collection,'floor_id':floor_id,'total':len(items),'offset':offset,
             'items':page,'returned':len(page),
             'next_offset':offset+len(page) if offset+len(page)<len(items) else None,
             'page_is_partial':True}
         toolkit.log('read_candidate_items', {k:v for k,v in result.items() if k!='items'})
+        if collection == 'boundaries':
+            from scripts.tool_scripts.bim_agent_replies import compact_reply
+            return compact_reply(toolkit.run, 'read_candidate_boundaries', result, force=True)
         return result
 
     if not readonly:

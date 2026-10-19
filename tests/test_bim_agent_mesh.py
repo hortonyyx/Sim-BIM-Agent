@@ -158,7 +158,7 @@ def test_mesh_frame_and_overlay_reach_stdio_and_preserve_saved_geometry(tmp_path
                 assert source[key] == json.loads(original_bytes)[key]
         async with _server_session(run, readonly=True) as session:
             names = {t.name for t in (await session.list_tools()).tools}
-            assert 'set_candidate_mesh_frame' not in names and 'overlay_mesh_candidate' not in names
+            assert 'set_candidate_mesh_frame' not in names and 'overlay_mesh_candidate' in names
     asyncio.run(scenario())
     assert original.read_bytes() == original_bytes
 

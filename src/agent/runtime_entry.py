@@ -97,6 +97,21 @@ def publish_tool_budget(engine):
 
 
 async def execute(args) -> dict:
+    mesh_workers = getattr(args, "mesh_workers", 0)
+    worker_script = getattr(args, "mesh_worker_script", None)
+    if (type(mesh_workers) is not int or mesh_workers < 0
+            or (mesh_workers and (not args.mesh or args.role != "coordinator"))):
+        raise ValueError("mesh workers require native mesh coordinator input and positive concurrency")
+    if worker_script and (not mesh_workers or args.provider != "scripted"):
+        raise ValueError("mesh-worker-script requires enabled mesh workers and the scripted provider")
+    if mesh_workers and args.provider == "scripted" and worker_script is None:
+        raise ValueError("scripted mesh workers require an explicit task-to-responses fixture")
+    worker_fixture = worker_script.read_bytes() if worker_script else None
+    worker_responses = json.loads(worker_fixture) if worker_fixture else None
+    if worker_responses is not None and (not isinstance(worker_responses, dict)
+            or any(not isinstance(key, str) or not isinstance(value, list)
+                   for key, value in worker_responses.items())):
+        raise ValueError("mesh-worker-script must map task IDs to response lists")
     if getattr(args, "image_history_batches", None) is not None and not args.context:
         raise ValueError("--image-history-batches requires --context")
     output = resolve_run_output(args.out, repository_root=ROOT,
@@ -160,6 +175,10 @@ async def execute(args) -> dict:
             max_candidates=args.max_candidates, floor_plan_images=args.floor_plan_images,
             started_epoch=started_epoch, seconds=limits.seconds,
             process_reviews=getattr(args, "process_reviews", False))
+        if mesh_workers:
+            from scripts.tool_scripts.bim_agent_guidance import MESH_WORKERS
+            guide += "\n" + MESH_WORKERS
+            (output / "guide.txt").write_text(guide, encoding="utf-8")
     manifest = json.loads((run / "inputs.json").read_bytes())
     started_epoch = manifest.get("started_epoch")
     role = (local_observer_role if args.role == "local_observer" else coordinator_role)(limits.ledger_limit())
@@ -169,10 +188,6 @@ async def execute(args) -> dict:
                 budget_limit=limits.ledger_limit(), recover_tail=args.repair_tail) as store:
             async with frozen_bim_client(run_directory=run, readonly=role.read_only, repository_root=ROOT) as client:
                 tools = FrozenBimTools(client, role, run_directory=run)
-                catalog = await tools.list_tools()
-                if not args.resume:
-                    write_frozen_materials(output / "frozen", repository_root=ROOT)
-                    write_frozen_tool_catalog(output / "frozen", await client.list_tools(), readonly=role.read_only)
                 if args.provider == "scripted":
                     fixture = args.script.read_bytes()
                     # The local fixture gives one response per request ticket. A
@@ -193,9 +208,45 @@ async def execute(args) -> dict:
                 route["context"] = ({"context_tokens": limits.context_tokens,
                     **context_policy.model_dump(mode="json")} if context_policy is not None
                     else {"enabled": False, "context_tokens": limits.context_tokens})
+                if mesh_workers:
+                    from src.agent.runtime_mesh_workers import MeshWorkerTools, EXTRA_TOOLS
+                    from src.harness_contracts.roles import ToolGrant
+                    route["mesh_workers"] = {"max_concurrent": mesh_workers,
+                        "model_policy": "same_route_and_parameters_as_coordinator",
+                        "fixture_sha256": hashlib.sha256(worker_fixture).hexdigest() if worker_fixture else None}
+
+                    def worker_adapter(task_id, child):
+                        if args.provider == "scripted":
+                            offset = sum(e.payload.event_type == "adapter_request" for e in child.events)
+                            if task_id not in worker_responses:
+                                raise ValueError("no scripted responses for mesh worker " + task_id)
+                            return ScriptedAdapter(worker_responses[task_id][offset:])
+                        if args.provider == "opencode-go":
+                            from src.agent_runtime.opencode_go import conversation_id
+                            return connection.create_adapter(session_id=conversation_id(output, task_id))
+                        return connection.create_adapter()
+
+                    tools = MeshWorkerTools(tools, store=store, root=ROOT,
+                        adapter_factory=worker_adapter, model=route["model"], parameters=parameters,
+                        route=route, limits=limits, start_epoch=started_epoch,
+                        pricing=pricing,
+                        max_concurrent=mesh_workers, reasoning_history=args.reasoning_history,
+                        low_output_limit_reason=args.low_output_limit_reason)
+                    role = role.model_copy(update={"tool_whitelist": (*role.tool_whitelist,
+                        *(ToolGrant(tool_name=t["name"], access="read") for t in EXTRA_TOOLS))})
+                catalog = await tools.list_tools()
+                if not args.resume:
+                    write_frozen_materials(output / "frozen", repository_root=ROOT)
+                    write_frozen_tool_catalog(output / "frozen", await client.list_tools(), readonly=role.read_only)
                 version_catalog = list(catalog)
                 if context_policy is not None and context_policy.image_history_batches is not None:
-                    version_catalog.append(context_image_tool_spec())
+                    context_spec = context_image_tool_spec()
+                    version_catalog.append(context_spec)
+                    if mesh_workers:
+                        # The early recovery guard must compare the same role
+                        # that Runtime.run will use after enabling image lookup.
+                        role = role.model_copy(update={"tool_whitelist": (*role.tool_whitelist,
+                            ToolGrant(tool_name=context_spec["name"], access="read"))})
                 specs = [{"type": "function", "function": {"name": t["name"],
                     "description": t.get("description", ""), "parameters": t["inputSchema"]}} for t in version_catalog]
                 versions = make_versions(store, root=ROOT, prompt=guide, tools=specs,
@@ -203,6 +254,7 @@ async def execute(args) -> dict:
                         "src/agent/runtime_delivery.py", "src/agent/bim_inputs.py",
                         "src/agent/runtime_tools.py", "scripts/tool_scripts", "src/agent/geometry",
                         "src/agent/runtime_context.py", "src/agent/runtime_behaviour.py",
+                        "src/agent/runtime_mesh_workers.py", "src/agent/runtime_mesh_evidence.py",
                         "src/agent/correction", "src/agent/execution"))
                 # A refused resume must not replace the original run's evidence.
                 # The runtime checks current versions against its saved checkpoint.
@@ -240,9 +292,36 @@ async def execute(args) -> dict:
                     finalize_run=finalize_runtime_building,
                     domain_completion=completed_building_handoff if not role.read_only else None,
                     tool_budget_update=publish_tool_budget,
+                    root_tool_calls=limits.tool_calls if mesh_workers else None,
                     strict_model_profile=strict_model_profile)
                 engine.low_output_limit_reason = args.low_output_limit_reason
+                if mesh_workers and args.resume:
+                    saved = store.latest_checkpoint()
+                    if saved and (saved[1]["versions"] != versions.model_dump(mode="json") or
+                            saved[1].get("config", engine._config()) != engine._config()):
+                        raise ValueError("runtime configuration changed; refusing worker recovery before any work")
+                    await tools.recover_pending()
                 result = await engine.run(messages, image_originals=originals, resume=args.resume)
+                if mesh_workers:
+                    # Runtime owns all spending and stop reasons. This domain
+                    # projection only makes parent/worker call totals explicit.
+                    state = tools.state()
+                    counts = {}
+                    for event in store.all_events:
+                        row = counts.setdefault(event.task_id, {"model_requests": 0, "tool_calls": 0})
+                        if event.payload.event_type == "adapter_request":
+                            row["model_requests"] += 1
+                        elif event.payload.event_type == "tool_invocation":
+                            row["tool_calls"] += 1
+                    result["mesh_workers"] = state
+                    result["whole_run_counts"] = {
+                        "model_requests": sum(row["model_requests"] for row in counts.values()),
+                        "tool_calls": sum(row["tool_calls"] for row in counts.values()),
+                        "by_task": counts,
+                        "scope": "all journaled attempts, including recovery; usage is root_usage_accounting",
+                    }
+                    store.write_json("mesh_worker_state.json", state)
+                    store.write_json("receipt.json", result)
         # A normal BIM workspace is directly scoreable by either runner's evaluator.
         # The runtime receipt remains the authority for stop reason and accounting.
         from src.agent.bim_inputs import dump
@@ -277,6 +356,10 @@ def parser():
     p.add_argument("--floor-plan-image", dest="floor_plan_images", action="append",
                    help="Explicit expected floor-plan filename; repeat for all floors (same as Claude Code)")
     p.add_argument("--mesh", type=Path)
+    p.add_argument("--mesh-workers", type=int, default=0, metavar="MAX_CONCURRENT",
+                   help="enable optional same-route read-only mesh workers under the shared run budget")
+    p.add_argument("--mesh-worker-script", type=Path,
+                   help="offline only: JSON mapping worker task IDs to scripted response lists")
     p.add_argument("--building-input", type=Path)
     p.add_argument("--image-kind", choices=("drawings", "mesh_views", "photos", "unknown"), default="drawings")
     p.add_argument("--process-reviews", action="store_true",

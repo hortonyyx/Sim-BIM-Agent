@@ -27,7 +27,9 @@ Methods 是可复用方法，不是固定阶段；roles 是任务分工，不与
 
 ## 输入与交付
 
-2026-10-19首批实现：mesh复用single_model入口和相同runtime，调度员直接自主选工具；mesh worker尚未接入。`source_polygon_v1`通过显式`simple_polygon`合同使用公共源BIM builder，支持简单直边/凹多边形、斜宿主开口和已有退台/跨层关系；旧schema不变，曲线、孔洞、斜墙面、空间变截面及EnergyPlus仍不支持。Mesh回叠默认按源几何朝向/遮挡显示，可选择任意宿主；不代表原mesh拟合或独立精度通过。`finish_bim`可保存mesh范围声明并绑定当前源模型、原mesh和回叠证据，只有有效整栋声明允许完成；图纸楼层覆盖字段保持独立。详见[首批实现交接](../reports/2026-10-19_textured_mesh_harness_first_build.md)。
+2026-10-19 mesh复用single_model入口和相同runtime，调度员自主选工具，可选开启同模型只读worker。`runtime_mesh_workers.py`只承担domain派工与证据语义；子任务复用公共Runtime/EventStore、根预算和恢复，不另建循环。任务输入按原字节复制，候选只给明确source快照；worker在自己的目录生成视图、回叠和测量，主BIM仍由调度员修改。父子结果与用量可分别核查，已完成任务复读不重复请求，变更参数/版本/证据不能冒充同一任务续跑。
+
+`source_polygon_v1`通过显式`simple_polygon`合同使用公共源BIM builder，支持简单直边/凹多边形、斜宿主开口和已有退台/跨层关系；旧schema不变，曲线、孔洞、斜墙面、空间变截面及EnergyPlus仍不支持。Mesh回叠默认按源几何朝向/遮挡显示，可按真实source boundary ID选择宿主；完整投影复用不可变报告分页。它不代表原mesh拟合或独立精度通过。`finish_bim`保存mesh范围声明并绑定当前源模型、原mesh和回叠证据，只有有效整栋声明允许完成；worker完成不代替该判断，图纸楼层覆盖字段保持独立。首批几何见[首批交接](../reports/2026-10-19_textured_mesh_harness_first_build.md)，worker接线见[后续交接](../reports/2026-10-19_textured_mesh_workers.md)。
 
 平立面图纸是当前 harness 的主验证输入。单模型接收图像或 GLB，图像可声明 drawings/mesh_views/photos/unknown；分工入口仅支持图纸。接收输入不等于已达到稳定建模质量。[照片→mesh→BIM](photo_to_mesh_bim.md) 已有独立、有开发代理介入的原型，并已转换为项目源格式；照片生成服务尚未接入自主 harness，细度自动选择尚未实施。
 

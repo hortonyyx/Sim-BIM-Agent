@@ -1,12 +1,20 @@
 # 当前任务
 
+## 2026-10-19 Textured mesh 可选 worker 接线
+
+- 按“继续推”接通native mesh可选只读worker：调度员自主选择问题、证据和派工，沿用本案模型/参数，使用公共Runtime/EventStore、根预算与恢复。Worker只能观察冻结输入和明确候选快照，主BIM仍由调度员修改，没有固定角色阶段。
+- 观察、解释和不确定性分开；实际图片/测量绑定事件与哈希，旧快照意见由调度员判断适用性。共享工具新增真实boundary inventory、完整投影分页和readonly坐标转换，原路径权限不放宽。
+- 开发domain118/runtime31，公共Runtime本体保持。8模块120项通过；正式入口发现的context配置/恢复缺陷修后完整链路复验通过：父7+子4/1共12脚本响应/10工具，两个worker与交付均完成，同配置恢复无新增调用；独审无剩余P1/P2，详细检查和失败证据见交接。0真实模型调用，桌面仍runtime24/domain110，未发布。曲线/孔洞/变截面与真实案例精度、耗时仍未验收。
+
+**当前交接：** [Textured mesh 可选只读 worker](../reports/2026-10-19_textured_mesh_workers.md)。
+
 ## 2026-10-19 Textured mesh 首批实现与公共底座复用
 
 - 用户授权开工，确认公共 runtime/源BIM/kernel/工具共用，mesh 入口、方法和验收暂独立。已接通 GLB+辅助PNG+文字声明、显式简单斜边源几何合同、任意宿主与可见回叠、绑定当前证据的范围声明；图纸默认规则保留。
 - 开发 runtime31/domain115，只有domain变化。首批158项通过；完成链路回归102通过/1旧夹具失败，补齐既有墙厚合同后该模块3项通过。独立审阅四处P2已修复复核，无剩余P1/P2或测试失败。正式入口合成脚本6响应/6工具完成并复验交付哈希，不等于自主质量；真实模型0，桌面仍runtime24/domain110，未发布。
 - 初版调度员直接选择公共工具工作；mesh worker、真曲线/孔洞/变截面、通用平立面自动匹配尚未完成。下一步固定完整贴图案例与真实测试配置；速度/真实精度未评。
 
-**当前交接：** [Textured mesh harness 首批实现](../reports/2026-10-19_textured_mesh_harness_first_build.md)。
+**前次交接：** [Textured mesh harness 首批实现](../reports/2026-10-19_textured_mesh_harness_first_build.md)。
 
 ## 2026-10-19 Textured mesh 设计讨论收工 下轮开始搭建
 

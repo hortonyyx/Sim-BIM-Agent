@@ -172,8 +172,8 @@ no prior generated model is an observation.
 # partial_inference. This removes drift in claims, budgets and finishing rules.
 MESH_METHOD = MESH_VIEWS + """You are the orchestrator and can do the work directly: decide which inputs and
 tools resolve the current question, the precision needed, and what to inspect or
-revise. The current native entry has no dedicated mesh worker dispatcher; perform
-mesh work directly with the tools exposed in this run. Observing, building and
+revise. Configured mesh workers are optional tools; when no worker tool is exposed,
+perform mesh work directly. Observing, building and
 checking need no fixed phases.
 
 Use inspect_mesh/view_mesh for the admitted native asset, keeping its metric
@@ -193,6 +193,34 @@ Do not require pixel calibration to use a relationship sketch. Preserve the diff
 between user-confirmed facts, user guesses and your assumptions. An untextured or
 unseen patch alone does not prove an opening or an opaque wall. Preserve reliable
 observations when choosing a simple inference.
+"""
+
+MESH_WORKERS = """Optional native mesh workers are enabled in this run. You still
+own the building and may work directly. Use delegate_mesh_workers only when a
+bounded observation, measurement or comparison benefits from separate attention;
+independent questions can share a batch. There are no compulsory roles or stages.
+Workers use your configured model, decoding settings and shared run allowance.
+Assign bounded task budgets and leave enough allowance for your synthesis, edits
+and final checks. A child's budget does not add to the root budget.
+
+Each task has a stable task_id, a question, optional notes, optional candidate
+snapshot and optional existing original-mesh observation_ids. The worker receives
+the admitted original mesh and auxiliary inputs in its own workspace; it can choose
+views, measure visible surfaces and compare a supplied source snapshot. It cannot
+edit or select the parent BIM, finish the building, or delegate again. Your notes
+are assertions to examine, not independently verified evidence.
+
+Read completed or interrupted work with read_mesh_worker and mesh_worker_state.
+Worker answers distinguish observations, interpretations and uncertainty, with
+trusted evidence identities. Ask read_mesh_worker for cited views when useful.
+Child view IDs belong to that task: mesh_001 in one child is not mesh_001 in another
+child or the parent. Reference task_id plus evidence_id; never substitute child IDs
+into a parent observation tool. Candidate-based opinions refer to the named snapshot,
+not automatically to later candidates. Model agreement is not independent fidelity
+approval. Decide whether and how to use the evidence in your normal building tools;
+the worker's completed status does not finish the building or replace your current
+mesh handoff review. Reuse an unchanged task_id to inspect/resume the same work;
+use a new task_id for a different question, evidence selection or allowance.
 """
 
 # v1 gave the drawing method to any image; photos are not measured drawings.
@@ -925,7 +953,8 @@ The model chooses the observations, architectural interpretation, level of detai
 and revisions. Deterministic tools measure, expand repeated declarations, build
 hosts, preserve IDs and report geometry; they do not choose the interpretation.
 The orchestrator may perform the work itself. Only use worker delegation when an
-explicitly configured tool is available; the current mesh entry exposes direct work.
+explicitly configured tool is available; worker results are bounded evidence for
+the orchestrator's judgment and do not automatically change source geometry.
 
 AUXILIARY INPUTS. Assign a purpose and precision to each relevant piece of evidence,
 including local plans, hand sketches and text. A diagram may establish adjacency,

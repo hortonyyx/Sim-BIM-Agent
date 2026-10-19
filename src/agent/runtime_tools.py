@@ -36,10 +36,10 @@ Repeatability = Literal["read_only", "idempotent_write", "non_idempotent_write"]
 
 MESH_OBSERVER_TOOL_NAMES = (
     "inspect_mesh", "inspect_mesh_directions", "view_mesh", "measure_mesh_pixels",
-    "view_mesh_observation",
+    "view_mesh_observation", "overlay_mesh_candidate",
 )
 MESH_COORDINATOR_ONLY_TOOL_NAMES = (
-    "set_candidate_mesh_frame", "overlay_mesh_candidate",
+    "set_candidate_mesh_frame",
 )
 LOCAL_OBSERVER_TOOL_NAMES = (
     "get_bim_reference", "inputs", "view_image", "pixel_profile",
@@ -84,7 +84,6 @@ FROZEN_TOOL_REPEATABILITY: Mapping[str, Repeatability] = {
     **{name: "read_only" for name in LOCAL_OBSERVER_TOOL_NAMES},
     **{name: "read_only" for name in MESH_OBSERVER_TOOL_NAMES},
     **{name: "read_only" for name in COORDINATOR_INSPECTION_TOOL_NAMES},
-    "overlay_mesh_candidate": "read_only",
     "set_candidate_mesh_frame": "non_idempotent_write",
     **{name: "non_idempotent_write" for name in NON_IDEMPOTENT_WRITE_TOOL_NAMES},
 }

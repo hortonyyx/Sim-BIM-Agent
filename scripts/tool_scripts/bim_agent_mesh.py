@@ -52,6 +52,13 @@ def register_mesh_tools(server, toolkit):
             raise ValueError('unknown mesh observation; first call view_mesh')
         return folder / observation
 
+    def next_record_name(folder, prefix):
+        # A child may receive a sparse subset of frozen observations. Counting
+        # records could overwrite one of those admitted inputs on the next view.
+        indices = [int(path.stem[len(prefix):]) for path in folder.glob(f'{prefix}*.json')
+                   if path.stem[len(prefix):].isdigit()]
+        return f'{prefix}{max(indices, default=0) + 1:03d}'
+
     @server.tool()
     def inspect_mesh(yaw_degrees: float = 0, bounds: list[list[float]] | None = None) -> dict:
         """Query original mesh bounds/counts in Z-up metres, optionally in a selected box.
@@ -77,7 +84,7 @@ def register_mesh_tools(server, toolkit):
         result = mesh().surface_direction_evidence(yaw_degrees=yaw_degrees, bounds=bounds,
             face_ids=face_ids, max_plane_tilt_degrees=max_plane_tilt_degrees)
         folder = toolkit.run / 'mesh_evidence'; folder.mkdir(exist_ok=True)
-        evidence_id = f'directions_{len(list(folder.glob("directions_*.json")))+1:03d}'
+        evidence_id = next_record_name(folder, 'directions_')
         record = {'evidence_id': evidence_id, 'request': dict(yaw_degrees=yaw_degrees,
             bounds=bounds, face_ids=face_ids, max_plane_tilt_degrees=max_plane_tilt_degrees),
             'result': result}
@@ -138,7 +145,7 @@ def register_mesh_tools(server, toolkit):
         distance = max(100, diameter*3)
         eye = [c+distance*d for c,d in zip(centre,direction)]
         folder = toolkit.run / 'mesh_observations'; folder.mkdir(exist_ok=True)
-        prefix = folder / f'mesh_{len(list(folder.glob("mesh_*.json")))+1:03d}'
+        prefix = folder / next_record_name(folder, 'mesh_')
         picture, metadata = mesh().render(prefix, eye=eye, target=centre,
             width_m=width_m, height_m=height_m, width_px=width_px, height_px=height_px,
             yaw_degrees=yaw_degrees, bounds=bounds)
@@ -164,10 +171,13 @@ def register_mesh_tools(server, toolkit):
         """
         result = mesh().pixel_query(observation_path(observation), pixels)
         if candidate is not None:
-            if toolkit.readonly:
-                raise ValueError('local read-only observation has no candidate access')
             from src.agent.geometry.mesh_bim_frame import observation_to_source, validate_mesh_frame
-            source = json.loads((toolkit.candidate_path(candidate) / 'source_model.json').read_text())
+            from src.agent.geometry.source_model import _digest
+            source_raw = (toolkit.candidate_path(candidate) / 'source_model.json').read_bytes()
+            source = json.loads(source_raw)
+            source_sha = _digest({k: v for k, v in source.items() if k != 'source_model_sha256'})
+            if source.get('source_model_sha256') != source_sha:
+                raise ValueError('source BIM digest mismatch')
             frame = validate_mesh_frame(source.get('mesh_frame'))
             if frame['mesh_sha256'] != result['mesh_sha256']:
                 raise ValueError('candidate frame belongs to a different mesh')
@@ -178,6 +188,8 @@ def register_mesh_tools(server, toolkit):
                     point['source_xyz'] = observation_to_source([point['world_xyz']], frame, yaw)[0].tolist()
             result['candidate'] = candidate
             result['mesh_frame'] = frame
+            result['source_model_sha256'] = source_sha
+            result['source_file_sha256'] = hashlib.sha256(source_raw).hexdigest()
         points = result['queries']
         if len(points) >= 2 and points[0]['hit'] and points[1]['hit']:
             delta = [b-a for a,b in zip(points[0]['world_xyz'], points[1]['world_xyz'])]
@@ -200,6 +212,58 @@ def register_mesh_tools(server, toolkit):
             data = io.BytesIO(); picture.save(data, 'PNG')
         return [Image(data=data.getvalue(), format='png'), json.dumps(metadata)]
 
+    @server.tool()
+    def overlay_mesh_candidate(candidate: str, observation: str, floor_id: str | None = None,
+                                exterior_only: bool = True, visibility: str = 'visible',
+                                boundary_ids: list[str] | None = None):
+        """Overlay actual source BIM on an existing original-mesh camera view.
+        First save its explicit mesh_frame; no automatic fit or text-note parsing.
+        Magenta source wall edges, green windows, orange doors. Default visible
+        filters by actual host facing and saved source geometry depth; with
+        exterior_only=False interior inspection is two-sided. Optional
+        xray includes hidden edges. boundary_ids scopes arbitrary wall hosts,
+        without a cardinal facade assumption. Full source still occludes scoped
+        views. Glazing is an envelope; open enclosure regions and explicitly open
+        passages/doors are excluded. Unknown or closed door states still occlude.
+        Visibility does not compare source depth with the original mesh or certify
+        alignment; all projected objects and their visibility remain in the record.
+        Read complete_projection_file with read_candidate_items(collection='report',
+        candidate='', report_file=complete_projection_file); json_pointer='/objects'
+        browses projected IDs, coordinates and visibility without changing source.
+        """
+        from src.agent.geometry.mesh_bim_frame import render_mesh_bim_overlay
+        mesh()
+        prefix = observation_path(observation)
+        metadata = json.loads(prefix.with_suffix('.json').read_text())
+        source_path = toolkit.candidate_path(candidate) / 'source_model.json'
+        source = json.loads(source_path.read_text())
+        with PILImage.open(prefix.with_suffix('.png')) as original:
+            picture, record = render_mesh_bim_overlay(original, metadata, source,
+                floor_id=floor_id, exterior_only=exterior_only,
+                visibility=visibility, boundary_ids=boundary_ids)
+        folder = toolkit.run / 'mesh_overlays'; folder.mkdir(exist_ok=True)
+        overlay_id = next_record_name(folder, 'overlay_')
+        image_path = folder / f'{overlay_id}.png'
+        picture.save(image_path)
+        record.update(candidate=candidate, observation=observation, overlay_id=overlay_id,
+            image_file=image_path.relative_to(toolkit.run).as_posix(),
+            image_sha256=hashlib.sha256(image_path.read_bytes()).hexdigest(),
+            observation_metadata_sha256=hashlib.sha256(prefix.with_suffix('.json').read_bytes()).hexdigest(),
+            observation_image_sha256=hashlib.sha256(prefix.with_suffix('.png').read_bytes()).hexdigest(),
+            source_file_sha256=hashlib.sha256(source_path.read_bytes()).hexdigest())
+        (folder / f'{overlay_id}.json').write_text(json.dumps(record, indent=2) + '\n')
+        summary = {k: v for k, v in record.items() if k != 'objects'}
+        from scripts.tool_scripts.bim_agent_replies import compact_reply
+        summary = compact_reply(toolkit.run, 'overlay_mesh_candidate', summary,
+                                full_result=record, force=True)
+        summary['complete_projection_file'] = summary['details_file']
+        summary['complete_projection_sha256'] = summary['details_sha256']
+        toolkit.log('overlay_mesh_candidate', summary)
+        data = io.BytesIO(); picture.save(data, 'PNG')
+        return [Image(data=data.getvalue(), format='png'), json.dumps(summary)]
+
+    # An overlay only adds observational sidecars to this run. Readonly workers
+    # can inspect an admitted candidate snapshot, but cannot register or edit it.
     if toolkit.readonly:
         return
 
@@ -228,46 +292,3 @@ def register_mesh_tools(server, toolkit):
         return {key: result[key] for key in ('candidate', 'status', 'source_geometry_ready',
             'source_geometry_self_consistency', 'counts', 'mesh_frame', 'error', 'remaining_seconds')
             if key in result}
-
-    @server.tool()
-    def overlay_mesh_candidate(candidate: str, observation: str, floor_id: str | None = None,
-                                exterior_only: bool = True, visibility: str = 'visible',
-                                boundary_ids: list[str] | None = None):
-        """Overlay actual source BIM on an existing original-mesh camera view.
-        First save its explicit mesh_frame; no automatic fit or text-note parsing.
-        Magenta source wall edges, green windows, orange doors. Default visible
-        filters by actual host facing and saved source geometry depth; with
-        exterior_only=False interior inspection is two-sided. Optional
-        xray includes hidden edges. boundary_ids scopes arbitrary wall hosts,
-        without a cardinal facade assumption. Full source still occludes scoped
-        views. Glazing is an envelope; open enclosure regions and explicitly open
-        passages/doors are excluded. Unknown or closed door states still occlude.
-        Visibility does not compare source depth with the original mesh or certify
-        alignment; all projected objects and their visibility remain in the record.
-        """
-        from src.agent.geometry.mesh_bim_frame import render_mesh_bim_overlay
-        mesh()
-        prefix = observation_path(observation)
-        metadata = json.loads(prefix.with_suffix('.json').read_text())
-        source_path = toolkit.candidate_path(candidate) / 'source_model.json'
-        source = json.loads(source_path.read_text())
-        with PILImage.open(prefix.with_suffix('.png')) as original:
-            picture, record = render_mesh_bim_overlay(original, metadata, source,
-                floor_id=floor_id, exterior_only=exterior_only,
-                visibility=visibility, boundary_ids=boundary_ids)
-        folder = toolkit.run / 'mesh_overlays'; folder.mkdir(exist_ok=True)
-        overlay_id = f'overlay_{len(list(folder.glob("overlay_*.json")))+1:03d}'
-        image_path = folder / f'{overlay_id}.png'
-        picture.save(image_path)
-        record.update(candidate=candidate, observation=observation, overlay_id=overlay_id,
-            image_file=image_path.relative_to(toolkit.run).as_posix(),
-            image_sha256=hashlib.sha256(image_path.read_bytes()).hexdigest(),
-            observation_metadata_sha256=hashlib.sha256(prefix.with_suffix('.json').read_bytes()).hexdigest(),
-            observation_image_sha256=hashlib.sha256(prefix.with_suffix('.png').read_bytes()).hexdigest(),
-            source_file_sha256=hashlib.sha256(source_path.read_bytes()).hexdigest())
-        (folder / f'{overlay_id}.json').write_text(json.dumps(record, indent=2) + '\n')
-        summary = {k: v for k, v in record.items() if k != 'objects'}
-        summary['complete_projection_file'] = (folder / f'{overlay_id}.json').relative_to(toolkit.run).as_posix()
-        toolkit.log('overlay_mesh_candidate', summary)
-        data = io.BytesIO(); picture.save(data, 'PNG')
-        return [Image(data=data.getvalue(), format='png'), json.dumps(summary)]
