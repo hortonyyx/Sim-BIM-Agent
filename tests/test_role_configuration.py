@@ -116,6 +116,17 @@ def test_single_model_cannot_silently_ignore_reader_continuation(tmp_path):
         load(tmp_path, selected)
 
 
+@pytest.mark.parametrize("settings", [
+    {"model_reconnect_seconds": 180},
+    {"allow_recovery_policy_change": True},
+])
+def test_drawing_roles_do_not_silently_ignore_mesh_recovery_settings(settings):
+    from src.agent.runtime_roles.entry import execute
+
+    with pytest.raises(ValueError, match="require single_model"):
+        asyncio.run(execute(SimpleNamespace(**settings)))
+
+
 def test_roles_require_all_fixed_identities_and_reject_unknown_identity():
     missing = roles()
     missing.pop("elevation_reader")

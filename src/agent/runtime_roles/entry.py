@@ -34,16 +34,17 @@ def parser():
     result.description = __doc__
     result.add_argument("--roles-json", required=True, help="explicit JSON object with all three role routes")
     result.add_argument("--max-concurrent-readers", type=int, default=8)
-    result.add_argument("--continue-from", type=Path,
-                        help="explicit new-run continuation from a terminal run; source remains read-only")
-    result.add_argument("--source-events-sha256",
-                        help="approved SHA-256 of the continuation source events.jsonl")
+    result._option_string_actions["--continue-from"].help = (
+        "explicit new-run continuation from a terminal drawing run; source remains read-only")
     result.add_argument("--reader-task-json",
                         help="run exactly this one reader task through the same role runtime, without a coordinator or assembly")
     return result
 
 
 async def execute(args, *, adapter_factory=None, fault_hook=None, reader_fault_hook=None):
+    if (getattr(args, "model_reconnect_seconds", 0)
+            or getattr(args, "allow_recovery_policy_change", False)):
+        raise ValueError("explicit network recovery settings currently require single_model")
     unit = json.loads(args.reader_task_json) if getattr(args, "reader_task_json", None) else None
     if unit is not None:
         import jsonschema

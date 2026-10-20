@@ -2,6 +2,18 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_mesh_recovery_configuration.py": {
+      "group": "targeted",
+      "reason": "Single-model mesh recovery configuration and same-run resume preserve source identity and remaining budget"
+    },
+    "tests/test_mesh_continuation.py": {
+      "group": "targeted",
+      "reason": "Exact context import and native MCP saved-candidate continuation preserve completed writes, exhausted workers and delivery on resume"
+    },
+    "tests/test_runtime_network_recovery.py": {
+      "group": "targeted",
+      "reason": "Bounded durable reconnect accounting across parent and child requests, connection recovery, resume and non-replayed tool writes"
+    },
     "tests/test_source_vertical_continuity.py": {
       "group": "targeted",
       "reason": "All source stacks require an explicit continuity decision, preserving evidenced separations and actual open horizontal boundaries"

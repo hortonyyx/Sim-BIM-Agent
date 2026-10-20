@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from .budget import BudgetAmounts, BudgetLedger, _effective_charge, _ensure_within_limit
 from .events import (AdapterRequestPayload, AnswerRepairPayload, BudgetEventPayload,
-                     BudgetOverrunPayload, EventEnvelope, RunLifecyclePayload,
+                     BudgetOverrunPayload, EventEnvelope, NetworkRecoveryPayload, RunLifecyclePayload,
                      ToolExecutionPayload, TruncationPayload)
 from .validation import EventLog, _require_available_for_reservation
 
@@ -186,6 +186,8 @@ class EventValidationIndex:
         self.applied_ids = set()
         self.applied_operations = set()
         self.command_ids = set()
+        self.network_recovery_reservations = {}
+        self.network_recovery_settled = set()
         self.budget = IncrementalBudgetIndex(budget_limit)
 
     def prepare(self, event: EventEnvelope):
@@ -208,6 +210,22 @@ class EventValidationIndex:
         view = EventLog.model_construct(mode="complete", events=(event,),
                                        budget_limit=self.budget_limit, excerpt=None)
         view._validate_single_event_references(self.events_by_id, set())
+        if isinstance(p, NetworkRecoveryPayload):
+            request = self.events_by_id.get(p.request_event_id)
+            if (request is None or not isinstance(request.payload, AdapterRequestPayload)
+                    or request.task_id != event.task_id):
+                raise ValueError("network recovery must refer to this task's prior model request")
+            if p.action == "reserve":
+                if p.operation_id in self.network_recovery_reservations:
+                    raise ValueError("duplicate network recovery reservation")
+            else:
+                original = self.network_recovery_reservations.get(p.operation_id)
+                if original is None or p.operation_id in self.network_recovery_settled:
+                    raise ValueError("network recovery settlement needs a unique reservation")
+                q = original.payload
+                if (original.task_id, q.phase, q.request_event_id, q.reserved_seconds) != (
+                        event.task_id, p.phase, p.request_event_id, p.reserved_seconds):
+                    raise ValueError("network recovery settlement differs from reservation")
         if p.event_type == "task_control" and p.command_id in self.command_ids:
             raise ValueError("task control command_id must be unique within a run")
         if isinstance(p, TruncationPayload) and p.response_event_id in self.truncated_responses:
@@ -265,6 +283,11 @@ class EventValidationIndex:
                                       else event.parent_task.task_id)
         self.sequence = event.sequence
         p = event.payload
+        if isinstance(p, NetworkRecoveryPayload):
+            if p.action == "reserve":
+                self.network_recovery_reservations[p.operation_id] = event
+            else:
+                self.network_recovery_settled.add(p.operation_id)
         if p.event_type == "task_control":
             self.command_ids.add(p.command_id)
         if isinstance(p, BudgetEventPayload) and p.reservation is not None:

@@ -106,15 +106,20 @@ def transport_diagnostics(exc: BaseException, *, phase: str = "unknown") -> dict
         if isinstance(exc, classes):
             phase = name
             break
-    chain, seen, current = [], set(), exc
+    chain, codes, seen, current = [], [], set(), exc
     while current is not None and id(current) not in seen and len(chain) < 8:
         seen.add(id(current))
         name = f"{type(current).__module__}.{type(current).__qualname__}"
         # Runtime exception classes have identifier names. Reject arbitrary
         # custom metadata instead of attempting to redact unknown credentials.
         chain.append(name[:256] if re.fullmatch(r"[\w.]+", name, flags=re.ASCII) else "unknown.Exception")
+        if isinstance(current, OSError):
+            for attribute in ("errno", "winerror"):
+                code = getattr(current, attribute, None)
+                if type(code) is int and -(2 ** 31) <= code < 2 ** 31 and code not in codes and len(codes) < 8:
+                    codes.append(code)
         current = current.__cause__ or (None if current.__suppress_context__ else current.__context__)
-    return {"transport_phase": phase, "exception_chain": tuple(chain)}
+    return {"transport_phase": phase, "exception_chain": tuple(chain), "os_error_codes": tuple(codes)}
 
 
 def service_diagnostics(error, *, secret: str = "", headers=None, envelope=None) -> dict:

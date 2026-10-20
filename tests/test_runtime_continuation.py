@@ -13,8 +13,8 @@ from src.harness_contracts import HashedBlobRef, UsageMissing
 from test_agent_runtime import MESSAGES, response, runtime
 
 
-def stopped_run(tmp_path, *, category="service_unavailable", tokens=None):
-    limits = RunLimits(model_calls=8, tool_calls=6, seconds=90, tokens=tokens,
+def stopped_run(tmp_path, *, category="service_unavailable", tokens=None, seconds=90):
+    limits = RunLimits(model_calls=8, tool_calls=6, seconds=seconds, tokens=tokens,
                        max_model_retries=0, retry_backoff_seconds=2)
     failure = ModelServiceError({"category": category, "retryable": False,
         "service_error_type": "service_unavailable_error", "service_error_code": "server_is_overloaded",
@@ -141,3 +141,32 @@ def test_source_allowance_cannot_fund_two_continuations(tmp_path):
         claim_continuation(source, tmp_path / "other")
     assert not (path / ".continuation-claims").exists()
     assert source.verify_unchanged()
+
+
+def test_unlimited_time_continuation_keeps_none_and_original_spending(tmp_path):
+    path, caps, _ = stopped_run(tmp_path, seconds=None)
+    _, available, record = inspect(path, caps)
+    assert available.seconds is None
+    assert available.model_calls == 6 and available.tool_calls == 5
+    assert record["source_elapsed_seconds"] >= 0
+
+
+def test_recovery_policy_change_needs_explicit_authority_and_cannot_expand_budget(tmp_path):
+    path, caps, _ = stopped_run(tmp_path, seconds=None)
+    changed = caps.model_copy(update={"max_model_retries": 5, "model_reconnect_seconds": 180,
+                                     "model_calls": 1000, "tool_calls": 1000})
+    source = ReadOnlyRun(path)
+    with pytest.raises(ValueError, match="retry and protection"):
+        continuation_allowance(source, changed,
+            expected_events_sha256=source.evidence_hashes["events.jsonl"])
+    available, record = continuation_allowance(source, changed,
+        expected_events_sha256=source.evidence_hashes["events.jsonl"],
+        allow_recovery_policy_change=True)
+    assert available.model_calls == 6 and available.tool_calls == 5
+    assert available.model_reconnect_seconds == 180
+    assert record["recovery_policy_change_authorized"]
+    assert record["reconnect_consumed_before_seconds"] == 0
+    with pytest.raises(ValueError, match="retry and protection"):
+        continuation_allowance(source, changed.model_copy(update={"max_total_truncations": 99}),
+            expected_events_sha256=source.evidence_hashes["events.jsonl"],
+            allow_recovery_policy_change=True)

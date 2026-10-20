@@ -6,6 +6,7 @@ import asyncio
 import base64
 import copy
 import json
+import math
 import time
 import weakref
 from collections import deque
@@ -20,7 +21,7 @@ from pydantic import Field
 
 from src.harness_contracts import (
     AnswerRepairPayload, BudgetAmounts, BudgetEventPayload, BudgetOverrunPayload, BudgetWaitPayload, CheckpointPayload, HashedBlobRef,
-    EstimatedCostUpperBound, MissingCapture, RunAggregateUsagePayload, RunLifecyclePayload, SourceRef,
+    EstimatedCostUpperBound, MissingCapture, NetworkRecoveryPayload, RunAggregateUsagePayload, RunLifecyclePayload, SourceRef,
     StateInspectionPayload, ToolExecutionPayload, ToolFailureDetails, ToolInvocationPayload,
     ToolPresentationPayload, UsageMissing, UsageReported, authorize_tool_call,
     TruncationPayload, TaskControlPayload,
@@ -90,6 +91,7 @@ class _BudgetCapacitySignal:
 
 
 _BUDGET_CAPACITY_SIGNALS = weakref.WeakKeyDictionary()
+_RECOVERY_CAPACITY_SIGNALS = weakref.WeakKeyDictionary()
 
 
 def _shared_budget_capacity_signal(store: EventStore) -> _BudgetCapacitySignal:
@@ -99,6 +101,13 @@ def _shared_budget_capacity_signal(store: EventStore) -> _BudgetCapacitySignal:
         signal = _BudgetCapacitySignal()
         _BUDGET_CAPACITY_SIGNALS[root] = signal
     return signal
+
+
+def _shared_recovery_capacity_signal(store):
+    root = store._root
+    if root not in _RECOVERY_CAPACITY_SIGNALS:
+        _RECOVERY_CAPACITY_SIGNALS[root] = _BudgetCapacitySignal()
+    return _RECOVERY_CAPACITY_SIGNALS[root]
 
 
 class RunLimits(ContractModel):
@@ -113,6 +122,7 @@ class RunLimits(ContractModel):
     context_tokens: int | None = Field(default=None, ge=1)
     max_model_retries: int = Field(default=2, ge=0)
     retry_backoff_seconds: float = Field(default=1.0, ge=0)
+    model_reconnect_seconds: float = Field(default=0.0, ge=0, allow_inf_nan=False, strict=True)
     max_consecutive_truncations: int = Field(default=2, ge=0)
     max_total_truncations: int = Field(default=3, ge=0)
     summary_every: int = Field(default=0, ge=0)
@@ -160,6 +170,7 @@ class Runtime:
     # reader cannot hold the entire shared time budget. None preserves the
     # established single-model deadline and exact request path.
     request_timeout_seconds: float | None = None
+    reconnect_consumed_before_seconds: float = 0.0
     _phase_seconds: dict[str, float] = field(default_factory=dict, init=False, repr=False)
     _control_applied: set[str] = field(default_factory=set, init=False, repr=False)
     _control_paused: bool = field(default=False, init=False, repr=False)
@@ -183,6 +194,9 @@ class Runtime:
                 raise ValueError("ChatGPT subscription does not use a metered API money budget")
         if self.request_timeout_seconds is not None and self.request_timeout_seconds <= 0:
             raise ValueError("request_timeout_seconds must be positive")
+        if (not math.isfinite(self.reconnect_consumed_before_seconds)
+                or self.reconnect_consumed_before_seconds < 0):
+            raise ValueError("inherited reconnect consumption must be finite and nonnegative")
         validate_output_limit(self.model, self.parameters.get("max_tokens",
             self.parameters.get("max_completion_tokens")), reason=self.low_output_limit_reason)
         self.started = time.monotonic()
@@ -215,6 +229,7 @@ class Runtime:
         self._context_calibration_cursor = 0
         self._context_calibration_requests = {}
         self._budget_capacity = _shared_budget_capacity_signal(self.store)
+        self._recovery_capacity = _shared_recovery_capacity_signal(self.store)
         # Checkpoints reuse the last observed tool state. Every actual tool
         # still gets fresh before/after snapshots, and resume re-reads disk.
         self._tool_state = None
@@ -440,7 +455,9 @@ class Runtime:
             **({"model_io_idle_timeout_seconds": NO_DEADLINE_IO_TIMEOUT_SECONDS}
                if self.limits.seconds is None else {}),
             **({"request_timeout_seconds": self.request_timeout_seconds}
-               if self.request_timeout_seconds is not None else {})}
+               if self.request_timeout_seconds is not None else {}),
+            **({"reconnect_consumed_before_seconds": self.reconnect_consumed_before_seconds}
+               if self.reconnect_consumed_before_seconds else {})}
 
     def _load_budget(self):
         self.cny_pricing = (require_cny_price_schedule(self.model,
@@ -696,7 +713,11 @@ class Runtime:
         logical_purpose = "context_summary" if purpose == "context_summary" else "primary_task"
         local_context_recoveries = 0
         while True:
+            if self._retry_uses_reconnect() and not await self._wait_for_recovery_capacity(0.0):
+                return None, self._recovery_stop_reason()
             async with self._dispatch_slot() as lease:
+                if (self._retry_uses_reconnect() and self._recovery_summary()["remaining_seconds"] <= 0):
+                    continue
                 self.stage = "prepare_request"
                 with self._measure("request_prepare"):
                     prepared = prepare_request(store=self.store, model=self.model,
@@ -850,9 +871,11 @@ class Runtime:
                               else min(NO_DEADLINE_IO_TIMEOUT_SECONDS, request_timeout)
                               if request_timeout is not None else NO_DEADLINE_IO_TIMEOUT_SECONDS)
                 self._budget_capacity.start(reservation.reservation_id)
+                recovery = None
                 try:
+                    recovery = self._reserve_request_recovery(request)
                     raw = await asyncio.wait_for(
-                        self.adapter.send(prepared, timeout=io_timeout),
+                        self._send_with_recovery(prepared, recovery, timeout=io_timeout),
                         timeout=request_timeout,
                     )
                     adapter_elapsed = time.monotonic() - sent_at
@@ -910,6 +933,8 @@ class Runtime:
                     # Process-style fault injection and interpreter shutdown do
                     # not leave peers waiting on an operation no longer running.
                     self._budget_capacity.complete(reservation.reservation_id)
+                    if recovery is not None:
+                        self._recovery_capacity.complete(recovery.operation_id)
                     raise
                 if lease:
                     lease.release()
@@ -1851,6 +1876,11 @@ class Runtime:
                 self.redispatch_of, self.retry_of = request.event_id, None
             elif self.answer_repair_request_id is not None:
                 return "resume_request_outcome_unknown"
+            elif self._uses_reconnect(failure) and request.payload.logical_purpose != "context_summary":
+                if (self._recovery_summary()["remaining_seconds"] <= 0
+                        and not self._recovery_capacity.active_reservations):
+                    return "model_reconnect_budget_exhausted"
+                self.redispatch_of, self.retry_of = None, request.event_id
             elif self._request_retry_count(request.event_id) >= self.limits.max_model_retries:
                 return self._failure_stop_reason(failure) if failure else "resume_request_outcome_unknown"
             elif request.payload.logical_purpose == "context_summary":
@@ -2155,16 +2185,103 @@ class Runtime:
 
     async def _allow_model_retry(self, failure):
         attempt = self._request_retry_count(failure.request_event_id)
+        reconnect = self._uses_reconnect(failure)
         if (not failure.retryable or failure.retry_hint is not None or self.answer_repair_request_id is not None
-                or attempt >= self.limits.max_model_retries):
+                or (not reconnect and attempt >= self.limits.max_model_retries)):
             return False
         if not await self._retry_budget_available():
             return False
-        delay = self.limits.retry_backoff_seconds * 2 ** attempt
+        delay = self.limits.retry_backoff_seconds * 2 ** min(attempt, 30)
+        if reconnect:
+            delay = min(30.0, delay)
+            if not await self._wait_for_recovery_capacity(delay):
+                return False
         if delay >= self._remaining():
             return False
-        await asyncio.sleep(delay)
+        if reconnect:
+            operation = self._reserve_recovery("backoff", failure.request_event_id, delay)
+            started = perf_counter()
+            self._fault("after_reconnect_backoff_reservation")
+            try:
+                await asyncio.sleep(delay)
+            finally:
+                self._settle_recovery(operation, perf_counter() - started)
+        else:
+            await asyncio.sleep(delay)
         return await self._retry_budget_available()
+
+    def _uses_reconnect(self, failure):
+        return (failure is not None and self.limits.model_reconnect_seconds > 0
+                and failure.retryable and failure.retry_hint is None
+                and failure.category in {"transport_error", "timeout"}
+                and self.answer_repair_request_id is None)
+
+    def _retry_uses_reconnect(self):
+        failure = next((e.payload.model_failure for e in reversed(self.store.events)
+                        if e.payload.event_type == "run_lifecycle" and e.payload.model_failure
+                        and e.payload.model_failure.request_event_id == self.retry_of), None)
+        return self._uses_reconnect(failure)
+
+    def _recovery_summary(self):
+        from .network_recovery import recovery_summary
+        return recovery_summary(self.store, limit_seconds=self.limits.model_reconnect_seconds,
+                                inherited_seconds=self.reconnect_consumed_before_seconds)
+
+    def _recovery_stop_reason(self):
+        return (self._scoped_budget_reason("time", task=True) if self._remaining() <= 0
+                else "model_reconnect_budget_exhausted")
+
+    async def _wait_for_recovery_capacity(self, minimum):
+        # Another live request temporarily reserves the remaining recovery
+        # allowance until headers arrive. A crash hold has no live signal and
+        # remains charged; do not wait forever or mistake it for free capacity.
+        while True:
+            revision = self._recovery_capacity.revision
+            if self._recovery_summary()["remaining_seconds"] > minimum:
+                return True
+            if not self._recovery_capacity.active_reservations or self._remaining() <= 0:
+                return False
+            await self._recovery_capacity.wait_for_change(
+                revision, timeout=min(60.0, self._remaining()))
+
+    def _reserve_recovery(self, phase, request_id, seconds):
+        operation = NetworkRecoveryPayload(action="reserve",
+            operation_id=f"network-recovery-{len(self.store.all_events) + 1}",
+            phase=phase, request_event_id=request_id, reserved_seconds=seconds)
+        self.store.append(operation)
+        self._recovery_capacity.start(operation.operation_id)
+        return operation
+
+    def _settle_recovery(self, operation, seconds):
+        self.store.append(operation.model_copy(update={"action": "settle", "elapsed_seconds": max(0.0, seconds)}))
+        self._recovery_capacity.complete(operation.operation_id)
+
+    def _reserve_request_recovery(self, request):
+        if not self._retry_uses_reconnect():
+            return None
+        phase = "response_headers" if callable(getattr(self.adapter, "send_reconnecting", None)) else "adapter_request"
+        return self._reserve_recovery(phase, request.event_id, self._recovery_summary()["remaining_seconds"])
+
+    async def _send_with_recovery(self, prepared, operation, *, timeout):
+        if operation is None:
+            return await self.adapter.send(prepared, timeout=timeout)
+        started, settled = perf_counter(), False
+        def connected(seconds):
+            nonlocal settled
+            if not settled:
+                self._settle_recovery(operation, seconds)
+                settled = True
+        try:
+            if operation.phase == "response_headers":
+                return await self.adapter.send_reconnecting(prepared, timeout=timeout,
+                    recovery_timeout=operation.reserved_seconds, on_connected=connected)
+            # Adapters without phase callbacks cannot distinguish connection
+            # from generation: bound and label their complete retry attempt.
+            return await asyncio.wait_for(self.adapter.send(prepared, timeout=timeout),
+                                          timeout=operation.reserved_seconds)
+        finally:
+            if not settled:
+                connected(perf_counter() - started)
 
     def _failure_stop_reason(self, failure):
         budget = self._budget_stop()
@@ -2174,6 +2291,12 @@ class Runtime:
             budget = None
         if budget:
             return budget
+        if self._uses_reconnect(failure):
+            delay = min(30.0, self.limits.retry_backoff_seconds
+                        * 2 ** min(self._request_retry_count(failure.request_event_id), 30))
+            if delay >= self._remaining():
+                return self._scoped_budget_reason("time", task=True)
+            return "model_reconnect_budget_exhausted"
         if failure.retryable and self._request_retry_count(failure.request_event_id) >= self.limits.max_model_retries:
             return "model_retries_exhausted:" + failure.category
         if failure.retryable and self.limits.retry_backoff_seconds * 2 ** self._request_retry_count(
@@ -2254,6 +2377,9 @@ class Runtime:
         timing = summarize_timing(self.store, current_task=self.store.task_id,
             started_epoch=self.started_epoch, ended_epoch=self.started_epoch + elapsed,
             status=reason, pending_queue=getattr(self, "_queue_interruption", None))
+        from .network_recovery import request_outcome_timing
+        timing["request_outcomes"] = request_outcome_timing(
+            self.store, task_id=self.store.task_id, elapsed_seconds=elapsed)
         from .versions import version_labels
         receipt = {"status": reason, "answer": self.answer,
             **({"completion": self.completion} if self.completion is not None else {}),
@@ -2273,6 +2399,7 @@ class Runtime:
                 "note": "Requests are bounded by runtime call/time budgets. Output allowance is not a server cap; actual usage is settled, and exceeding the run token budget stops further work."}}
                if self.versions.remote_model.route_id == "chatgpt-subscription" else {}),
             **self.counts, "elapsed_seconds": elapsed, "timing": timing,
+            "network_recovery": self._recovery_summary(),
             "runtime_processing": {"process_phase_seconds": dict(self._phase_seconds),
                 "shared_journal": getattr(self.store, "timing_totals", {}),
                 "scope": "current process only; phases can contain journal work and must not be summed as exclusive wall time"},

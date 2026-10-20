@@ -18,6 +18,7 @@ from .events import (
     CheckpointPayload,
     EventEnvelope,
     ModelResponsePayload,
+    NetworkRecoveryPayload,
     RunLifecyclePayload,
     TaskControlPayload,
     StateInspectionPayload,
@@ -88,6 +89,7 @@ class EventLog(ContractModel):
         self._validate_truncations(event_by_id, missing_ids)
         self._validate_inspections(event_by_id, missing_ids)
         self._validate_recovery(event_by_id, missing_ids)
+        self._validate_network_recovery(event_by_id, missing_ids)
         self._validate_context(event_by_id, missing_ids)
         self._validate_task_controls(event_by_id, missing_ids)
         for event in self.events:
@@ -99,6 +101,32 @@ class EventLog(ContractModel):
         self._validate_invocations(event_by_id, missing_ids)
         self._validate_presentations(event_by_id, missing_ids)
         return self
+
+    def _validate_network_recovery(self, event_by_id, missing_ids):
+        operations = {}
+        settled = set()
+        for event in self.events:
+            p = event.payload
+            if not isinstance(p, NetworkRecoveryPayload):
+                continue
+            request = _require_prior_event(p.request_event_id, event, event_by_id,
+                                           missing_ids, "network recovery request")
+            if request is not None and (not isinstance(request.payload, AdapterRequestPayload)
+                                        or request.task_id != event.task_id):
+                raise ValueError("network recovery must refer to this task's model request")
+            if p.action == "reserve":
+                if p.operation_id in operations:
+                    raise ValueError("duplicate network recovery reservation")
+                operations[p.operation_id] = event
+            else:
+                original = operations.get(p.operation_id)
+                if original is None or p.operation_id in settled:
+                    raise ValueError("network recovery settlement needs a unique reservation")
+                q = original.payload
+                if (original.task_id, q.phase, q.request_event_id, q.reserved_seconds) != (
+                        event.task_id, p.phase, p.request_event_id, p.reserved_seconds):
+                    raise ValueError("network recovery settlement differs from reservation")
+                settled.add(p.operation_id)
 
     def _validate_task_controls(self, event_by_id, missing_ids) -> None:
         acknowledged = set()

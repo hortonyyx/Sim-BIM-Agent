@@ -7,11 +7,13 @@ Protocol source: https://developers.openai.com/siwc/token-sharing-open-source/pr
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 import json
 import math
 from collections import Counter
+from contextlib import AsyncExitStack
 from dataclasses import replace
 from time import perf_counter
 
@@ -435,12 +437,23 @@ returns failure evidence for the parser/truncation journal, never executable cal
     async def close(self):
         await self.client.aclose()
 
-    async def send(self, request: PreparedRequest, *, timeout: float):
+    async def send_reconnecting(self, request, *, timeout, recovery_timeout, on_connected):
+        """Bound only token/header acquisition; an established stream keeps its normal I/O limit."""
+        return await self.send(request, timeout=timeout, recovery_timeout=recovery_timeout,
+                               on_connected=on_connected)
+
+    async def send(self, request: PreparedRequest, *, timeout: float,
+                   recovery_timeout=None, on_connected=None):
         token = ""
         self.last_send_timing = {}
         self.last_received_usage = UsageMissing(reason="current request has not reported usage")
         started = perf_counter()
         phase, response_headers = "awaiting_response_headers", None
+        recovery_deadline = started + recovery_timeout if recovery_timeout is not None else None
+        async def acquire(awaitable):
+            if recovery_deadline is None:
+                return await awaitable
+            return await asyncio.wait_for(awaitable, timeout=max(0.0, recovery_deadline - perf_counter()))
         def failure(category, description, raw=None, retryable=False, details=None):
             # Mid-stream observations do not establish the final total. A
             # missing terminal usage must keep the runtime's unknown hold.
@@ -458,14 +471,25 @@ returns failure evidence for the parser/truncation journal, never executable cal
             return error
         try:
             try:
-                token = await self._token_provider()
+                token = await acquire(self._token_provider())
+            except TimeoutError:
+                if recovery_deadline is not None:
+                    raise
+                raise failure("permission_denied", "OAuth token provider failed") from None
             except Exception:
                 raise failure("permission_denied", "OAuth token provider failed") from None
             if not isinstance(token, str) or not token or token.startswith("sk-") or any(character.isspace() for character in token):
                 token = ""  # Error sanitization must never call str.replace(None).
                 raise failure("permission_denied", "OAuth bearer token unavailable or invalid")
-            async with self.client.stream("POST", ENDPOINT, content=request.wire_bytes,
-                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "text/event-stream"}, timeout=timeout) as response:
+            async with AsyncExitStack() as stack:
+                response = await acquire(stack.enter_async_context(self.client.stream(
+                    "POST", ENDPOINT, content=request.wire_bytes,
+                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                             "Accept": "text/event-stream"}, timeout=timeout)))
+                header_seconds = perf_counter() - started
+                self.last_send_timing["response_headers_wait_seconds"] = header_seconds
+                if on_connected is not None:
+                    on_connected(header_seconds)
                 response_headers = response.headers
                 phase = "reading_response_stream"
                 if not response.is_success:
@@ -552,6 +576,9 @@ returns failure evidence for the parser/truncation journal, never executable cal
             raise
         except httpx.TimeoutException as exc:
             raise failure("timeout", "Responses stream timed out", retryable=True,
+                details=transport_diagnostics(exc, phase=phase)) from None
+        except TimeoutError as exc:
+            raise failure("timeout", "Responses response-header acquisition timed out", retryable=True,
                 details=transport_diagnostics(exc, phase=phase)) from None
         except httpx.TransportError as exc:
             raise failure("transport_error", "Responses stream transport interrupted", retryable=True,

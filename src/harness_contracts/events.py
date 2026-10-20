@@ -406,6 +406,7 @@ class ModelFailureDetails(ContractModel):
     retry_hint: str | None = Field(default=None, max_length=256)
     transport_phase: str | None = Field(default=None, max_length=64)
     exception_chain: tuple[str, ...] = Field(default=(), max_length=8)
+    os_error_codes: tuple[int, ...] = Field(default=(), max_length=8)
     body_excerpt: str | None = None
     request_id: str | None = None
     usage_received: bool
@@ -574,6 +575,24 @@ class CheckpointPayload(ContractModel):
     after_event_id: NonEmptyStr
 
 
+class NetworkRecoveryPayload(ContractModel):
+    """Durable recovery allowance; unfinished reservations remain fully charged."""
+
+    event_type: Literal["network_recovery"] = "network_recovery"
+    action: Literal["reserve", "settle"]
+    operation_id: NonEmptyStr
+    phase: Literal["backoff", "response_headers", "adapter_request"]
+    request_event_id: NonEmptyStr
+    reserved_seconds: float = Field(ge=0, allow_inf_nan=False)
+    elapsed_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def settlement_has_observed_duration(self):
+        if (self.action == "settle") != (self.elapsed_seconds is not None):
+            raise ValueError("only recovery settlement carries elapsed duration")
+        return self
+
+
 class ExternalCoordinatorMcpPayload(ContractModel):
     event_type: Literal["external_coordinator_mcp"] = "external_coordinator_mcp"
     phase: Literal["dispatch", "operation", "return"]
@@ -609,6 +628,7 @@ EventPayload = Annotated[
     | BudgetOverrunPayload
     | ContextEventPayload
     | CheckpointPayload
+    | NetworkRecoveryPayload
     | ExternalCoordinatorMcpPayload
     | RunAggregateUsagePayload,
     Field(discriminator="event_type"),

@@ -74,6 +74,7 @@ def _runtime_with_reservation(
     engine.started_epoch = time.time()
     engine.elapsed_before = 0.0
     engine.answer = None
+    engine.completion = None
     engine._load_budget()
     engine._refresh_counts()
     return root, engine, reservation

@@ -97,10 +97,17 @@ def publish_tool_budget(engine):
 
 
 async def execute(args) -> dict:
+    continue_from = getattr(args, "continue_from", None)
+    if continue_from and args.resume:
+        raise ValueError("--continue-from starts a new run and cannot be combined with --resume")
+    if bool(continue_from) != bool(getattr(args, "source_events_sha256", None)):
+        raise ValueError("--continue-from and --source-events-sha256 are required together")
+    if getattr(args, "allow_recovery_policy_change", False) and not continue_from:
+        raise ValueError("--allow-recovery-policy-change requires --continue-from")
     mesh_workers = getattr(args, "mesh_workers", 0)
     worker_script = getattr(args, "mesh_worker_script", None)
     if (type(mesh_workers) is not int or mesh_workers < 0
-            or (mesh_workers and (not args.mesh or args.role != "coordinator"))):
+            or (mesh_workers and (not (args.mesh or continue_from or args.resume) or args.role != "coordinator"))):
         raise ValueError("mesh workers require native mesh coordinator input and positive concurrency")
     if worker_script and (not mesh_workers or args.provider != "scripted"):
         raise ValueError("mesh-worker-script requires enabled mesh workers and the scripted provider")
@@ -138,6 +145,7 @@ async def execute(args) -> dict:
         near_limit=args.near_limit, min_output_tokens=args.min_output_tokens,
         context_tokens=args.context_tokens, max_model_retries=args.model_retries,
         retry_backoff_seconds=args.retry_backoff_seconds,
+        model_reconnect_seconds=getattr(args, "model_reconnect_seconds", 0),
         max_consecutive_truncations=args.max_consecutive_truncations,
         max_total_truncations=args.max_total_truncations,
         summary_every=args.summary_every)
@@ -155,6 +163,30 @@ async def execute(args) -> dict:
         raise ValueError("--repair-tail requires --resume")
     if args.provider == "scripted" and args.script is None:
         raise ValueError("--provider scripted requires --script")
+    continuation = None
+    imported_source = None
+    if continue_from:
+        from src.agent.runtime_mesh_continuation import inspect_mesh_continuation
+        continuation = inspect_mesh_continuation(continue_from, output, limits, root=ROOT,
+            expected_events_sha256=args.source_events_sha256,
+            allow_recovery_policy_change=getattr(args, "allow_recovery_policy_change", False))
+        limits = continuation.limits
+        imported_source = continuation.source
+    elif args.resume and (output / "continuation_manifest.json").is_file():
+        from src.agent_runtime.continuation import ReadOnlyRun
+        from src.agent.runtime_mesh_continuation import continuation_lineage, tree_hashes
+        saved_import = json.loads((output / "continuation_manifest.json").read_bytes())
+        imported_source = ReadOnlyRun(saved_import["source_run"])
+        if imported_source.evidence_hashes["events.jsonl"] != saved_import["source_events_sha256"]:
+            raise ValueError("resumed continuation source journal changed")
+        if (tree_hashes(imported_source.directory) != saved_import["source_tree_hashes"]
+                or continuation_lineage(imported_source) != saved_import["source_execution_lineage"]):
+            raise ValueError("resumed continuation source or ancestry changed")
+        saved_requested = RunLimits.model_validate(saved_import["requested_limits"])
+        saved_effective = RunLimits.model_validate(saved_import["effective_limits"])
+        if limits not in (saved_requested, saved_effective):
+            raise ValueError("runtime configuration changed; continuation resume must retain its saved limits")
+        limits = saved_effective
     connection = None
     if args.provider == CHATGPT_SUBSCRIPTION:
         if args.reasoning_history != "all":
@@ -164,7 +196,11 @@ async def execute(args) -> dict:
         connection = resolve_connection(args.provider, args.credentials_file,
             chatgpt_auth_dir=getattr(args, "chatgpt_auth_dir", None))
         await validate_connection_model(connection, args.model)
-    if args.resume:
+    if continuation:
+        started_epoch = time.time()
+        continuation.copy_workspace(started_epoch=started_epoch)
+        run, guide, task = output / "bim", continuation.guide, continuation.task
+    elif args.resume:
         run = output / "bim"
         guide, task = (output / "guide.txt").read_text(), (output / "task.txt").read_text()
     else:
@@ -226,12 +262,19 @@ async def execute(args) -> dict:
                             return connection.create_adapter(session_id=conversation_id(output, task_id))
                         return connection.create_adapter()
 
-                    tools = MeshWorkerTools(tools, store=store, root=ROOT,
+                    worker_type = MeshWorkerTools
+                    if imported_source is not None:
+                        from src.agent.runtime_mesh_continuation import ContinuedMeshWorkers
+                        worker_type = ContinuedMeshWorkers
+                    tools = worker_type(tools, store=store, root=ROOT,
                         adapter_factory=worker_adapter, model=route["model"], parameters=parameters,
                         route=route, limits=limits, start_epoch=started_epoch,
                         pricing=pricing,
                         max_concurrent=mesh_workers, reasoning_history=args.reasoning_history,
                         low_output_limit_reason=args.low_output_limit_reason)
+                    if imported_source is not None:
+                        from src.agent.runtime_mesh_continuation import source_worker_readers
+                        tools.import_workers(source_worker_readers(imported_source, ROOT))
                     role = role.model_copy(update={"tool_whitelist": (*role.tool_whitelist,
                         *(ToolGrant(tool_name=t["name"], access="read") for t in EXTRA_TOOLS))})
                 catalog = await tools.list_tools()
@@ -240,13 +283,13 @@ async def execute(args) -> dict:
                     write_frozen_tool_catalog(output / "frozen", await client.list_tools(), readonly=role.read_only)
                 version_catalog = list(catalog)
                 if context_policy is not None and context_policy.image_history_batches is not None:
+                    from src.harness_contracts.roles import ToolGrant
                     context_spec = context_image_tool_spec()
                     version_catalog.append(context_spec)
-                    if mesh_workers:
-                        # The early recovery guard must compare the same role
-                        # that Runtime.run will use after enabling image lookup.
-                        role = role.model_copy(update={"tool_whitelist": (*role.tool_whitelist,
-                            ToolGrant(tool_name=context_spec["name"], access="read"))})
+                    # Compare the final role before either recovery path; the
+                    # Runtime enables image lookup for non-worker runs too.
+                    role = role.model_copy(update={"tool_whitelist": (*role.tool_whitelist,
+                        ToolGrant(tool_name=context_spec["name"], access="read"))})
                 specs = [{"type": "function", "function": {"name": t["name"],
                     "description": t.get("description", ""), "parameters": t["inputSchema"]}} for t in version_catalog]
                 versions = make_versions(store, root=ROOT, prompt=guide, tools=specs,
@@ -255,6 +298,7 @@ async def execute(args) -> dict:
                         "src/agent/runtime_tools.py", "scripts/tool_scripts", "src/agent/geometry",
                         "src/agent/runtime_context.py", "src/agent/runtime_behaviour.py",
                         "src/agent/runtime_mesh_workers.py", "src/agent/runtime_mesh_evidence.py",
+                        "src/agent/runtime_mesh_continuation.py",
                         "src/agent/correction", "src/agent/execution"))
                 # A refused resume must not replace the original run's evidence.
                 # The runtime checks current versions against its saved checkpoint.
@@ -281,7 +325,14 @@ async def execute(args) -> dict:
                         {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(raw).decode()}}]
                 messages = [{"role": "system", "content": guide},
                     {"role": "user", "content": user_content if len(user_content) > 1 else task}]
-                engine = Runtime(store=store, adapter=adapter, tools=tools, role=role,
+                engine_type = Runtime
+                if continuation:
+                    from src.agent.runtime_mesh_continuation import ContinuedRuntime
+                    engine_type = ContinuedRuntime
+                inherited_reconnect = (continuation.record["reconnect_consumed_before_seconds"]
+                    if continuation else saved_import["reconnect_consumed_before_seconds"]
+                    if imported_source is not None else 0)
+                engine = engine_type(store=store, adapter=adapter, tools=tools, role=role,
                     model=route["model"], parameters=parameters, versions=versions, limits=limits,
                     context_policy=context_policy, pricing=pricing,
                     reasoning_history=args.reasoning_history,
@@ -293,15 +344,37 @@ async def execute(args) -> dict:
                     domain_completion=completed_building_handoff if not role.read_only else None,
                     tool_budget_update=publish_tool_budget,
                     root_tool_calls=limits.tool_calls if mesh_workers else None,
+                    reconnect_consumed_before_seconds=inherited_reconnect,
                     strict_model_profile=strict_model_profile)
                 engine.low_output_limit_reason = args.low_output_limit_reason
+                if continuation:
+                    continuation.validate_runtime(engine)
+                    engine.context_import = continuation.context_import
+                    store.write_json("continuation_manifest.json", continuation.record)
+                elif imported_source is not None:
+                    from src.agent_runtime.continuation import claim_continuation
+                    saved_checkpoint = store.latest_checkpoint()
+                    if not saved_checkpoint:
+                        raise ValueError("continuation import did not reach a checkpoint; no allowance was claimed; create a new continuation destination")
+                    if (saved_checkpoint[1]["versions"] != versions.model_dump(mode="json")
+                            or saved_checkpoint[1].get("config", engine._config()) != engine._config()):
+                        raise ValueError("runtime configuration changed; refusing continuation resume")
+                    store.write_json("continuation_claim.json", claim_continuation(imported_source, output))
                 if mesh_workers and args.resume:
                     saved = store.latest_checkpoint()
                     if saved and (saved[1]["versions"] != versions.model_dump(mode="json") or
                             saved[1].get("config", engine._config()) != engine._config()):
                         raise ValueError("runtime configuration changed; refusing worker recovery before any work")
                     await tools.recover_pending()
-                result = await engine.run(messages, image_originals=originals, resume=args.resume)
+                result = await engine.run([] if continuation else messages,
+                    image_originals={} if continuation else originals, resume=args.resume)
+                if imported_source is not None:
+                    from src.agent.runtime_mesh_continuation import continuation_receipt, tree_hashes
+                    record = continuation.record if continuation else saved_import
+                    if tree_hashes(imported_source.directory) != record["source_tree_hashes"]:
+                        raise ValueError("immutable continuation source tree changed")
+                    result["continuation"] = continuation_receipt(record, result)
+                    store.write_json("receipt.json", result)
                 if mesh_workers:
                     # Runtime owns all spending and stop reasons. This domain
                     # projection only makes parent/worker call totals explicit.
@@ -392,6 +465,8 @@ def parser():
     p.add_argument("--min-output-tokens", type=int, default=1)
     p.add_argument("--model-retries", type=int, default=2)
     p.add_argument("--retry-backoff-seconds", type=float, default=1.0)
+    p.add_argument("--model-reconnect-seconds", type=float, default=0,
+                   help="bounded network recovery allowance; zero retains count-only retries")
     p.add_argument("--max-consecutive-truncations", type=int, default=2,
                    help="maximum consecutive output-limit recoveries; zero disables recovery")
     p.add_argument("--max-total-truncations", type=int, default=3,
@@ -419,6 +494,12 @@ def parser():
     p.add_argument("--max-candidates", type=int, default=4)
     p.add_argument("--attach-image", action="append", default=[])
     p.add_argument("--resume", action="store_true")
+    p.add_argument("--continue-from", type=Path,
+                   help="continue saved mesh work in this new run without cold input preparation")
+    p.add_argument("--source-events-sha256",
+                   help="approved immutable events.jsonl identity of --continue-from")
+    p.add_argument("--allow-recovery-policy-change", action="store_true",
+                   help="explicitly permit recovery settings to change; remaining execution budgets stay conserved")
     p.add_argument("--repair-tail", action="store_true", help="explicitly preserve and repair a torn final event during resume")
     return p
 

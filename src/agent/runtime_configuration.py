@@ -152,13 +152,19 @@ def load_configuration(path: Path, *, low_output_limit_reason: str | None = None
             jsonschema.validate(case["reader_task"], TASK_SCHEMA)
         if continuation is not None:
             import re
-            if (mode != "role_division" or not isinstance(continuation, dict)
-                    or set(continuation) != {"source_run", "source_events_sha256"}
+            mesh_continuation = mode == "single_model" and case.get("input_kind") == "mesh"
+            allowed_fields = {"source_run", "source_events_sha256"}
+            if mesh_continuation:
+                allowed_fields.add("allow_recovery_policy_change")
+            if (mode != "role_division" and not mesh_continuation
+                    or not isinstance(continuation, dict)
+                    or not {"source_run", "source_events_sha256"} <= set(continuation) <= allowed_fields
                     or not isinstance(continuation["source_run"], str)
                     or not Path(continuation["source_run"]).is_absolute()
                     or not isinstance(continuation["source_events_sha256"], str)
-                    or re.fullmatch(r"[0-9a-f]{64}", continuation["source_events_sha256"]) is None):
-                raise ValueError("continuation needs an absolute source_run and its exact journal SHA-256 in role_division")
+                    or re.fullmatch(r"[0-9a-f]{64}", continuation["source_events_sha256"]) is None
+                    or type(continuation.get("allow_recovery_policy_change", False)) is not bool):
+                raise ValueError("continuation needs an absolute source_run and its exact journal SHA-256 in role_division or single_model mesh")
         context_arguments(case)
         role_configurations = None
         if mode == "role_division":
@@ -260,9 +266,17 @@ def validate_budget(case: dict) -> RunLimits:
         raise ValueError("null seconds currently supports single_model only")
     if "tokens" not in limits and limits.get("money_cny") is None:
         raise ValueError("set tokens explicitly (null disables it), or supply a CNY ceiling")
-    parsed = RunLimits.model_validate_json(json.dumps({
+    if "model_reconnect_seconds" in limits and case.get("mode") != "single_model":
+        raise ValueError("model_reconnect_seconds currently supports single_model only")
+    values = {
         name: limits.get(name) for name in
-        ("model_calls", "tool_calls", "seconds", "tokens", "money_cny")}))
+        ("model_calls", "tool_calls", "seconds", "tokens", "money_cny")}
+    for configured, field in (("model_retries", "max_model_retries"),
+                              ("retry_backoff_seconds", "retry_backoff_seconds"),
+                              ("model_reconnect_seconds", "model_reconnect_seconds")):
+        if configured in limits:
+            values[field] = limits[configured]
+    parsed = RunLimits.model_validate_json(json.dumps(values))
     if case["provider"] in SUBSCRIPTION_PROVIDERS and parsed.money_cny is not None:
         raise ValueError("subscription route cannot use a usage-priced money ceiling")
     if parsed.money_cny is not None:
@@ -326,6 +340,20 @@ def argv_for(case: dict, *, resume: bool = False) -> list[str]:
                  "--max-candidates", str(case["max_candidates"]),
                  "--model-retries", str(limits.get("model_retries", 2)),
                  "--retry-backoff-seconds", str(limits.get("retry_backoff_seconds", 1.0))]
+        if "model_reconnect_seconds" in limits:
+            argv += ["--model-reconnect-seconds", str(budget.model_reconnect_seconds)]
+        if case.get("continuation") is not None:
+            continuation = case["continuation"]
+            if resume:
+                saved = json.loads((output / "continuation_manifest.json").read_bytes())
+                if (Path(saved["source_run"]).resolve() != Path(continuation["source_run"]).resolve()
+                        or saved["source_events_sha256"] != continuation["source_events_sha256"]):
+                    raise ValueError("resume continuation source differs from the configured identity")
+            else:
+                argv += ["--continue-from", continuation["source_run"],
+                         "--source-events-sha256", continuation["source_events_sha256"]]
+                if continuation.get("allow_recovery_policy_change"):
+                    argv.append("--allow-recovery-policy-change")
         argv += context_args
         for name in ("temperature", "reasoning_effort"):
             if case.get(name) is not None:

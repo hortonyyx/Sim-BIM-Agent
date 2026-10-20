@@ -430,12 +430,14 @@ def test_only_injected_oauth_token_accepted_no_network(store, token):
     assert caught.value.details["category"] == "permission_denied"
 
 
-def test_token_provider_failure_omits_arbitrary_text(store):
+@pytest.mark.parametrize("error_type", [RuntimeError, TimeoutError])
+def test_token_provider_failure_omits_arbitrary_text(store, error_type):
     async def broken():
-        raise RuntimeError("secret from external provider")
+        raise error_type("secret from external provider")
     with pytest.raises(ModelServiceError) as caught:
         send(HttpResponsesAdapter(token_provider=broken, transport=httpx.MockTransport(lambda request: pytest.fail("no HTTP"))), prepare(store))
     assert "secret from external provider" not in json.dumps(caught.value.details)
+    assert caught.value.details["category"] == "permission_denied"
     assert caught.value.__cause__ is None
 
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 
@@ -126,7 +127,8 @@ class ReadOnlyRun:
         return EventStore.capture_bytes(self, capture)
 
 
-def continuation_allowance(source: ReadOnlyRun, requested_limits, *, expected_events_sha256):
+def continuation_allowance(source: ReadOnlyRun, requested_limits, *, expected_events_sha256,
+                           allow_recovery_policy_change=False):
     """Deduct old calls, tools, active time, and unknown conservative charges.
 
     The operator starts a new run after the old terminal event. Offline repair
@@ -146,9 +148,14 @@ def continuation_allowance(source: ReadOnlyRun, requested_limits, *, expected_ev
     stop = root_stops[-1]
     permitted = {"service_error", "service_unavailable", "transport_error", "timeout", "cancelled",
                  "model_retries_exhausted:transport_error", "model_retries_exhausted:timeout",
-                 "model_retries_exhausted:service_unavailable"}
+                 "model_retries_exhausted:service_unavailable", "model_reconnect_budget_exhausted"}
     if stop.payload.reason not in permitted:
         raise ValueError("source stop does not admit a new service-failure continuation")
+    if stop.payload.reason == "model_reconnect_budget_exhausted":
+        last_failure = next((event.payload.model_failure for event in reversed(source.events)
+            if event.payload.event_type == "run_lifecycle" and event.payload.model_failure), None)
+        if last_failure is None or last_failure.category not in {"transport_error", "timeout"}:
+            raise ValueError("reconnect exhaustion lacks a recorded network failure")
     if any(event.sequence > stop.sequence and event.payload.event_type in {
             "adapter_request", "tool_invocation", "tool_execution"} for event in events):
         raise ValueError("source run contains work after its terminal stop")
@@ -190,24 +197,50 @@ def continuation_allowance(source: ReadOnlyRun, requested_limits, *, expected_ev
     elapsed = durable.get("elapsed_seconds")
     if durable.get("status") != stop.payload.reason or receipt.get("elapsed_seconds") != elapsed:
         raise ValueError("source receipt timing differs from its durable terminal summary")
-    if type(elapsed) not in {int, float} or not 0 <= elapsed <= old_limits.seconds:
+    if (type(elapsed) not in {int, float} or not math.isfinite(elapsed) or elapsed < 0
+            or (old_limits.seconds is not None and elapsed > old_limits.seconds)):
         raise ValueError("source elapsed time is missing or exhausted")
     available = ledger.available
+    seconds = None if old_limits.seconds is None else old_limits.seconds - elapsed
+    if available.seconds is not None:
+        seconds = float(available.seconds) if seconds is None else min(seconds, float(available.seconds))
     values = requested_limits.model_dump()
-    for name, remaining in {"model_calls": available.calls,
+    for name, remaining in {"model_calls": min(available.calls, old_limits.model_calls - len(requests)),
                             "tool_calls": old_limits.tool_calls - len(invoked),
-                            "seconds": min(float(available.seconds), old_limits.seconds - elapsed),
+                            "seconds": seconds,
                             "tokens": available.tokens, "money_usd": available.money_usd,
                             "money_cny": available.money_cny}.items():
         wanted = values[name]
         values[name] = remaining if wanted is None else wanted if remaining is None else min(wanted, remaining)
-    if values["model_calls"] <= 0 or values["tool_calls"] <= 0 or values["seconds"] <= 0:
+    if (values["model_calls"] <= 0 or values["tool_calls"] <= 0
+            or (values["seconds"] is not None and values["seconds"] <= 0)):
         raise ValueError("source has no remaining continuation execution allowance")
-    for name in ("max_model_retries", "retry_backoff_seconds", "near_limit",
-                 "max_consecutive_truncations", "max_total_truncations", "max_tool_recovery_retries"):
+    recovery_fields = ("max_model_retries", "retry_backoff_seconds", "model_reconnect_seconds")
+    changed_recovery = {
+        name: {"source": getattr(old_limits, name, 0), "requested": getattr(requested_limits, name, 0)}
+        for name in recovery_fields
+        if getattr(requested_limits, name, 0) != getattr(old_limits, name, 0)}
+    if changed_recovery and not allow_recovery_policy_change:
+        raise ValueError("continuation must preserve the original retry and protection policy")
+    allowance_fields = {"model_calls", "tool_calls", "seconds", "tokens", "money_usd", "money_cny"}
+    for name in set(type(requested_limits).model_fields) - allowance_fields - set(recovery_fields):
         if getattr(requested_limits, name) != getattr(old_limits, name):
             raise ValueError("continuation must preserve the original retry and protection policy")
+    truncations = sum(event.payload.event_type == "response_truncation" for event in events)
+    values["max_total_truncations"] = max(0, old_limits.max_total_truncations - truncations)
     effective = RunLimits.model_validate(values)
+    # A new execution epoch is not a renewed allowance for network recovery.
+    # The terminal journal summary, not an editable convenience receipt, binds
+    # cumulative spent recovery time. Older journals predate this field.
+    recovery = durable.get("network_recovery") or {}
+    if stop.payload.reason == "model_reconnect_budget_exhausted" and not recovery:
+        raise ValueError("reconnect exhaustion lacks durable recovery accounting")
+    if (receipt.get("network_recovery") or {}) != recovery:
+        raise ValueError("source recovery accounting differs from its durable terminal summary")
+    reconnect_consumed = recovery.get("consumed_seconds", 0)
+    if (type(reconnect_consumed) not in {int, float} or not math.isfinite(reconnect_consumed)
+            or reconnect_consumed < 0):
+        raise ValueError("source recovery consumption must be finite and nonnegative")
     summary = {
         "schema_version": "runtime-continuation.v1", "source_run": str(source.directory),
         "source_run_id": source.run_id, "source_events_sha256": digest,
@@ -218,7 +251,11 @@ def continuation_allowance(source: ReadOnlyRun, requested_limits, *, expected_ev
         "effective_limits": effective.model_dump(mode="json"),
         "source_request_count": len(requests), "source_tool_invocation_count": len(invoked),
         "source_elapsed_seconds": elapsed,
+        "source_truncation_count": truncations,
         "source_ledger": ledger.model_dump(mode="json"),
+        "recovery_policy_change_authorized": bool(allow_recovery_policy_change),
+        "recovery_policy_changes": changed_recovery,
+        "reconnect_consumed_before_seconds": reconnect_consumed,
         "new_run_is_explicit_continuation": True, "replays_failed_request": False,
         "time_policy": "New execution epoch; subtract prior active wall duration and shared request-time charges. Offline repair downtime is not execution time.",
         "usage_policy": "Original receipts and unknown holds remain in source_ledger; the new ledger is limited to remaining capacity, never a replacement of original billing evidence.",
