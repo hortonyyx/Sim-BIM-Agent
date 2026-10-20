@@ -52,18 +52,42 @@ def room_types_reference() -> str:
 
 
 def room_use_review(source: dict, *, include_next_action: bool = True) -> dict:
-    """Report saved use-basis coverage, never certify function interpretation."""
+    """Separate missing records from actual use questions; never certify fidelity."""
     counts = {basis: 0 for basis in ("observed", "inferred", "unknown")}
     unrecorded = []
     unknown = []
+    decisions = []
     for space in source.get("spaces", []):
-        if space.get("role", "unknown") == "unknown":
+        role = normalize(space.get("role")) or "unknown"
+        reasons = []
+        if role == "unknown":
             unknown.append(space["id"])
+            reasons.append("unknown_role")
+        elif role not in CANONICAL_ROLES:
+            reasons.append("role_not_in_catalog")
         evidence = space.get("role_evidence")
         if evidence is None:
             unrecorded.append(space["id"])
         else:
-            counts[evidence["basis"]] += 1
+            basis = evidence.get("basis") if isinstance(evidence, dict) else None
+            if isinstance(basis, str) and basis in counts:
+                counts[basis] += 1
+                if (role == "unknown") != (basis == "unknown"):
+                    reasons.append("role_evidence_basis_conflict")
+            else:
+                reasons.append("invalid_role_evidence_basis")
+            if isinstance(evidence, dict) and "role" in evidence and normalize(evidence["role"]) != role:
+                reasons.append("role_evidence_assignment_conflict")
+        if reasons:
+            decisions.append({"space_id": space["id"], "reasons": reasons})
+    decision = {
+        "status": "needs_judgment" if decisions else "no_issue_identified",
+        "space_count": len(decisions),
+        "examples": decisions[:20],
+        "examples_truncated": len(decisions) > 20,
+        "meaning": "Only explicit unknown roles or inconsistent role declarations identify a use question. "
+                   "Missing structured evidence alone does not identify wrong use or require an edit.",
+    }
     result = {
         "source_model_sha256": source.get("source_model_sha256"),
         "summary": {"total_count": len(source.get("spaces", [])),
@@ -73,15 +97,18 @@ def room_use_review(source: dict, *, include_next_action: bool = True) -> dict:
         "unrecorded_ids_truncated": len(unrecorded) > 20,
         "unknown_space_ids": unknown[:20],
         "unknown_ids_truncated": len(unknown) > 20,
-        "next_action": ("Read room_types and edits, inspect original room interiors, then use "
-                        "revise_bim/set_space_role to choose a plausible use, including a reasonable "
-                        "inference from building context. Prefer a broad listed type over unknown; "
-                        "avoid spending excessive effort distinguishing similar plausible uses. "
-                        "Read remaining cells with read_candidate_items; preserve physical partitions."
-                        if unrecorded or unknown else "Use-basis records saved; unresolved inferences remain explicit."),
+        "use_decision": decision,
+        "next_action": ("Judge the listed use questions against available context in the current closeout decision. "
+                        "Correct an unsupported assignment locally when needed for the request; a truthful unknown "
+                        "may remain when no defensible listed use fits. Read additional evidence only for a "
+                        "material unresolved question. No separate review or metadata registration round is required."
+                        if decisions else
+                        "No use change is indicated by these records. Retain existing plausible assignments and "
+                        "missing-evidence counts; proceed with normal closeout unless substantive contrary evidence appears."),
         "interpretation": "Counts cover structured role_evidence only, not semantic correctness. "
                           "Legacy source_refs may contain other evidence. Unknown remains a fallback when "
-                          "no defensible listed use fits; it is not a preferred response to ambiguity.",
+                          "no defensible listed use fits; it is not a preferred response to ambiguity. "
+                          "No-issue status does not establish that roles are correct.",
         "drawing_fidelity": "not_evaluated", "delivery_blocked": False,
     }
     if not include_next_action:

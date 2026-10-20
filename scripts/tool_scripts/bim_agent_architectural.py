@@ -118,10 +118,32 @@ def _inherited_modelling(toolkit, parent, proposal):
         from src.agent.geometry.parametric_proposal import expand_parametric_instances
         adopted = _read(toolkit, reference['adopted'])
         instances = expand_parametric_instances(adopted)
+        # Continuous groups compile into separate source floors. They must
+        # inherit the same ruler as their members, or a later legal source edit
+        # re-snaps one side of a core door in the identity frame.
+        from src.agent.geometry.parametric_continuity import declared_continuity_members
+        instance_by_id = {row['id']: row for row in instances}
+        frames = context.get('frames', [])
+        frame_by_template = {name: frame for frame in frames for name in frame['templates']}
+        derived_frames = {}
+        for group in declared_continuity_members(adopted):
+            if group['id'] not in names:
+                continue
+            # Expansion copies the lowest member's adopted polygon. Retain
+            # that member's frame; the usual cross-host gate still checks every
+            # aperture against the other hosts after a subsequent source edit.
+            reference_member = min(
+                (instance_by_id[sid.split(':', 1)[0]] for sid in group['member_space_ids']),
+                key=lambda row: row['z'])
+            chosen = frame_by_template.get(reference_member['template'])
+            if chosen:
+                derived_frames[group['id']] = chosen
         for frame in context.get('frames', []):
             templates = set(frame['templates'])
             frame['templates'] = [row['id'] for row in instances
                                   if row['template'] in templates and row['id'] in names]
+            frame['templates'].extend(name for name, inherited in derived_frames.items()
+                                      if inherited is frame)
         intents = context.get('space_intents', {})
         context['space_intents'] = {
             f"{row['id']}:{row['id']}:{space['id']}": intents[f"{row['template']}:{space['id']}"]

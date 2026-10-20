@@ -197,6 +197,35 @@ def profile_summary(result):
 def summarize_reply(result):
     """Pure presentation: errors, findings, IDs, heights and geometry stay explicit."""
     reply = copy.deepcopy(result)
+    mesh_feedback = reply.get('mesh_feedback')
+    if isinstance(mesh_feedback, dict):
+        # Images have already been attached. Keep all selected overlay IDs and
+        # their current source binding visible, rather than hiding them behind a
+        # generic large-field reference that requires another collection call.
+        mesh_feedback['overlays'] = [
+            pick(row, ('overlay_id', 'candidate', 'observation', 'image_file', 'source_file_sha256'))
+            for row in mesh_feedback.get('overlays', [])]
+        mesh_feedback['overlay_ids'] = [row['overlay_id'] for row in mesh_feedback['overlays']]
+        if _reply_bytes(mesh_feedback) > 2800 and mesh_feedback['overlays']:
+            rows = mesh_feedback['overlays']
+            for key in ('candidate', 'source_file_sha256'):
+                if key in rows[0] and all(row.get(key) == rows[0][key] for row in rows):
+                    mesh_feedback[key] = rows[0][key]
+                    for row in rows:
+                        row.pop(key)
+        mesh_feedback['details'] = 'Full overlay metadata is in this reply details_file and mesh_overlays/<overlay_id>.json.'
+    route = reply.get('edit_route')
+    if isinstance(route, dict) and _reply_bytes(route) > 2800:
+        for target in route.get('targeted_parametric_paths', []):
+            affected = target.pop('affected_object_ids', [])
+            target['affected_object_count'] = len(affected)
+            target['affected_object_id_sample'] = affected[:3]
+            target['omitted_affected_object_count'] = max(0, len(affected) - 3)
+            for key in ('current_declaration', 'coordinate_contract', 'apply_condition'):
+                target.pop(key, None)
+        route['scope_condition'] = (
+            'Shared paths affect every declared instance. Apply proposed_patch only for that scope; '
+            'untranslated_changes still require a parameter decision. Full declarations and IDs are in details_file.')
     precision = reply.get('building_precision')
     if isinstance(precision, dict):
         reply['building_precision'] = precision_summary(precision)
@@ -257,7 +286,7 @@ def compact_reply(run: Path, tool: str, result: dict, *, full_result: dict | Non
 
         document = result if full_result is None else full_result
         for key, value in list(reply.items()):
-            if key != 'closeout' and key in document and _reply_bytes(value) > 3000:
+            if key not in {'closeout', 'edit_route', 'mesh_feedback', 'save_facts'} and key in document and _reply_bytes(value) > 3000:
                 pointer = '/' + key.replace('~', '~0').replace('/', '~1')
                 reply[key] = bounded_json_view(document, pointer=pointer,
                     reference_for=lambda at, item: report_reference(relative, sha, at, item))
@@ -271,6 +300,9 @@ def compact_reply(run: Path, tool: str, result: dict, *, full_result: dict | Non
             # Closeout is already a bounded domain projection. Keep its current
             # blockers/unknowns/actions visible even when inventories are huge.
             bounded['closeout'] = reply['closeout']
+        for key in ('edit_route', 'save_facts', 'mesh_feedback'):
+            if key in reply and _reply_bytes({**bounded, key: reply[key]}) <= 18000:
+                bounded[key] = reply[key]
         bounded['report_view'] = bounded_json_view(document,
             reference_for=lambda at, item: report_reference(relative, sha, at, item))
         if _reply_bytes(bounded) > 22000:
@@ -278,7 +310,8 @@ def compact_reply(run: Path, tool: str, result: dict, *, full_result: dict | Non
         # Verdicts, repair locations and saved identities remain immediately useful;
         # every other field is available in the bound report, including its keys.
         for key in ('status', 'source_geometry_ready', 'candidate', 'saved_candidate', 'save_effects',
-                    'source_model_sha256', 'source_file_sha256',
+                    'source_model_sha256', 'source_file_sha256', 'source_validation',
+                    'edit_route', 'save_facts', 'mesh_feedback', 'inference_batch',
                     'result_candidate', 'failure_summary', 'height_conflicts',
                     'reading_id', 'image', 'facade', 'artifact_sha256',
                     'matched_openings', 'all_readings_consistent', 'comparison_summary',

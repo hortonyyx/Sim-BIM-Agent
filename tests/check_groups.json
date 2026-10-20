@@ -2,6 +2,18 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_bim_edit_route.py": {
+      "group": "targeted",
+      "reason": "Exact parametric edit routes, actionable rejection and continuous-core frame preservation"
+    },
+    "tests/test_mesh_closeout_feedback_entry.py": {
+      "group": "targeted",
+      "reason": "Real MCP saves return current overlay evidence and bundled interpretations without weakening finish checks"
+    },
+    "tests/test_mesh_save_feedback.py": {
+      "group": "targeted",
+      "reason": "Bounded current-source diffs, core and door facts reuse validation and preserve saved results on feedback failures"
+    },
     "tests/test_mesh_recovery_configuration.py": {
       "group": "targeted",
       "reason": "Single-model mesh recovery configuration and same-run resume preserve source identity and remaining budget"

@@ -292,6 +292,8 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
         options = {}
         if feedback_parent is not None:
             options["feedback_parent"] = feedback_parent
+        if feedback_parent_error:
+            options["feedback_parent_error"] = feedback_parent_error
         if regularization is not None:
             options["architectural_regularization"] = regularization
         result = toolkit.build(proposal, action=action, parent=parent, **options)
@@ -335,6 +337,9 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
         result["parametric"] = state
     _write(path.with_suffix(".state.json"), state)
     result.update(draft=state["draft"], draft_sha256=state["plan_sha256"])
+    if candidate:
+        from scripts.tool_scripts.bim_agent_edit_route import candidate_edit_route
+        result["edit_route"] = candidate_edit_route(toolkit, candidate)
     # Inventories are saved by the shared builder; defaults must not re-expand them.
     result.pop("opening_inventory", None)
     toolkit.log("parametric_draft_saved", {"action": action, **state})
@@ -463,6 +468,9 @@ def inspect_parametric(toolkit, candidate: str = "", *, draft: str = "",
                   "candidate": candidate or None, "draft": state["draft"],
                   "plan_sha256": state["plan_sha256"], "patch_allowed": True,
                   "fidelity": "not_evaluated"}
+        if candidate:
+            from scripts.tool_scripts.bim_agent_edit_route import candidate_edit_route
+            result["edit_route"] = candidate_edit_route(toolkit, candidate)
         result["lineage"] = {key: state[key] for key in
                              ("base", "patch", "proposal_sha256", "source_file_sha256",
                               "feedback_parent", "feedback_parent_unavailable",

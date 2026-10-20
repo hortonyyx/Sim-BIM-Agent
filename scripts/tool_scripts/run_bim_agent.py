@@ -1361,7 +1361,7 @@ class Toolkit:
     def build(self, proposal, *, action="build_bim", parent=None, operations=None,
               plan_input=None, calibration=None, claim_application=None,
               plan_assembly=None, assembly_calibrations=None, feedback_parent=None,
-              architectural_regularization=None):
+              architectural_regularization=None, feedback_parent_error=None):
         started = checkpoint = time.perf_counter()
         build_timings = {}
         def stage(name):
@@ -1529,6 +1529,10 @@ class Toolkit:
         if self.manifest.get("mesh_input") and source_path.exists():
             from scripts.tool_scripts.bim_agent_closeout import mesh_closeout
             result["closeout"] = mesh_closeout(self, candidate, source=source, report=report)
+            from scripts.tool_scripts.bim_agent_save_feedback import attach_save_facts
+            attach_save_facts(self, result, parent=parent, feedback_parent=feedback_parent,
+                              feedback_parent_error=feedback_parent_error)
+            stage("save_facts_seconds")
         result["build_timings"] = {**build_timings, "total_seconds": time.perf_counter() - started}
         dump(self.run/candidate/'build_timings.json', result["build_timings"])
         saved_source_result(self.run, result, parent=parent)
@@ -2664,11 +2668,34 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
         return toolkit.compare_facade_spans(plan_image, elevation_image, observations_json,
                                              plan_axis, elevation_axis, ambiguity_tolerance_m)
 
-    def candidate_result(result) -> CallToolResult:
+    def candidate_result(result, *, mesh_observations=None, inferences_json="") -> CallToolResult:
         """Keep JSON structured output while attaching newly generated feedback views."""
         from scripts.tool_scripts.bim_agent_saved_result import saved_result
         if "saved_candidate" not in result:
             saved_result(result)
+        candidate = result.get("candidate")
+        if candidate and (toolkit.candidate_path(candidate) / "source_model.json").is_file():
+            if "edit_route" not in result:
+                from scripts.tool_scripts.bim_agent_edit_route import candidate_edit_route
+                result["edit_route"] = candidate_edit_route(toolkit, candidate)
+            if inferences_json:
+                from scripts.tool_scripts.bim_agent_inference import record_inferences
+                try:
+                    result["inference_batch"] = record_inferences(toolkit, inferences_json, candidate)
+                except (ValueError, OSError, TypeError, KeyError) as error:
+                    result["inference_batch"] = {"status": "rejected", "error": str(error),
+                        "candidate": candidate, "source_saved": True}
+            if mesh_observations:
+                from scripts.tool_scripts.bim_agent_mesh import save_mesh_overlay
+                result["mesh_feedback"] = {"overlays": [], "errors": [],
+                    "scope": "caller_selected_views_not_automatic_quality_approval"}
+                for observation in dict.fromkeys(mesh_observations):
+                    try:
+                        result["mesh_feedback"]["overlays"].append(
+                            save_mesh_overlay(toolkit, candidate, observation))
+                    except (ValueError, OSError, TypeError, KeyError) as error:
+                        result["mesh_feedback"]["errors"].append(
+                            {"observation": observation, "candidate": candidate, "error": str(error)})
         # Put drawing differences, then actionable dimensions/edits, ahead of the large inventories.
         result = {**{k: result[k] for k in ("drawing_differences", "plan_revision", "plan_input") if k in result}, **result}
         content = []
@@ -2709,6 +2736,14 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
                 result.setdefault("source_plan_errors", []).append({
                     "candidate": result.get("candidate"), "floor_id": metadata.get("floor_id"),
                     "trigger_action": "mcp_result_packaging", "error": str(error)})
+        for metadata in result.get("mesh_feedback", {}).get("overlays", []):
+            try:
+                content.append(Image(data=(toolkit.run / metadata["image_file"]).read_bytes(),
+                                     format="png").to_image_content())
+            except (OSError, ValueError) as error:
+                result["mesh_feedback"]["errors"].append(
+                    {"overlay_id": metadata["overlay_id"], "error": str(error),
+                     "trigger_action": "mcp_result_packaging"})
         from scripts.tool_scripts.bim_agent_replies import compact_reply
         result = compact_reply(toolkit.run, "build_bim", result)
         content.append(TextContent(type="text", text=json.dumps(result, ensure_ascii=False, separators=(",", ":"))))
@@ -3095,6 +3130,8 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
                       "source_validation": report.get("source_validation"),
                       "counts": report.get("counts"),
                       "remaining_seconds": toolkit.remaining_seconds()}
+            from scripts.tool_scripts.bim_agent_edit_route import candidate_edit_route
+            result["edit_route"] = candidate_edit_route(toolkit, candidate)
             if source_path.exists():
                 from scripts.tool_scripts.bim_agent_precision import annotated_wall_placement
                 result['wall_placement'] = annotated_wall_placement(toolkit, json.loads(source_path.read_bytes()),
@@ -3123,7 +3160,8 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
                 result['current_checks'] = small
                 if len(json.dumps(result, ensure_ascii=False).encode()) > 24000:
                     result = {key: result[key] for key in ('candidate', 'geometry_included',
-                        'floor_filter', 'current_checks', 'closeout', 'details_file', 'details_sha256', 'details_read')
+                        'floor_filter', 'current_checks', 'closeout', 'edit_route',
+                        'details_file', 'details_sha256', 'details_read')
                         if key in result}
             toolkit.log("inspect_candidate", {"candidate": candidate, 'include_geometry': include_geometry})
             if include_plan:
@@ -3199,7 +3237,7 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
             return record(toolkit, candidate, decision, reason, next_action)
 
         @server.tool()
-        def finish_bim(candidate: str, reviews_json: str = "") -> dict:
+        def finish_bim(candidate: str, reviews_json: str = "", inferences_json: str = "") -> dict:
             """Select a saved BIM and persist a handoff based on actual checks.
             Unreviewed/pending scopes remain explicit. This does not certify image
             fidelity. Whether it ends work is determined by the running entrypoint:
@@ -3213,12 +3251,20 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
             you inspected; no prescribed camera count. This is model-reported scope,
             not independent quality approval. Missing/partial/stale mesh scope does
             not complete the runtime even when a useful candidate is saved.
+            Optional inferences_json is a JSON list of final interpretation declarations
+            (statement, basis, reason, source_refs, missing_information, object_refs).
+            object_refs is a list of {"kind":"space|boundary|opening|floor","id":"..."}.
+            These are saved together on this exact source, not additional quality approval.
             """
             from scripts.tool_scripts.bim_agent_process_reviews import carry_reviews, require_process_reviews
             from scripts.tool_scripts.bim_agent_mesh_review import carry_mesh_review
             if carry_mesh_review(toolkit, candidate, reviews_json) is None:
                 carry_reviews(toolkit, reviews_json, candidate)
             require_process_reviews(toolkit, candidate)
+            inference_batch = None
+            if inferences_json:
+                from scripts.tool_scripts.bim_agent_inference import record_inferences
+                inference_batch = record_inferences(toolkit, inferences_json, candidate)
             result = toolkit.delivery(candidate, selection_origin="agent_selected",
                 generation_status={"state": "in_progress", "handoff_saved": True,
                                    "agent_response_completed": False})
@@ -3237,8 +3283,10 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
             from scripts.tool_scripts.bim_agent_replies import compact_reply
             return compact_reply(run, "finish_bim", {
                 **delivery_tool_reply(result), "delivery_artifact_sha256": artifacts,
+                **({"inference_batch": inference_batch} if inference_batch is not None else {}),
                 "remaining_seconds": toolkit.remaining_seconds()},
-                full_result={**result, "delivery_artifact_sha256": artifacts})
+                full_result={**result, "delivery_artifact_sha256": artifacts,
+                    **({"inference_batch": inference_batch} if inference_batch is not None else {})})
 
         @server.tool()
         def overlay_candidate(candidate: str, image: ImageFilename, floor_id: str,
@@ -3279,7 +3327,9 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
             return [image_content, json.dumps(metadata)]
 
         @server.tool()
-        def revise_bim(candidate: str, operations_json: str, reviews_json: str = "") -> CallToolResult:
+        def revise_bim(candidate: str, operations_json: str, reviews_json: str = "",
+                       mesh_observations: list[str] | None = None,
+                       inferences_json: str = "") -> CallToolResult:
             """Apply local edits/reflection with code and save a new checked BIM.
             See get_bim_reference("edits") for operations whose format the system prompt
             does not give. Prior candidates stay unchanged.
@@ -3287,10 +3337,26 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
             set_space_role assigns catalog use and its evidence, preserving geometry.
             Optional reviews_json describes already inspected views of candidate,
             not this action's new result. See drawing_process.
+            mesh_observations selects saved camera IDs to render against the new
+            source in this response. inferences_json batches declarations on that
+            new source, using the record_inference schema; no separate record call.
             """
             from scripts.tool_scripts.bim_agent_process_reviews import carry_reviews
             carry_reviews(toolkit, reviews_json, candidate)
-            return candidate_result(toolkit.revise(candidate, operations_json))
+            from scripts.tool_scripts.bim_agent_edit_route import candidate_edit_route
+            try:
+                result = toolkit.revise(candidate, operations_json)
+            except ValueError as error:
+                route = candidate_edit_route(toolkit, candidate, operations=operations_json)
+                result = {"error": str(error), "status": "rejected", "source_geometry_ready": False,
+                          "base_candidate": candidate, "edit_route": route}
+                reply = candidate_result(result)
+                reply.isError = True
+                return reply
+            if not result.get("source_geometry_ready"):
+                result["edit_route"] = candidate_edit_route(toolkit, candidate, operations=operations_json)
+            return candidate_result(result, mesh_observations=mesh_observations,
+                                    inferences_json=inferences_json)
 
         @server.tool()
         def review_detail(question: str, images: list[str], timeout_seconds: float = 120) -> dict:
@@ -3344,13 +3410,18 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
             return candidate_result(toolkit.assemble_plans(floors_json))
 
         @server.tool()
-        def build_parametric_bim(plan_json: str) -> CallToolResult:
+        def build_parametric_bim(plan_json: str, mesh_observations: list[str] | None = None,
+                                 inferences_json: str = "") -> CallToolResult:
             """Expand model-declared floor templates and window rows, then build source BIM.
             Read get_bim_reference('parametric') first. Never infers or trims geometry.
             Explicit repeats and core service sets expand in code. Failed drafts are patchable.
+            mesh_observations optionally returns current overlays of your selected
+            saved cameras. inferences_json is a list of record_inference declarations
+            bound to the saved result; neither field adds a required review step.
             """
             from scripts.tool_scripts.bim_agent_parametric import build_parametric
-            return candidate_result(build_parametric(toolkit, plan_json))
+            return candidate_result(build_parametric(toolkit, plan_json),
+                mesh_observations=mesh_observations, inferences_json=inferences_json)
 
         @server.tool()
         def inspect_parametric_plan(candidate: str = "", draft: str = "", pointer: str | None = None,
@@ -3365,15 +3436,21 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
 
         @server.tool()
         def patch_parametric_bim(operations_json: str, expected_plan_sha256: str,
-                                 candidate: str = "", draft: str = "") -> CallToolResult:
+                                 candidate: str = "", draft: str = "",
+                                 mesh_observations: list[str] | None = None,
+                                 inferences_json: str = "") -> CallToolResult:
             """Patch an exact saved compact plan or draft and build a new candidate.
             Supply one candidate OR draft and its current plan hash. Operations use
             add/replace/remove/test with JSON Pointer paths, reason and source_refs;
             read get_bim_reference('parametric'). Never silently overwrite source edits.
+            mesh_observations selects existing cameras for current-source overlays
+            returned with this save. inferences_json batches record_inference
+            declarations on the new result, not on the base candidate.
             """
             from scripts.tool_scripts.bim_agent_parametric import patch_parametric
             return candidate_result(patch_parametric(toolkit, operations_json, candidate=candidate,
-                draft=draft, expected_sha=expected_plan_sha256))
+                draft=draft, expected_sha=expected_plan_sha256),
+                mesh_observations=mesh_observations, inferences_json=inferences_json)
 
         @server.tool()
         def build_bim(proposal_json: str) -> CallToolResult:

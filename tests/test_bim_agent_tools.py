@@ -866,7 +866,9 @@ def test_room_use_stdio_updates_function_and_retains_physical_source(tmp_path):
             finished = _json_result(await session.call_tool("finish_bim", {"candidate": revised["candidate"]}))
             inspected = _json_result(await session.call_tool("inspect_candidate", {"candidate": revised["candidate"]}))
             assert inspected["room_use_review"] == finished["room_use_review"]
-            assert "set_space_role" in finished["room_use_review"]["next_action"]
+            assert finished["room_use_review"]["use_decision"]["status"] == "no_issue_identified"
+            assert finished["room_use_review"]["use_decision"]["space_count"] == 0
+            assert finished["room_use_review"]["delivery_blocked"] is False
             assert {k: v for k, v in finished["room_use_review"].items() if k != "next_action"} == revised["room_use_review"]
 
     asyncio.run(scenario())

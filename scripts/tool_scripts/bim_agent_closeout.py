@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 
 from src.agent.geometry.source_model import _digest
+from src.agent.roles import room_use_review
 
 
 def _text(value, limit=160):
@@ -113,15 +114,28 @@ def closeout_summary(candidate, source, report, *, review=None):
             review_state[key] = review[key]
     if review.get("reason"):
         review_state["reason"] = _text(review["reason"], 240)
+    use_review = room_use_review(source, include_next_action=False)
+    use_decision = use_review["use_decision"]
     if machine["status"] == "unavailable":
+        action_state = "resolve_unavailable_checks"
         action = "Inspect the current saved source/report to resolve unavailable checks before delivery."
     elif total:
+        action_state = "repair_identified_defects"
         action = ("Repair the identified objects and affected relationships locally; recheck affected results. "
                   "Do not reopen overall form unless a real defect requires it.")
+    elif use_decision["status"] == "needs_judgment":
+        action_state = "judge_identified_use_questions"
+        action = ("Judge the listed unknown uses or conflicting role evidence using available context within "
+                  "this closeout decision. Correct only a substantive use issue; retain a truthful unknown "
+                  "when no defensible assignment fits. If necessary functionality and requested scope are "
+                  "satisfied, use normal finish_bim with truthful current mesh_review and retained unknowns. "
+                  "No separate review registration or metadata-completion round is required.")
     elif current_review:
+        action_state = "finish_if_scope_satisfied"
         action = ("If requested scope and necessary functionality are satisfied and no known substantive issue remains, "
                   "use normal finish_bim. Existing pending-claim and delivery checks still apply.")
     else:
+        action_state = "finish_with_current_evidence_if_scope_satisfied"
         action = ("If current shape and necessary functionality satisfy the request, review current overlay evidence "
                   "as needed and carry the truthful current mesh_review with normal finish_bim. "
                   "No separate registration round is required; do not refine form merely to clear notes.")
@@ -137,7 +151,10 @@ def closeout_summary(candidate, source, report, *, review=None):
             "source_file": f"{candidate}/report.json", "json_pointer": "/unresolved",
             "meaning": "Retain and judge against user scope. A note is neither an automatic repair task nor an accepted omission.",
         },
-        "mesh_review": review_state, "next_action": action,
+        "mesh_review": review_state,
+        "room_use": {"unrecorded_count": use_review["summary"]["unrecorded_count"],
+                     "use_decision": use_decision, "delivery_blocked": False},
+        "action_state": action_state, "next_action": action,
         "details_read": {"tool": "inspect_candidate", "arguments": {"candidate": candidate, "include_geometry": False}},
     }
 

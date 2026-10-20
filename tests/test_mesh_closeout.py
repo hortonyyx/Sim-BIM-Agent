@@ -45,6 +45,42 @@ def test_notes_do_not_become_blockers_or_accepted_omissions():
     assert "finish" not in result and "ready" not in result
 
 
+def test_unrecorded_use_metadata_does_not_reopen_a_clear_candidate():
+    source, report = _saved(spaces=[{"id": "office", "role": "office"}])
+    result = closeout_summary("candidate_01", source, report)
+    assert result["machine_check"]["status"] == "clear"
+    assert result["room_use"]["unrecorded_count"] == 1
+    assert result["room_use"]["use_decision"]["status"] == "no_issue_identified"
+    assert result["action_state"] == "finish_with_current_evidence_if_scope_satisfied"
+    assert not result["mesh_review"]["current_whole_building_declaration"]
+    assert result["mesh_review"]["fidelity"] == "not_evaluated"
+
+
+@pytest.mark.parametrize("space", [
+    {"id": "room", "role": "unknown"},
+    {"id": "room", "role": "office", "role_evidence": {"role": "corridor", "basis": "observed"}},
+])
+def test_use_questions_survive_current_review_without_becoming_machine_blockers(space):
+    source, report = _saved(spaces=[space])
+    result = closeout_summary("candidate_01", source, report,
+        review={"candidate": "candidate_01", "status": "current", "complete_building": True})
+    assert result["machine_check"]["status"] == "clear"
+    assert result["room_use"]["use_decision"]["status"] == "needs_judgment"
+    assert result["room_use"]["use_decision"]["examples"][0]["space_id"] == "room"
+    assert result["room_use"]["delivery_blocked"] is False
+    assert result["action_state"] == "judge_identified_use_questions"
+    assert result["mesh_review"]["current_whole_building_declaration"]
+
+
+def test_machine_defects_take_precedence_over_use_metadata_state():
+    source, report = _saved(spaces=[{"id": "office", "role": "office"}],
+        findings=[{"severity": "severe", "code": "source.floor_coverage", "floor_id": "F2"}])
+    result = closeout_summary("candidate_01", source, report)
+    assert result["room_use"]["use_decision"]["status"] == "no_issue_identified"
+    assert result["machine_check"]["status"] == "blocked"
+    assert result["action_state"] == "repair_identified_defects"
+
+
 def test_all_machine_error_sources_survive_grouping():
     source, report = _saved(findings=[
         {"severity": "severe", "code": "source.space_overlap", "space_ids": ["office", "core"]},

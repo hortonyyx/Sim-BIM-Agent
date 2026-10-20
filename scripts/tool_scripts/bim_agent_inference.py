@@ -109,27 +109,61 @@ def _save_numbered(folder: Path, stem: str, value: dict) -> Path:
     raise RuntimeError(f"unable to allocate {stem} record")
 
 
-def record_inference(toolkit, declaration_json: str, candidate: str | None = None) -> dict:
-    try:
-        submitted = json.loads(declaration_json)
-    except json.JSONDecodeError as error:
-        raise ValueError(f"declaration_json is invalid JSON: {error.msg}") from error
+def _prepare_declarations(toolkit, submitted: list, candidate: str | None) -> tuple[list, dict | None]:
     source = path = file_hash = None
     if candidate is not None:
         source, path, file_hash = _source(toolkit, candidate)
-    declaration = _validate_declaration(submitted, source)
+    declarations = []
+    for index, value in enumerate(submitted):
+        try:
+            declarations.append(_validate_declaration(value, source))
+        except ValueError as error:
+            raise ValueError(f"declaration[{index}]: {error}") from error
     binding = None if source is None else {
         "candidate": candidate,
         "source_model_sha256": source["source_model_sha256"],
         "source_file_sha256": file_hash,
         "source_file": path.relative_to(toolkit.run).as_posix(),
     }
+    return declarations, binding
+
+
+def _write_declaration(toolkit, declaration: dict, binding: dict | None) -> dict:
     record = {"schema_version": "bim_inference_record_v1", "declaration": declaration,
               "candidate_binding": binding, "claim_scope": "model_interpretation_not_factual_truth"}
     saved = _save_numbered(toolkit.run / "inferences", "inference", record)
     record = {"inference_id": saved.stem, "record_file": saved.relative_to(toolkit.run).as_posix(), **record}
     toolkit.log("record_inference", record)
     return record
+
+
+def record_inference(toolkit, declaration_json: str, candidate: str | None = None) -> dict:
+    try:
+        submitted = json.loads(declaration_json)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"declaration_json is invalid JSON: {error.msg}") from error
+    declarations, binding = _prepare_declarations(toolkit, [submitted], candidate)
+    return _write_declaration(toolkit, declarations[0], binding)
+
+
+def record_inferences(toolkit, declarations_json: str, candidate: str | None = None) -> dict:
+    """Save bundled interpretations without an extra model round.
+
+    The complete batch is validated against one current candidate binding before
+    any record is created. Existing single-record identities and inspection stay
+    compatible; the batch is not a quality or delivery declaration.
+    """
+    try:
+        submitted = json.loads(declarations_json)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"inferences_json is invalid JSON: {error.msg}") from error
+    if not isinstance(submitted, list) or not submitted:
+        raise ValueError("inferences_json must be a non-empty list of declarations")
+    declarations, binding = _prepare_declarations(toolkit, submitted, candidate)
+    records = [_write_declaration(toolkit, row, binding) for row in declarations]
+    return {"schema_version": "bim_inference_batch_v1", "count": len(records),
+            "candidate_binding": binding, "records": records,
+            "claim_scope": "model_interpretation_not_factual_truth"}
 
 
 def _binding_status(toolkit, binding) -> dict:

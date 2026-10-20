@@ -28,6 +28,52 @@ def freeze_mesh(source: Path, run: Path) -> dict:
                     'Mesh surfaces may be incomplete/noisy and are not room semantics.'}
 
 
+def save_mesh_overlay(toolkit, candidate, observation, *, floor_id=None,
+                      exterior_only=True, visibility='visible', boundary_ids=None):
+    """Render one explicitly selected camera against the current saved source.
+
+    Shared by the observation tool and save feedback; never reuses an old BIM
+    overlay as evidence for a new source.
+    """
+    from src.agent.geometry.mesh_bim_frame import render_mesh_bim_overlay
+    record = toolkit.manifest.get('mesh_input') or {}
+    asset_path = toolkit.run / 'assets' / 'input.glb'
+    if not record or hashlib.sha256(asset_path.read_bytes()).hexdigest() != record['sha256']:
+        raise ValueError('input mesh changed or is unavailable')
+    folder = toolkit.run / 'mesh_observations'
+    if observation not in {p.stem for p in folder.glob('mesh_*.json')}:
+        raise ValueError('unknown mesh observation; first call view_mesh')
+    prefix = folder / observation
+    metadata = json.loads(prefix.with_suffix('.json').read_bytes())
+    source_path = toolkit.candidate_path(candidate) / 'source_model.json'
+    source = json.loads(source_path.read_bytes())
+    with PILImage.open(prefix.with_suffix('.png')) as original:
+        picture, overlay = render_mesh_bim_overlay(original, metadata, source,
+            floor_id=floor_id, exterior_only=exterior_only,
+            visibility=visibility, boundary_ids=boundary_ids)
+    folder = toolkit.run / 'mesh_overlays'
+    folder.mkdir(exist_ok=True)
+    indices = [int(p.stem[len('overlay_'):]) for p in folder.glob('overlay_*.json')
+               if p.stem[len('overlay_'):].isdigit()]
+    overlay_id = f'overlay_{max(indices, default=0) + 1:03d}'
+    image_path = folder / f'{overlay_id}.png'
+    picture.save(image_path)
+    overlay.update(candidate=candidate, observation=observation, overlay_id=overlay_id,
+        image_file=image_path.relative_to(toolkit.run).as_posix(),
+        image_sha256=hashlib.sha256(image_path.read_bytes()).hexdigest(),
+        observation_metadata_sha256=hashlib.sha256(prefix.with_suffix('.json').read_bytes()).hexdigest(),
+        observation_image_sha256=hashlib.sha256(prefix.with_suffix('.png').read_bytes()).hexdigest(),
+        source_file_sha256=hashlib.sha256(source_path.read_bytes()).hexdigest())
+    (folder / f'{overlay_id}.json').write_text(json.dumps(overlay, indent=2) + '\n')
+    from scripts.tool_scripts.bim_agent_replies import compact_reply
+    summary = compact_reply(toolkit.run, 'overlay_mesh_candidate',
+        {k: v for k, v in overlay.items() if k != 'objects'}, full_result=overlay, force=True)
+    summary['complete_projection_file'] = summary['details_file']
+    summary['complete_projection_sha256'] = summary['details_sha256']
+    toolkit.log('overlay_mesh_candidate', summary)
+    return summary
+
+
 def register_mesh_tools(server, toolkit):
     """Expose only the admitted mesh; image-only/detail runs gain no asset access."""
     if not toolkit.manifest.get('mesh_input'):
@@ -103,7 +149,8 @@ def register_mesh_tools(server, toolkit):
     def view_mesh(azimuth_degrees: float = 45, elevation_degrees: float = 25,
                   yaw_degrees: float = 0, target: list[float] | None = None,
                   width_m: float | None = None, height_m: float | None = None,
-                  bounds: list[list[float]] | None = None):
+                  bounds: list[list[float]] | None = None,
+                  candidate: str | None = None):
         """Render the admitted textured mesh from a camera YOU choose, with metric mapping.
         Z-up local frame as inspect_mesh; azimuth=0 looks FROM +x, 90 FROM +y,
         180 FROM -x, 270 FROM -y. elevation=90 is top. target is local [x,y,z].
@@ -114,6 +161,8 @@ def register_mesh_tools(server, toolkit):
         1200px) and an observation ID. Read resolution_px for measurement coordinates.
         Original OPAQUE/BLEND alpha is preserved. Pixels with a contributing
         fractional-alpha surface are visible but cannot supply a unique surface XYZ.
+        With candidate, also return its current visible exterior BIM overlay in this
+        same camera and call. This does not declare that you have reviewed it.
         """
         for value in (azimuth_degrees, elevation_degrees):
             if not math.isfinite(value):
@@ -160,7 +209,12 @@ def register_mesh_tools(server, toolkit):
         toolkit.log('view_mesh', {'observation': prefix.name, 'request': request,
                                  'mesh_sha256': toolkit.manifest['mesh_input']['sha256']})
         data = io.BytesIO(); picture.save(data, 'PNG')
-        return [Image(data=data.getvalue(), format='png'), json.dumps(result)]
+        images = [Image(data=data.getvalue(), format='png')]
+        if candidate is not None:
+            overlay = save_mesh_overlay(toolkit, candidate, prefix.name)
+            result['candidate_overlay'] = overlay
+            images.append(Image(data=(toolkit.run / overlay['image_file']).read_bytes(), format='png'))
+        return [*images, json.dumps(result)]
 
     @server.tool()
     def measure_mesh_pixels(observation: str, pixels: list[list[int]], candidate: str | None = None) -> dict:
@@ -235,36 +289,10 @@ def register_mesh_tools(server, toolkit):
         candidate='', report_file=complete_projection_file); json_pointer='/objects'
         browses projected IDs, coordinates and visibility without changing source.
         """
-        from src.agent.geometry.mesh_bim_frame import render_mesh_bim_overlay
-        mesh()
-        prefix = observation_path(observation)
-        metadata = json.loads(prefix.with_suffix('.json').read_text())
-        source_path = toolkit.candidate_path(candidate) / 'source_model.json'
-        source = json.loads(source_path.read_text())
-        with PILImage.open(prefix.with_suffix('.png')) as original:
-            picture, record = render_mesh_bim_overlay(original, metadata, source,
-                floor_id=floor_id, exterior_only=exterior_only,
-                visibility=visibility, boundary_ids=boundary_ids)
-        folder = toolkit.run / 'mesh_overlays'; folder.mkdir(exist_ok=True)
-        overlay_id = next_record_name(folder, 'overlay_')
-        image_path = folder / f'{overlay_id}.png'
-        picture.save(image_path)
-        record.update(candidate=candidate, observation=observation, overlay_id=overlay_id,
-            image_file=image_path.relative_to(toolkit.run).as_posix(),
-            image_sha256=hashlib.sha256(image_path.read_bytes()).hexdigest(),
-            observation_metadata_sha256=hashlib.sha256(prefix.with_suffix('.json').read_bytes()).hexdigest(),
-            observation_image_sha256=hashlib.sha256(prefix.with_suffix('.png').read_bytes()).hexdigest(),
-            source_file_sha256=hashlib.sha256(source_path.read_bytes()).hexdigest())
-        (folder / f'{overlay_id}.json').write_text(json.dumps(record, indent=2) + '\n')
-        summary = {k: v for k, v in record.items() if k != 'objects'}
-        from scripts.tool_scripts.bim_agent_replies import compact_reply
-        summary = compact_reply(toolkit.run, 'overlay_mesh_candidate', summary,
-                                full_result=record, force=True)
-        summary['complete_projection_file'] = summary['details_file']
-        summary['complete_projection_sha256'] = summary['details_sha256']
-        toolkit.log('overlay_mesh_candidate', summary)
-        data = io.BytesIO(); picture.save(data, 'PNG')
-        return [Image(data=data.getvalue(), format='png'), json.dumps(summary)]
+        summary = save_mesh_overlay(toolkit, candidate, observation, floor_id=floor_id,
+            exterior_only=exterior_only, visibility=visibility, boundary_ids=boundary_ids)
+        return [Image(data=(toolkit.run / summary['image_file']).read_bytes(), format='png'),
+                json.dumps(summary)]
 
     from scripts.tool_scripts.bim_agent_mesh_queries import register_mesh_query_tools
     register_mesh_query_tools(server, toolkit, mesh, observation_path, next_record_name)

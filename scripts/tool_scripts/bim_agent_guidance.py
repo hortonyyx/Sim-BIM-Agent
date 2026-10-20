@@ -195,17 +195,22 @@ whole-building fidelity verdict. Select these tools when they resolve a question
 Original BLEND textures remain visible; transparent_composite pixels cannot be
 measured or counted as geometric matches. Use valid opaque pixels or original
 triangle sections, distinguishing a texture's visible area from its carrier faces.
-Use record_inference for assumptions and repeated templates with exceptions;
+Record assumptions and repeat exceptions together using inferences_json on the
+final save or finish_bim; record_inference remains available for a separate note.
 build_parametric_bim expands the declaration. Use repeats for confirmed identical
 storeys and core_connections for their explicitly declared service stops, rather
 than writing each floor/connection again. Read get_bim_reference('parametric').
-inspect_parametric_plan returns the saved plan hash; patch_parametric_bim edits
-only changed declarations, including a rejected draft. audit_inference_candidate
-compares the saved spaces/openings to the declared scope.
+The saved edit_route supplies the current plan hash and recommended edit tool;
+inspect_parametric_plan reads details when needed. patch_parametric_bim edits only
+changed declarations, including a rejected draft. Saved save_facts supplies source
+counts, entity changes, continuous-core and door facts; its full audit is readable.
 Check source counts, extents, connections and visible facades after assembly.
 Native-mesh saves return representative changed plan geometry and all located
 diagnostic floors. Role/evidence/note-only changes do not need another full stack
-of plans. Use inspect_candidate(candidate,floor_id,include_plan=true) for any
+of plans. Supply mesh_observations on a save to receive current overlays in chosen
+existing cameras. view_mesh(candidate=...) returns a new camera and its current
+overlay together. These images still require your judgment. Use
+inspect_candidate(candidate,floor_id,include_plan=true) for any
 unshown floor; omission from automatic feedback is not a fidelity verdict.
 For each identified lift service storey, include a hosted landing door connecting
 the floor's circulation to the continuous shaft. Reuse an evidenced landing layout
@@ -1418,8 +1423,9 @@ Ambiguous hosts, absent footprint declarations or stale component bindings
 reject with an audit; use an explicit parametric declaration for those cases.
 
 LOCAL PARAMETRIC REVISION. The saved compact plan and expanded source remain bound.
+Use the returned edit_route exact hash and field contract when available;
 inspect_parametric_plan(candidate=...) returns an exact/stale status, plan hash
-and summary; read pointer="/templates/typical" or full=true for details. Large
+and summary when details are needed; read pointer="/templates/typical" or full=true. Large
 values are paged by offset/next_offset. A failed declaration is readable using
 draft=the returned draft id instead of candidate. Apply add/replace/remove/test
 JSON Pointer operations with patch_parametric_bim and expected_plan_sha256;
