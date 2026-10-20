@@ -39,3 +39,7 @@
 配置 `D:/Sim-BIM-Agent/cases/lee-garden-six-mixed-20261019/audit/run-config.61sol-continuity.json` 相对 closeout001 仅改 batch/output。原 GLB、23F PNG、building.json、single_model、GPT-6.1 Sol/high、48 请求/240 工具、worker 上限 8、一次重试及其余预算保持。
 
 原生冷启动目标 `D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-continuity-20261020-001`。不导入旧稿或旧上下文；不得将前次 continuation 的临时桥接作为此轮运行入口。完整统计 controller/runtime、首保存/首有效/finish、首稿后模型/工具与局改/主体修改、失败用量和独立连续性检查。当前本报告记录实施与离线验证，真实测试结果随后另记；20/15 分钟尚未证明。
+
+## 同日复测结果补记
+
+实现提交 `00cd63e3` 后已执行上述单次冷启动。7 个连续体在首稿落实，无连续性补修轮；首保存 11分19秒，局修后首机器有效 14分20秒。随后只读检查仍未完成，最后请求及一次重试均连接失败，0 finish。runtime 16分46秒不是交付时间，20/15 分钟仍未证实。完整过程、质量、用量和保护证据见[复测报告](2026-10-20_mesh_continuity_retest.md)。本次未追加恢复或重跑。
