@@ -1,0 +1,96 @@
+# Mesh 建筑尺度迭代后的同输入完整复测
+
+2026-10-20，用户“开工，先跑一次测试吧”，随后在释放机器资源后要求继续核查。沿用利園六期原三输入、GPT-6.1 Sol/high和原预算，冻结 `dd8bd443`、domain127/runtime34，新目录冷启动一次。自主正式交付 `candidate_06`，没有人工补提示、候选改稿或第二次建模。
+
+**正式交付成功，15分钟速度目标未达，10cm尺度策略存在覆盖缺口。** Runtime 29分41秒，较上次修后复测快24.29%，较首轮慢3.30%。纯直线共享边采用 `boundary_path` 后进入未评估分支，主要模板的XY规整和窄体量检查被跳过；不能将可用交付或几何检查通过当成本轮尺度目标达成。固定采样深度一致性较前次修后复测下降，与首轮相比为混合变化；不单凭5cm指标判定Lite BIM整体失败。
+
+## 配置、环境与完整性
+
+- 原 `building.glb`、`auxiliary/23f.png`、`building.json`，输入根及范围不变；新配置只更改batch ID和输出目录，未继承旧答案、候选或运行上下文。
+- `single_model / chatgpt-subscription / gpt-6.1-sol / high`；48请求、240工具、每响应32000输出预留、最多8个同模型只读worker、64候选，seconds/tokens不设整案截止，重试限额1。5–10分钟/常规15分钟仍是目标。
+- 最初因可用提交空间约2–3GiB，沿用8GiB实验启动条件在创建模型进程前拒绝，0模型调用。用户释放资源后约29GiB，10:42:13（UTC+8）实际启动，11:13:06退出；这只是一次真实运行，没有终止归属不明的后台进程或更改分页设置。
+- Controller exit 0，receipt `completed`、`finalization.status=delivered`、`completion_valid=true`，唯一一次 `finish_bim`选择candidate_06。selection/receipt/source一致，7件completion文件SHA匹配，原3输入前后哈希保持，启动与运行代码提交一致。
+- 源规范SHA：`b985dce809e0ce9f04149525299a27081a1630ee663e0aed402b3434cb073925`；source文件SHA：`0b1d86e50cc6caa8e0ee04496865045522dd00d8b2fb1fcdd36868d9c965fc08`。
+- 每3秒采样615次：本run PID树private采样峰值4.127GiB，可用提交空间最低24.785GiB、空闲物理内存最低9.842GiB。无MemoryError/inf序列化故障。环境余量与前轮不同，不能把单案单次耗时差全部归因于代码，也不证明所有低内存恢复分支。
+
+## 实测对照
+
+| 指标 | 首轮自主基线 | 前次修后复测 | 本轮尺度迭代后 |
+|---|---:|---:|---:|
+| runtime/domain | 31/121 | 34/125 | 34/127 |
+| 正式候选 | candidate_04 | candidate_08 | candidate_06 |
+| Runtime墙钟 | 1723.628s | 2351.838s | 1780.578s |
+| 整条命令墙钟 | 1767.218s | 2404.411s | 1853.724s |
+| 请求/完整响应 | 27/27 | 44/44 | 43/43 |
+| 工具调用 | 93 | 125 | 96 |
+| 全案实报tokens | 4,303,177 | 5,226,306 | 5,188,057 |
+| 首个有效候选时间 | 861.725s | 695.247s | 946.507s |
+| 人工补提示/候选改稿 | 0/0 | 0/0 | 0/0 |
+
+本轮父37请求/90工具/5,090,443tokens，worker6请求/6工具/97,614tokens。receipt顶层`reported_tokens`只含父任务；全案使用`root_usage_accounting`和43响应求和，input 5,133,775、output54,282，cache read109,440已包含在input。0供应商错误/重试/响应截断/缺usage。订阅没有按量货币估算，不把费用未知写为零，也不把图片估算重复加进实报tokens。
+
+与前次相比，Runtime减少571.260s（24.29%），tokens仅减少0.73%；父模型响应时间1210.597→1380.205s，扣除worker等待的本地父工具840.591→184.745s。第一个有效候选反而晚251.260s。旧轮没有本轮的构建细分计时，不能伪造同口径细段同比；本轮candidate_01的Toolkit构建13.868s，其中导出7.627s、平面图4.007s，不代表首稿整体只花13.9s。
+
+一次只读worker `facade_levels`用尽分配的6请求，69.128s，没有正式最终答复；主流程读取后继续自主建模。不能把已生成观察产物当作成功交回并采用的worker结论。
+
+## 返工与尺度覆盖
+
+共11次构建业务拒绝；工具返回本身合计3.047s，从首次拒绝到首个有效候选526.595s，其中13次父模型响应480.595s。runtime工具执行成功与业务保存拒绝分开统计。早期反馈逐次暴露轮廓位移、普通宿主与核心跨模板冲突，主要成本来自串行修稿。
+
+独立只读诊断区分三类问题：
+
+1. draft001典型层顶点位移2.547m确实触发保护；draft002–005有仅超0.1m上限约0.138–4.7mm的拒绝，不能把它们统称大位移或浮点误差。对应顶点位移与整体轮廓距离是不同指标，阈值是否适合Lite尺度目标需单独讨论。
+2. draft007/009/010有共享宿主迁移合同不一致的强证据：原始宿主共线、法向锚点相同，按各自旧边比例迁移开口后产生不同切向位置；draft010连原始边段也相同，仍差0.236–0.707mm。报错“anchors disagree”没有给双方宿主边、原/新端点和差值。诊断使用保存审计作局部静态数值重建，没有运行反事实测试，尚不等于已验证修复。
+3. draft008另有真实原始宿主越界。不能把全部拒绝归程序；前10份反馈完整送达，但`reject`立即退出，每稿仅暴露首错，缺少可直接修正的定位数据。顶层`observed_max_vertex_displacement_m`在拒绝后才更新，也不代表被拒整稿最大位移。
+
+draft011将ground、typical、lift1/2/3、stairA改成共享`boundary_path`，30条声明曲线全部是`kind=line`。`_curved`只判断是否使用boundary_path，因而整模板跳过XY及窄体量检查；最终参数稿增加podium_upper后有7模板、36条line声明，按空间展开166/171未获该策略XY/narrow-width检查。最终generic审计的27个展开实例未评是楼层实例口径，仅5个straight_prism空间参与该策略的contact_check。公共源几何/宿主检查仍执行；但本轮无法证明这些直线边界、开口及空间已获得与polygon相同的尺度处理。全部31个source高度组的z/height均为0.1m倍数，但审计height merge/main_height实际改动为0，不能归功于自动简化器。
+
+参数与通用修订仍有返工：c03→c04添加7个、删除1个开口得到308；c05从c03参数支线调整基座回到302；c06重加同7个ID得到309。c05全部302个开口保留；重加7个中6个对象完全一致，另1个只增加source_refs。没有旧参数冒充exact，但存在可见重复修改。
+
+详细独立过程证据保存在本run同级`-evaluation/process-comparison/`，包括`ANALYSIS.md`、`run-statistics.json`、`process-projection.json`、`process-details.json`、`final-addendum.json`、`DIAGNOSIS-FIRST10.md`及其数值证据。52项哈希保护全部通过。
+
+## 独立质量
+
+最终171空间、1396边界、309开口（256门/53窗）、256连接，unbuilt/unsupported均0。窗为分组开口，数量不是单片窗格计数；不能仅以较前轮99窗减少判定缺失或改善。
+
+独立公共kernel重建保持全部空间/边界/开口ID和内容，added/changed/removed均0；楼层、宿主、连接及unbuilt状态一致，源validation与现行precision通过。这是独立执行同一内核，不是独立算法认证，也不覆盖上述未评尺度分支。
+
+固定九视角、每图16×16、总2304射线，沿用相同相机、原图、原mesh命中、有序射线及原评价脚本；采用产出实际frame（yaw −46.6°、零平移），没有事后拟合。四项度量源码、source_model.py和uv.lock与前次一致；源导出增加计时、接触构建优化单列，不声称所有传递依赖完全相同。
+
+| 各轮自身有效射线 | 首轮 | 前次修后 | 本轮 |
+|---|---:|---:|---:|
+| 有效数量/2304 | 1238 | 1154 | 1227 |
+| 累计≤5cm | 61.71% | 89.43% | 33.01% |
+| 累计≤10cm | 76.41% | 92.37% | 77.10% |
+| 累计≤30cm | 92.08% | 94.28% | 94.05% |
+| >30cm数量 | 98 | 66 | 73 |
+| 原mesh命中、源未命中 | 20 | 32 | 37 |
+| 边缘排除数量 | 27 | 99 | 21 |
+
+共同有效样本排除分母变化的影响：
+
+- 对前次修后共同1136条，≤10cm为92.69%→77.20%，均差0.1764→0.2716m，63改善/1073变差；共同主体1013条均差0.01515→0.09161m、>30cm由11→22。共同屋顶123条均差1.5044→1.7541m、>30cm仍50，屋顶源未命中24→28。
+- 对首轮共同1210条，≤10cm为77.44%→77.11%，≤30cm为92.56%→94.21%，均差0.2174→0.2560m，244改善/726变差/240相同。主体>30cm由47→22、均差0.07936→0.09084m；屋顶>30cm由43→48、均差1.4376→1.7159m。不是单向整体改善。
+- 三轮共同1133条也已记录于`comparison_baselines.json`。固定原mesh Z=75.523m仅作屋顶诊断分区，不是新增真实楼层标注或验收标准。
+
+这是外壳固定射线深度差，不是表面积覆盖率、逐窗端点精度或内部真实GT。用户允许0.1m建筑主尺度规整和有依据简化，5cm比例下降本身不足以判整体失败；但10cm比例下降、屋顶米级残差和源未命中增加，不能用该允许范围直接解释或抹去。保存frame的yaw也从前次−46.5°变为−46.6°，未做单变量隔离；本轮没有建立每个偏差与合理简化的逐项因果归属，不能把全部变化归于网格。
+
+数值评价11项本轮保护文件及25项基线文件前后哈希一致，0模型调用；评价至比较产物文件时间跨度182.228秒，未单独记录精确进程墙钟，不混入建模Runtime。主要图：[整栋斜视](D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-scale-20261020-001-evaluation/results-01/overlays/view_04_az135_el15.png)、[屋顶斜视](D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-scale-20261020-001-evaluation/results-01/overlays/view_02_az045_el15.png)。
+
+独立语义核查23占用层共69电梯门、46楼梯门，双宿主、对应连接、双侧几何包含、配对接触与层高全部通过；5条贯通核心仅z=0和75.6端部有水平面，没有中间假楼板。潜在层内连接均可达，但256连接状态全部unknown，不等于实际运营通行或疏散认证。最终31个source高度/楼层组包含跨层核心与屋顶，不是31个实际占用层。
+
+独立实际图对照原23F、最终overlay_006及重建平面：弯折外壳、3电梯/2楼梯、卫生/管井、左电梯前室和整层办公的主要关系可用；FHR并作柜凹而非独立房间，未认证未见楼层内部GT。实际23F在公共显示中名为F29，见[独立平面](D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-scale-20261020-001-evaluation/results-01/source_plans/floor_003.png)，该名称不是实际第29占用层。
+
+屋顶只保留ROOF 75.6→78.6m与HEADHOUSE 78.6→80.8m两个宽体量，消除了前次细长板状房间；但原mesh高设备、后端竖向体量和若干层次缺失，不能把去掉窄板直接称为整体保真改善。见[模型保存的屋顶近景回叠](D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-scale-20261020-001/bim/mesh_overlays/overlay_010.png)与固定九视角独评。
+
+真实浏览器验证mesh开关、透明度/模式、楼层、XYZ剖切及展开暂停；恢复至全层、无剖切、展开0、mesh轮廓开启，见[恢复截图](D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-scale-20261020-001-evaluation/visual-review/output/playwright/viewer_final_restored.png)。1600×1100下reset按钮被底部来源banner遮挡，使用键盘焦点Enter恢复，属于现存交互缺陷，不能将鼠标恢复检查记为通过。浏览器与本次本地HTTP服务已关闭。视觉审阅前后run及3输入共5159文件哈希无差异，未修改候选或产品；详见[独立视觉/语义报告](D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-scale-20261020-001-evaluation/visual-review/REVIEW.md)。
+
+## 查看、后续与边界
+
+- [自主交付查看页](D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-scale-20261020-001/bim/candidate_06/viewer.html)
+- [交付入口](D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-scale-20261020-001/bim/delivery.html)
+- [原23/F平面](D:/Sim-BIM-Agent/cases/lee-garden-six-mixed-20261019/inputs/auxiliary/23f.png)
+- 审计目录：`D:/Sim-BIM-Agent/cases/lee-garden-six-mixed-20261019/audit/61sol-scale-20261020/`，含配置比较、授权、资源、终态和输入完整性记录。
+- 评价目录：`D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-scale-20261020-001-evaluation/`，评价不反写run。
+
+下一步优先讨论共享宿主/开口的统一切向锚定，给出双方端点差值并聚合彼此独立的预检查，以及让纯直线boundary_path与polygon执行一致的尺度策略。近阈值位移取舍单列，不以一律放宽容差掩盖宿主不一致。本轮没有实施这些修复、扩展新案例/模型或更新桌面；只新增测试、独立评价和交接记录，没有改产品源码或重复运行离线测试套件。收尾磁盘余量C盘46.50GiB、D盘117.47GiB。
