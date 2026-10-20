@@ -2,8 +2,9 @@
 
 This is a pure pre-compiler for compact parametric plans, not a mesh fitter.
 Straight supporting lines share normal-offset anchors; their intersections may
-have fractional coordinates. Curves, mesh_frame and semantic identities are not
-rewritten. The caller must still run the common source/topology save gate.
+have fractional coordinates. Straight curve paths retain their identities while
+shared endpoints follow those supports; true curves and mesh_frame are preserved.
+The caller must still run the common source/topology save gate.
 
 ``regularize_architectural_plan(plan, policy=None)`` consumes ``plan.modelling``
 or an explicit policy and returns ``(adopted_plan, audit)``. Policy v1 accepts
@@ -146,14 +147,28 @@ def regularize_architectural_plan(plan, *, policy=None):
                  model_calls=0, geometry_fitted=False,
                  required_next_check='common source kernel and topology save gate')
 
-    def reject(code, path, message, **details):
+    def record_rejection(code, path, message, **details):
         audit['status'] = 'rejected'
         audit['rejections'].append(dict(code=code, path=path, message=message, **details))
+
+    def reject(code, path, message, **details):
+        record_rejection(code, path, message, **details)
         raise ArchitecturalRegularizationError(message, audit)
+
+    def finish_stage(stage, blocked):
+        if audit['rejections']:
+            audit['not_assessed'].extend(dict(path=path, blocked_by=stage,
+                reason='dependent checks require a valid adopted previous stage') for path in blocked)
+            raise ArchitecturalRegularizationError(
+                f"{stage}: {len(audit['rejections'])} independent problem(s); inspect rejections before retrying", audit)
 
     try:
         original = copy.deepcopy(plan)
         audit['input_sha256'] = _hash(original)
+        from src.agent.geometry.parametric_primitives import (
+            normalize_parametric_primitives, parametric_primitive_frame_context)
+        primitive_frames = parametric_primitive_frame_context(original)
+        original = normalize_parametric_primitives(original)
         embedded = original.pop('modelling', None)
         if policy is not None and embedded is not None:
             if not isinstance(embedded, dict) or any(k in policy and policy[k] != v for k, v in embedded.items()):
@@ -164,6 +179,26 @@ def regularize_architectural_plan(plan, *, policy=None):
             audit.update(status='not_requested', adopted_sha256=_hash(original))
             return original, audit
         _fields(policy, {'schema_version', 'grid_m', 'simplification_tolerance_m', 'frames', 'vertical', 'space_intents'})
+        explicit_names = {name for frame in policy.get('frames', []) for name in frame.get('templates', [])}
+        derived_frames = []
+        for frame in primitive_frames:
+            frame['templates'] = [name for name in frame['templates'] if name not in explicit_names]
+            if frame['templates']:
+                derived_frames.append(frame)
+        if derived_frames:
+            policy['frames'] = [*policy.get('frames', []), *derived_frames]
+            audit['primitive_frames'] = copy.deepcopy(derived_frames)
+        assigned_names = explicit_names | {name for frame in derived_frames for name in frame['templates']}
+        for name, template in plan['templates'].items():
+            declarations = [space['primitive'] for space in template['spaces'] if 'primitive' in space]
+            if isinstance(template['footprint'], dict) and 'primitive' in template['footprint']:
+                declarations.append(template['footprint']['primitive'])
+            declarations.extend(row['local_baseline'] for key in ('doors','opening_rows')
+                                for row in template.get(key,[]) if 'local_baseline' in row)
+            if declarations and name not in assigned_names:
+                audit['diagnostics'].append(dict(type='mixed_primitive_frames', path=f'templates.{name}',
+                    primitive_frames=sorted({row['frame'] for row in declarations}),
+                    adopted_frame='identity', action='declare modelling.frames if another ruler is intended'))
         if policy.get('schema_version', '1') != '1':
             raise ValueError('modelling schema_version must be 1')
         grid = _number(policy.get('grid_m', .1))
@@ -178,6 +213,8 @@ def regularize_architectural_plan(plan, *, policy=None):
         displacement_limit = min(grid, simplification)
         audit['max_outline_displacement_m'] = displacement_limit
         audit['observed_max_vertex_displacement_m'] = 0.0
+        from src.agent.geometry.architectural_line_paths import expand_straight_paths, restore_straight_paths
+        original, line_bindings = expand_straight_paths(original)
         adopted = copy.deepcopy(original)
         frames = _frames(policy, adopted['templates'])
         audit['frames'] = {name: {k: f[k] for k in ('id', 'origin', 'yaw_degrees')}
@@ -192,7 +229,7 @@ def regularize_architectural_plan(plan, *, policy=None):
 
         # Collect all supporting lines before moving anything. Shared directions
         # and offsets, including partial wall segments, use one anchor family.
-        families, records, old_polygons = {}, [], {}
+        families, records, old_polygons, host_supports = {}, [], {}, {}
         for name, template in adopted['templates'].items():
             if _curved(template):
                 audit['not_assessed'].append(dict(path=f'templates.{name}',
@@ -213,33 +250,46 @@ def regularize_architectural_plan(plan, *, policy=None):
                         method='minimum-area oriented bounding rectangle; not a room-neck-width proof',
                         role=space.get('role'), intent=intent, action='none'))
                     if intent == 'component' or (intent not in ('shaft', 'cabinet') and geometry_only and blade):
-                        reject('narrow_component_as_space', path,
+                        record_rejection('narrow_component_as_space', path,
                                'narrow geometry-only component needs a component representation or explicit design decision; no automatic widening/deletion', width_m=width)
             frame = frames[name]
             for path, ring in ring_records:
                 if len(ring) < 3 or not Polygon(ring).is_valid or Polygon(ring).area <= EPS:
-                    reject('invalid_ring', f'templates.{name}.{path}', 'input ring must be a valid positive-area polygon')
+                    record_rejection('invalid_ring', f'templates.{name}.{path}', 'input ring must be a valid positive-area polygon')
+                    continue
                 points = [_local(p, frame) for p in ring]
                 edges = []
                 for a, b in zip(points, points[1:] + points[:1]):
                     length = math.dist(a, b)
                     if length <= EPS:
-                        reject('degenerate_edge', f'templates.{name}.{path}', 'zero-length polygon edge')
+                        record_rejection('degenerate_edge', f'templates.{name}.{path}', 'zero-length polygon edge')
+                        break
                     n = [(b[1]-a[1])/length, -(b[0]-a[0])/length]
                     if n[0] < -EPS or (abs(n[0]) <= EPS and n[1] < 0):
                         n = [-n[0], -n[1]]
                     bucket = families.setdefault(frame['id'], [])
                     family = next((g for g in bucket if math.dist(g['normal'], n) <= 1e-10), None)
                     if family is None:
-                        family = dict(normal=n, offsets=[])
+                        family = dict(normal=n, offsets=[], endpoints=[])
                         bucket.append(family)
                     d = sum(v*w for v, w in zip(family['normal'], a))
                     family['offsets'].append(d)
+                    family['endpoints'].append((d, a, b))
                     edges.append((family, d))
+                if len(edges) != len(points):
+                    continue
                 records.append((name, path, ring, points, edges))
+                if path.startswith('spaces['):
+                    host_supports[(name, path[len('spaces['):-len('].polygon')])] = edges
+        finish_stage('input_rings', ['ring_adoption', 'apertures', 'vertical', 'contacts'])
         for fid, groups in families.items():
             for group in groups:
-                mapping, targets = {}, {}
+                mapping, targets, tangent_shifts = {}, {}, {}
+                n = group['normal']
+                tangent = [-n[1], n[0]]
+                if tangent[0] < -EPS or (abs(tangent[0]) <= EPS and tangent[1] < 0):
+                    tangent = [-tangent[0], -tangent[1]]
+                group['tangent'] = tangent
                 for cluster in _cluster(group['offsets']):
                     anchor = cluster[0]
                     target = _snap(anchor, grid)
@@ -249,11 +299,20 @@ def regularize_architectural_plan(plan, *, policy=None):
                             action='retain identities; reject collapsed rings or changed volume contacts'))
                     targets[target] = anchor
                     mapping.update({value: target for value in cluster})
+                    cluster_values = set(cluster)
+                    along = [sum(v*w for v,w in zip(tangent, point))
+                             for d,a,b in group['endpoints'] if d in cluster_values for point in (a,b)]
+                    tangent_anchor = min(along)
+                    tangent_shift = _snap(tangent_anchor, grid) - tangent_anchor
+                    tangent_shifts.update({value: tangent_shift for value in cluster})
                     if any(abs(value-target) > 1e-10 for value in cluster):
                         audit['changes'].append(dict(type='supporting_line_anchor', frame_id=fid,
                             normal=group['normal'], observed_offsets_m=sorted(set(cluster)),
-                            representative_offset_m=anchor, adopted_offset_m=target))
+                            representative_offset_m=anchor, adopted_offset_m=target,
+                            tangent=tangent, tangent_anchor_m=tangent_anchor,
+                            tangent_shift_m=tangent_shift))
                 group['mapping'] = mapping
+                group['tangent_shifts'] = tangent_shifts
         for name, path, ring, points, edges in records:
             rebuilt = []
             for i, point in enumerate(points):
@@ -264,57 +323,91 @@ def regularize_architectural_plan(plan, *, policy=None):
                 determinant = a[0]*b[1]-a[1]*b[0]
                 if abs(determinant) <= 1e-10:
                     if abs(x-y) > EPS:
-                        reject('parallel_corner', f'templates.{name}.{path}', 'parallel corner supports disagree')
-                    delta = y - sum(v*w for v, w in zip(b, point))
-                    p = [point[0]+b[0]*delta, point[1]+b[1]*delta]
+                        record_rejection('parallel_corner', f'templates.{name}.{path}', 'parallel corner supports disagree')
+                        break
+                    t = current['tangent']
+                    along = sum(v*w for v,w in zip(t, point)) + current['tangent_shifts'][dc]
+                    p = [b[j]*y + t[j]*along for j in (0,1)]
                 else:
                     p = [(x*b[1]-a[1]*y)/determinant, (a[0]*y-x*b[0])/determinant]
                 rebuilt.append(_world(p, frames[name]))
+            if len(rebuilt) != len(points):
+                continue
             polygon = Polygon(rebuilt)
-            movement = max(math.dist(_world(p, frames[name]), q) for p, q in zip(points, rebuilt))
+            movements = [math.dist(_world(p, frames[name]), q) for p, q in zip(points, rebuilt)]
+            movement = max(movements)
+            audit['observed_max_vertex_displacement_m'] = max(audit['observed_max_vertex_displacement_m'], movement)
             if movement > displacement_limit + EPS:
-                reject('outline_displacement_exceeded', f'templates.{name}.{path}',
+                index = movements.index(movement)
+                record_rejection('outline_displacement_exceeded', f'templates.{name}.{path}',
                        'support-line intersections amplify movement beyond the architectural displacement budget; preserve input and declare intended dimensions',
                        max_vertex_displacement_m=movement, limit_m=displacement_limit,
-                       outline_hausdorff_m=Polygon(ring).hausdorff_distance(polygon))
-            audit['observed_max_vertex_displacement_m'] = max(audit['observed_max_vertex_displacement_m'], movement)
+                       outline_hausdorff_m=Polygon(ring).hausdorff_distance(polygon),
+                       worst_vertex=dict(index=index, before=copy.deepcopy(ring[index]), after=rebuilt[index],
+                           displacement_m=movement, supports=[dict(normal=g['normal'], observed_offset_m=d,
+                           adopted_offset_m=g['mapping'][d]) for g,d in (edges[index-1], edges[index])]))
+                continue
             if not polygon.is_valid or polygon.area <= EPS or any(math.dist(a,b)<=EPS for a,b in zip(rebuilt,rebuilt[1:]+rebuilt[:1])):
-                reject('unsafe_polygon_change', f'templates.{name}.{path}', 'anchor adoption collapses or invalidates a polygon')
+                record_rejection('unsafe_polygon_change', f'templates.{name}.{path}', 'anchor adoption collapses or invalidates a polygon')
+                continue
             ring[:] = rebuilt
+        finish_stage('ring_adoption', ['apertures', 'vertical', 'contacts'])
 
         new_polygons = {(name, s['id']): s['polygon'] for name, t in adopted['templates'].items()
                         if not _curved(t) for s in t['spaces']}
 
-        def move_pair(name, sid, p1, p2, path):
+        def move_pair(name, sid, p1, p2, path, spans=None):
             if (name, sid) not in old_polygons:
                 return copy.deepcopy([p1, p2])  # preserved curve template
             before, after = old_polygons[(name, sid)], new_polygons[(name, sid)]
-            matches = []
-            for i, (a,b) in enumerate(zip(before, before[1:]+before[:1])):
-                line = LineString([a,b])
-                if all(line.distance(Point(p)) <= SEAM_M for p in (p1,p2)):
-                    matches.append(i)
-            if len(matches) != 1:
-                reject('ambiguous_aperture_host', path, 'aperture must have one complete original straight host')
-            i = matches[0]
-            a,b = before[i], before[(i+1)%len(before)]
-            aa,bb = after[i], after[(i+1)%len(after)]
-            length = math.dist(a,b)
+            length = math.dist(p1,p2)
+            if length <= EPS:
+                reject('collapsed_aperture', path, 'aperture baseline must have positive length')
+            physical_spans = [[0.,length]] if spans is None else spans
+            if not physical_spans or any(len(span) != 2 or not 0 <= _number(span[0]) < _number(span[1]) <= length+EPS
+                                         for span in physical_spans):
+                reject('invalid_aperture_spans', path, 'physical spans must lie inside the directed baseline')
+            def span_pair(pair, span):
+                return [[a+(b-a)*distance/length for a,b in zip(*pair)] for distance in span]
+            matched = []
+            for span in physical_spans:
+                physical = span_pair([p1,p2], span)
+                matches = [i for i,(a,b) in enumerate(zip(before,before[1:]+before[:1]))
+                           if all(LineString([a,b]).distance(Point(p)) <= SEAM_M for p in physical)]
+                if len(matches) != 1:
+                    reject('ambiguous_aperture_host', path, 'aperture must have one complete original straight host',
+                           host=dict(template=name, space=sid), endpoints=physical, matching_edges=matches)
+                matched.append((span,matches[0]))
+            i = matched[0][1]
+            support, offset = host_supports[(name,sid)][i]
+            n, t = support['normal'], support['tangent']
+            normal = support['mapping'][offset]
+            tangent_shift = support['tangent_shifts'][offset]
             result = []
             for p in (p1,p2):
-                t = ((p[0]-a[0])*(b[0]-a[0])+(p[1]-a[1])*(b[1]-a[1]))/(length*length)
-                # Relative position along the *same host*, never nearest-wall reassignment.
-                result.append([round(u+(v-u)*t,12) for u,v in zip(aa,bb)])
+                local = _local(p, frames[name])
+                along = sum(v*w for v,w in zip(t,local)) + tangent_shift
+                result.append(_world([n[j]*normal + t[j]*along for j in (0,1)], frames[name]))
+            for span,i in matched:
+                aa,bb = after[i], after[(i+1)%len(after)]
+                physical = span_pair(result,span)
+                distances = [LineString([aa,bb]).distance(Point(p)) for p in physical]
+                if max(distances) > SEAM_M:
+                    reject('adopted_aperture_host_overrun', path,
+                        'adopted aperture must remain fully inside every declared host; revise the baseline or intended host dimensions',
+                        host=dict(template=name, space=sid, edge_index=i), original_endpoints=span_pair([p1,p2],span),
+                        adopted_endpoints=physical, adopted_host=[aa,bb], endpoint_host_distances_m=distances)
             if math.dist(*result) <= EPS:
                 reject('collapsed_aperture', path, 'aperture collapsed with its host')
             return result
 
-        def template_pair(name, row, path):
-            result = move_pair(name, row['space'], row['p1'], row['p2'], path)
+        def template_pair(name, row, path, spans=None):
+            result = move_pair(name, row['space'], row['p1'], row['p2'], path, spans)
             if row.get('other_space'):
-                other = move_pair(name, row['other_space'], row['p1'], row['p2'], path)
+                other = move_pair(name, row['other_space'], row['p1'], row['p2'], path, spans)
                 if any(math.dist(a,b)>EPS for a,b in zip(result,other)):
-                    reject('shared_host_conflict', path, 'the two declared hosts do not adopt the same aperture')
+                    reject('shared_host_conflict', path, 'the two declared hosts do not adopt the same aperture',
+                           hosts=[row['space'],row['other_space']], adopted_endpoints=[result,other])
             return result
 
         for name, template in adopted['templates'].items():
@@ -323,11 +416,10 @@ def regularize_architectural_plan(plan, *, policy=None):
             for collection in ('doors', 'opening_rows'):
                 for row in template.get(collection, []):
                     path = f"templates.{name}.{collection}[{row['id']}]"
-                    old_length = math.dist(row['p1'], row['p2'])
-                    pair = template_pair(name, row, path)
-                    if collection == 'opening_rows':
-                        ratio = math.dist(*pair)/old_length
-                        row['spans'] = [[round(v*ratio,12) for v in span] for span in row['spans']]
+                    try:
+                        pair = template_pair(name, row, path, row['spans'] if collection == 'opening_rows' else None)
+                    except ArchitecturalRegularizationError:
+                        continue
                     row['p1'], row['p2'] = pair
                     audit['changes'].append(dict(type='aperture_host_link', path=path, endpoints=pair))
             for row in template.get('window_rows', []):
@@ -351,6 +443,7 @@ def regularize_architectural_plan(plan, *, policy=None):
                     reject('window_row_split', f'templates.{name}.window_rows', 'window row hosts no longer share one plane')
                 row['plane'], row['spans'] = planes[0], new_spans
 
+        finish_stage('template_apertures', ['global_apertures', 'vertical', 'contacts'])
         from src.agent.geometry.parametric_proposal import expand_parametric_instances
         old_instances = expand_parametric_instances(original)
         by_id = {r['id']: r for r in old_instances}
@@ -363,7 +456,8 @@ def regularize_architectural_plan(plan, *, policy=None):
                     reject('unknown_connection_host', path, 'unknown global connection instance')
                 candidates.append(move_pair(by_id[fid]['template'], sid, row['p1'], row['p2'], path))
             if not candidates or any(math.dist(a,b)>EPS for pair in candidates[1:] for a,b in zip(candidates[0],pair)):
-                reject('cross_template_host_conflict', path, 'shared cross-template host anchors disagree')
+                reject('cross_template_host_conflict', path, 'shared cross-template host anchors disagree',
+                       hosts=hosts, adopted_endpoints=candidates)
             row['p1'], row['p2'] = candidates[0]
 
         for row in adopted.get('connections', []):
@@ -381,8 +475,9 @@ def regularize_architectural_plan(plan, *, policy=None):
 
         _vertical(original, adopted, policy.get('vertical', {}), grid, simplification, audit, reject, by_id)
         _protect_volume_contacts(original, adopted, audit, reject)
-        if adopted.get('mesh_frame') != original.get('mesh_frame') or adopted.get('boundary_curves') != original.get('boundary_curves'):
-            reject('immutable_frame_or_curve_changed', 'plan', 'source/mesh transform and curve declarations must be preserved')
+        restore_straight_paths(original, adopted, line_bindings, audit, reject)
+        if adopted.get('mesh_frame') != original.get('mesh_frame'):
+            reject('immutable_frame_changed', 'plan', 'source/mesh transform must be preserved')
         audit.update(status='adopted', adopted_sha256=_hash(adopted))
         return adopted, audit
     except ArchitecturalRegularizationError:
@@ -698,7 +793,11 @@ def regularize_architectural_proposal(proposal, *, policy=None):
         audit['diagnostics'].extend(footprint_bases)
         result = copy.deepcopy(original)
         result.pop('modelling', None)
-        points = []
+        if 'boundary_curves' in adopted:
+            result['geometry']['boundary_curves'] = copy.deepcopy(adopted['boundary_curves'])
+            if adopted['boundary_curves'] != geometry.get('boundary_curves'):
+                result['geometry'].pop('curve_discretization', None)
+        points, curve_samples = [], None
         for index, floor in enumerate(result['geometry']['floors']):
             fid = f'F{index}'
             template, instance = adopted['templates'][fid], adopted['instances'][index]
@@ -711,15 +810,22 @@ def regularize_architectural_proposal(proposal, *, policy=None):
                        'generic curve footprints need their saved derived vertices; use a parametric plan')
             points.extend(vertices)
             for cell, space in zip(floor['cells'], template['spaces']):
-                if 'polygon' in space:
-                    cell['polygon'] = copy.deepcopy(space['polygon'])
+                polygon = space.get('polygon')
+                if polygon is None and space.get('boundary_path'):
+                    from src.agent.geometry.source_curves import discretize_curves, path_vertices
+                    if curve_samples is None:
+                        _, curve_samples = discretize_curves(adopted['boundary_curves'])
+                    polygon, _ = path_vertices(space['boundary_path'], curve_samples)
+                if polygon is not None:
+                    cell['polygon'] = copy.deepcopy(polygon)
                     cell['x'] = [min(p[0] for p in cell['polygon']), max(p[0] for p in cell['polygon'])]
                     cell['y'] = [min(p[1] for p in cell['polygon']), max(p[1] for p in cell['polygon'])]
         result['geometry']['footprint_x'] = [min(p[0] for p in points), max(p[0] for p in points)]
         result['geometry']['footprint_y'] = [min(p[1] for p in points), max(p[1] for p in points)]
         for row, index in zip(result['geometry'].get('openings', []), openings):
-            for key in ('p1', 'p2', 'z'):
-                row[key] = copy.deepcopy(adopted['connections'][index][key])
+            for key in ('p1', 'p2', 'z', 'curve_segment'):
+                if key in adopted['connections'][index]:
+                    row[key] = copy.deepcopy(adopted['connections'][index][key])
         for row, (index, axis) in zip(result['geometry'].get('windows', []), windows):
             connection = adopted['connections'][index]
             if abs(connection['p1'][axis]-connection['p2'][axis]) > EPS:

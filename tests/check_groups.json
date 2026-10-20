@@ -2,6 +2,26 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_parametric_primitives.py": {
+      "group": "targeted",
+      "reason": "Explicit local rectangle unions and aperture relations preserve source identities and reject disconnected or holed spaces"
+    },
+    "tests/test_architectural_host_adoption.py": {
+      "group": "targeted",
+      "reason": "Shared wall anchors preserve aperture widths and metre spans, reject host overruns and aggregate independent ring findings"
+    },
+    "tests/test_architectural_review_regressions.py": {
+      "group": "targeted",
+      "reason": "Independent review regression: repeated vertices across rings aggregate before dependent adoption starts"
+    },
+    "tests/test_architectural_line_paths.py": {
+      "group": "targeted",
+      "reason": "Line-only paths share polygon adoption while preserving curve identities, shared endpoints and protected true curves"
+    },
+    "tests/test_architectural_representation_integration.py": {
+      "group": "targeted",
+      "reason": "Common source and Toolkit saves bind primitive frames and line geometry through subsequent generic revisions"
+    },
     "tests/test_architectural_regularization.py": {
       "group": "targeted",
       "reason": "Local supporting-line and shared-height architectural adoption with preserved topology and semantic narrow-space handling"

@@ -1090,6 +1090,15 @@ inference into an observation.
 
 ARCHITECTURAL INTERPRETATION. First understand the relationship among the main
 volume, wings, annexes, storeys, exceptional levels, roof forms and missing regions.
+Work from coarse to fine: establish the main local axes, basic shapes, adjacency,
+containment and circulation first. Measure dimensions or local exceptions when
+they can change that interpretation. A lift shaft that appears rectangular should
+start as a rectangle in its local axes; equal sides need evidence before choosing
+a square. Do not infer four independent skewed corners from small pixel or mesh
+variations. Use unions of simple rectangles for a complex continuous space without
+creating internal walls. Preserve a genuine oblique edge, arc or major recess when
+the evidence supports it. Inspect relevant base/roof exceptions early enough to
+avoid rebuilding a settled typical-storey layout later.
 Exterior evidence constrains a plausible internal organization but rarely determines
 one. Select the requested simplification directly: preserve actual physical rooms
 and circulation that the chosen interpretation needs, and keep a continuous open
@@ -1154,6 +1163,11 @@ and optional fine detail do not require another full modelling cycle.
 
 ASSEMBLY AND REVISION. build_parametric_bim can expand explicit storey/space
 templates and aperture spans; read get_bim_reference('parametric') for its contract.
+Declare related dimensions and both aperture hosts together, sharing one local
+frame and baseline where appropriate. Resolve independent findings from one
+feedback report in one local patch; checks marked blocked_by require repairing
+their preceding geometry stage first. Reuse already adequate observations and
+inspect only the unresolved shape, relation or host needed for that revision.
 Repetition is a declared hypothesis, not evidence, and exceptions stay explicit.
 A continuous core can be a separate tall instance referenced by the served storeys
 through spanning_space_ids. build_bim remains available for geometry that does not fit the compact
@@ -1212,6 +1226,20 @@ polygons are then allowed. Supply top-level boundary_curves and use boundary_pat
 instead of a space polygon; footprint may be an object with boundary_path or
 vertices and optional holes (see source_curves). Repeated floors reuse the same
 declared XY curves and tolerance. One space with holes remains unsupported.
+For explicit simple geometry use schema_version="source_polygon_v1" and
+primitive_frames={"core":{"origin":[10,20],"yaw_degrees":17}}. A space can use
+primitive={"frame":"core","rects":[[0,0,2.4,2.4]]} instead of rect/polygon/boundary_path.
+A footprint can use {"primitive":{"frame":"core","rects":[[0,0,6,3],[0,3,3,5]]}}.
+rects are [u_min,v_min,u_max,v_max] in the declared local frame. Their exact union
+must be one connected ring without holes; point contacts and separated pieces
+are rejected. The code transforms that union into source XY, retaining one space
+identity and no internal partition. It does not infer dimensions or fit geometry.
+Doors, opening_rows, connections and core_connections may replace p1/p2 with
+local_baseline={"frame":"core","axis":"u","fixed":0,"range":[0.5,1.4]}.
+axis is u or v, fixed is the other coordinate, range gives the directed endpoints.
+Existing space/other_space or global host IDs still declare the actual relation;
+there is no nearest-host inference. Opening spans remain physical metres along
+the baseline. All these declarations lower to the same common source schema.
 Code derives bounds but never splits spaces. Local spaces plus explicitly declared
 spanning members must cover the instance footprint exactly, without overlap. An
 instance may set spanning_space_ids:["CORE:core"] using final global expanded IDs.
@@ -1284,13 +1312,21 @@ Optional plan.modelling adds explicit construction context, for example:
 "space_intents":{"typical:shaft":"shaft"}}.
 Template coordinates are still source XY: a frame describes the local rulers
 used for adoption, not another transform to apply to the input. Omitted templates
-use the source identity frame. mesh_frame stays the independent source-to-input
+with a single primitive frame use that local ruler automatically; explicit
+modelling.frames takes priority. Mixed-frame templates need an explicit adoption
+frame when the source identity frame is unsuitable. mesh_frame stays the independent source-to-input
 relation. Shared parallel supporting lines use shared offsets; oblique intersections
-retain derived decimals. Existing opening endpoints follow their same host.
+retain derived decimals. Shared apertures use one normal/tangent anchor across all
+declared hosts, preserving physical width and opening-row spans. An adopted
+aperture that no longer fits a declared host rejects with its endpoints and host;
+it is never shortened, rescaled or reassigned to clear the check.
 An acute corner whose derived movement exceeds one grid step rejects instead of
 silently magnifying a small line adjustment into a large envelope change.
-Curved-template XY and narrow-width checks are explicitly not_assessed, preserving
-declared curves; normal source checks still apply. Thickness attributes are separate.
+Paths made only of lines receive the same XY/narrow-width checks as polygons;
+shared curve IDs and directions survive adoption. Templates containing true arcs
+remain explicitly not_assessed for these XY checks, preserving their declarations;
+normal source checks still apply. Independent ring failures are returned together
+with the worst vertex and supporting lines. Thickness attributes are separate.
 For a justified common roof level, vertical.merge_groups accepts
 [{"id":"roof","semantic":"one simplified plant roof level","targets":[
 {"kind":"instance","id":"R1","edge":"top"},

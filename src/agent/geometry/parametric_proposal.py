@@ -252,6 +252,8 @@ def _source_template(template, curves):
 
 
 def expand_parametric_proposal(plan: dict) -> dict:
+    from src.agent.geometry.parametric_primitives import normalize_parametric_primitives
+    plan = normalize_parametric_primitives(plan)
     fields(plan, ('templates', 'instances', 'assumptions', 'unresolved'),
            ('connections', 'schema_version', 'mesh_frame', 'boundary_curves', 'repeats', 'core_connections'))
     json.dumps(plan, allow_nan=False)

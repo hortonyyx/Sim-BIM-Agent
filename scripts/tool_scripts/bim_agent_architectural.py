@@ -61,8 +61,11 @@ def prepare_parametric_plan(toolkit, plan, *, draft_path):
             error.audit_reference = _save(toolkit,
                 draft_path.with_suffix(".regularization.json"), error.audit)
         raise
+    modelling = copy.deepcopy(plan.get('modelling', {}))
+    if audit.get('policy', {}).get('frames'):
+        modelling['frames'] = copy.deepcopy(audit['policy']['frames'])
     reference = {"schema_version": 1, "kind": "parametric", "policy": copy.deepcopy(policy),
-        "modelling": copy.deepcopy(plan.get('modelling', {})),
+        "modelling": modelling,
         "original_sha256": _hash(plan), "adopted_sha256": _hash(adopted),
         "proposal_sha256": _hash(expand_parametric_proposal(adopted)),
         "adopted": _save(toolkit, draft_path.with_suffix(".adopted.json"), adopted),
