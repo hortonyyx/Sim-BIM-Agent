@@ -360,6 +360,26 @@ class WallOpening(BaseModel):
         return self
 
 
+class VerticalSeparation(BaseModel):
+    """Explicit physical separation between selected adjacent source spaces."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
+    space_ids: list[str] = Field(min_length=2)
+    reason: str = Field(min_length=1)
+    source_refs: list[str] = Field(min_length=1)
+    assumptions: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _separation_contract(self):
+        if (not self.id.strip() or not self.reason.strip()
+                or any(not value.strip() for value in self.space_ids + self.source_refs)):
+            raise ValueError("vertical separation IDs, reason and source_refs must be nonblank")
+        if len(set(self.space_ids)) != len(self.space_ids):
+            raise ValueError("vertical separation space_ids must be unique")
+        return self
+
+
 class CorrectedGeometry(BaseModel):
     """Corrected, world-frame, centerline geometry primitives — the correction-stage output."""
 
@@ -371,6 +391,7 @@ class CorrectedGeometry(BaseModel):
     windows: list[Window] = Field(default_factory=list)
     # Excluding an empty list preserves the established v1/v2/v3 byte contract.
     openings: list[WallOpening] = Field(default_factory=list, exclude_if=lambda value: not value)
+    vertical_separations: list[VerticalSeparation] = Field(default_factory=list, exclude_if=lambda value: not value)
     # Audit (A0 schema, kept as flexible dicts so a stage need not over-specify).
     corrections: list[dict] = Field(default_factory=list)
     conflicts: list[dict] = Field(default_factory=list)

@@ -31,9 +31,22 @@ def test_mesh_local_closeout_through_mcp_preserves_accepted_shape(tmp_path, monk
                 return json.loads(next(block.text for block in result.content if block.type == "text"))
 
             first = await call("build_parametric_bim", {"plan_json": json.dumps(plan)})
-            assert first["source_geometry_ready"], first
-            assert first["closeout"]["machine_check"]["status"] == "clear"
+            assert not first["source_geometry_ready"], first
+            assert first["closeout"]["machine_check"]["status"] == "blocked"
+            findings = first["source_validation"]["findings"]
+            assert any(row["code"] == "source.vertical_continuity_decision_required"
+                       for row in findings)
             assert first["closeout"]["retained_notes"]["count"] == 1
+            rejected_view = await call("view_mesh", {})
+            rejected_overlay = await call("overlay_mesh_candidate", {
+                "candidate": first["candidate"], "observation": rejected_view["observation"]})
+            rejected = await session.call_tool("finish_bim", {
+                "candidate": first["candidate"], "reviews_json": json.dumps({
+                    "mesh_review": {"coverage": "whole_building",
+                                    "summary": "An unresolved vertical stack cannot be delivered.",
+                                    "overlay_ids": [rejected_overlay["overlay_id"]]}})})
+            assert rejected.isError
+            assert not (run / "delivery_selection.json").exists()
             before = json.loads((run / first["candidate"] / "source_model.json").read_bytes())
             inspection = await call("inspect_parametric_plan", {"candidate": first["candidate"]})
             patched = await call("patch_parametric_bim", {
@@ -72,6 +85,44 @@ def test_mesh_local_closeout_through_mcp_preserves_accepted_shape(tmp_path, monk
             assert finished["closeout"]["retained_notes"]["count"] == 1
             assert finished["closeout"]["mesh_review"]["fidelity"] == "not_evaluated"
     asyncio.run(scenario())
+
+
+def test_mesh_first_build_applies_known_continuity_without_extra_review_step(tmp_path, monkeypatch):
+    from scripts.tool_scripts.bim_agent_parametric import build_parametric
+
+    _, run, _ = _prepare(tmp_path, monkeypatch)
+    plan = storeys()
+    plan["continuous_spaces"] = [continuity()]
+    result = build_parametric(Toolkit(run), json.dumps(plan))
+    assert result["source_geometry_ready"], result
+    assert result["closeout"]["machine_check"]["status"] == "clear"
+    source = json.loads((run / result["candidate"] / "source_model.json").read_bytes())
+    assert source["vertical_continuity_policy"] == "explicit_stack_v1"
+    assert source["vertical_continuity_review"]["status"] == "resolved"
+    assert [row["id"] for row in source["spaces"] if row["role"] == "stairwell"] == ["STAIR:stair"]
+    caps = [row for row in source["boundaries"]
+            if row["space_id"] == "STAIR:stair" and row["geometry_type"] != "wall"]
+    assert len(caps) == 2
+
+
+def test_invalid_separation_retains_specific_diagnostics_with_mesh_policy(tmp_path):
+    from src.agent.execution.source_proposal import export_source_proposal
+    from src.agent.geometry.parametric_proposal import expand_parametric_proposal
+
+    proposal = expand_parametric_proposal(storeys())
+    proposal["geometry"]["vertical_separations"] = [{
+        "id": "wrong_member", "space_ids": ["F1:stair", "missing:stair"],
+        "reason": "Fixture invalid member should remain actionable",
+        "source_refs": ["fixture"],
+    }]
+    folder = tmp_path / "invalid"
+    result = export_source_proposal(proposal, folder, vertical_continuity_policy="explicit_stack_v1")
+    assert not result["source_geometry_ready"]
+    assert (folder / "source_model.json").is_file()
+    assert "error" not in result
+    assert any(row["code"] == "source.vertical_separation_invalid"
+               for row in result["source_validation"]["findings"])
+    assert result["vertical_continuity_review"]["invalid_declarations"][0]["code"] == "unknown_members"
 
 
 def _contact_partition_proposal():

@@ -235,6 +235,7 @@ def prepare_bim_inputs(run: Path, *, images_path: Path | None, mesh_path: Path |
         # Run policy is independent of the global-XY drawing grid.  Rotated
         # walls retain derived intersection coordinates in the mesh path.
         manifest['architectural_modelling_policy'] = dict(DEFAULT_ARCHITECTURAL_POLICY)
+        manifest['vertical_continuity_policy'] = 'explicit_stack_v1'
         manifest['mesh_input'] = mesh_input
         manifest['input_contents']['original_mesh'] = {'included': True, 'sha256': mesh_input['sha256']}
         manifest['only_input'] = ('Admitted original GLB and optional original PNGs, explicit building '
@@ -295,7 +296,8 @@ def prepare_bim_inputs(run: Path, *, images_path: Path | None, mesh_path: Path |
             if validate_mesh_frame(proposal['mesh_frame'])['mesh_sha256'] != mesh_input['sha256']:
                 raise ValueError('seed mesh_frame must refer to the admitted original mesh')
         from src.agent.execution.source_proposal import export_source_proposal
-        report = export_source_proposal(proposal, run/"seed", provenance=manifest["seed"])
+        report = export_source_proposal(proposal, run/"seed", provenance=manifest["seed"],
+            vertical_continuity_policy=manifest.get("vertical_continuity_policy"))
         if not (run/"seed"/"source_model.json").exists():
             raise ValueError(f"seed cannot be materialized: {report.get('error')}")
         if "lite_bim_grid_step_m" in manifest:

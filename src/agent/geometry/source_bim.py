@@ -514,6 +514,10 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
     payload["room_type_catalog"] = {"schema_version": CATALOG["schema_version"],
                                     "sha256": hashlib.sha256(CATALOG_PATH.read_bytes()).hexdigest(),
                                     "source": CATALOG["source"]}
+    if geom.vertical_separations:
+        payload["vertical_separations"] = [row.model_dump(mode="json") for row in geom.vertical_separations]
+    from src.agent.geometry.source_vertical_continuity import bind_vertical_continuity_review
+    bind_vertical_continuity_review(payload)
     payload["source_model_sha256"] = _digest(payload)
     if enclosure_declaration is not None:
         from src.agent.geometry.source_enclosure import apply_source_enclosure

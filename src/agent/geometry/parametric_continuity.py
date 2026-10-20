@@ -56,6 +56,7 @@ def declared_continuity_members(plan, instances=None, groups=None):
 
 def apply_continuous_spaces(plan, instances, groups, floors, windows, openings):
     """Update freshly expanded records and return an auditable member mapping."""
+    from src.agent.geometry.source_bim import EPS
     declarations = declared_continuity_members(plan, instances, groups)
     if not declarations:
         return []
@@ -83,10 +84,10 @@ def apply_continuous_spaces(plan, instances, groups, floors, windows, openings):
                 raise ValueError(f"{target_floor}: member footprints differ; no shape adoption is performed")
             if index:
                 previous = members[index - 1][0]
-                # Decimal storey arithmetic is rounded identically to repeat
-                # expansion; this is not a gap-closing architectural tolerance.
-                previous_top = round(previous["z_floor"] + previous["ceiling_height"], 9)
-                if previous_top != round(floor["z_floor"], 9):
+                # Use the source kernel's numerical touching predicate, not an
+                # architectural gap-closing distance. Other spaces stay intact.
+                previous_top = previous["z_floor"] + previous["ceiling_height"]
+                if abs(previous_top - floor["z_floor"]) > EPS:
                     raise ValueError(f"{target_floor}: member heights contain a gap or overlap")
         member_ids = [cell["id"] for _, cell in members]
         mapping.update(dict.fromkeys(member_ids, target_space))
@@ -98,11 +99,12 @@ def apply_continuous_spaces(plan, instances, groups, floors, windows, openings):
             [item for _, cell in members for item in cell.get("assumptions", [])] + assumptions))
         base = members[0][0]["z_floor"]
         last = members[-1][0]
-        height = round(last["z_floor"] + last["ceiling_height"] - base, 9)
+        top = last["z_floor"] + last["ceiling_height"]
+        height = top - base
         additions.append(dict(name=target_floor, z_floor=base, ceiling_height=height,
                               footprint={"vertices": copy.deepcopy(merged["polygon"])}, cells=[merged]))
         audit.append(dict(id=target_floor, space_id=target_space, member_space_ids=member_ids,
-                          z=[base, round(base + height, 9)], source_refs=refs, assumptions=assumptions))
+                          z=[base, top], source_refs=refs, assumptions=assumptions))
 
     # Validate before mutating: an opening between two members cannot silently
     # disappear or become an invalid self-connection after the join.
@@ -128,3 +130,48 @@ def apply_continuous_spaces(plan, instances, groups, floors, windows, openings):
                 opening[key] = mapping[opening[key]]
     floors.extend(additions)
     return audit
+
+
+def expand_separated_spaces(plan, instances, groups, floors, continuity):
+    """Retain only explicitly declared cap interfaces; never infer an exception."""
+    from src.agent.geometry.parametric_proposal import fields, identifier, strings
+    from src.agent.correction.schema import VerticalSeparation
+    declarations = plan.get("separated_spaces", [])
+    if not isinstance(declarations, list) or len(declarations) > 100:
+        raise ValueError("separated_spaces must be a list of at most 100 declarations")
+    if not declarations:
+        return []
+    instances_by_id = {row["id"]: row for row in instances}
+    cells = {cell["id"] for floor in floors for cell in floor["cells"]}
+    merged = {sid: row["space_id"] for row in continuity for sid in row["member_space_ids"]}
+    identities, result = set(), []
+    for declaration in declarations:
+        fields(declaration, ("id", "space", "reason", "source_refs"),
+               ("instance_ids", "repeat_ids", "assumptions"))
+        identity, local = identifier(declaration["id"]), identifier(declaration["space"])
+        if identity in identities:
+            raise ValueError(f"{identity}: duplicate separated_spaces declaration")
+        identities.add(identity)
+        selected = strings(declaration.get("instance_ids", []))
+        repeats = strings(declaration.get("repeat_ids", []))
+        for rid in repeats:
+            if rid not in groups:
+                raise ValueError(f"{identity}: unknown separation repeat {rid}")
+            selected.extend(groups[rid])
+        if len(selected) < 2 or len(set(selected)) != len(selected) or len(set(repeats)) != len(repeats):
+            raise ValueError(f"{identity}: separation members must contain at least two unique instances")
+        if any(fid not in instances_by_id for fid in selected):
+            raise ValueError(f"{identity}: unknown separation instance")
+        raw_members = [f"{fid}:{local}" for fid in selected]
+        members = [merged.get(sid, sid) for sid in raw_members]
+        if len(set(members)) != len(members):
+            raise ValueError(f"{identity}: separation contradicts continuous_spaces within the same volume")
+        if any(sid not in cells for sid in members):
+            raise ValueError(f"{identity}: unknown separation space")
+        record = VerticalSeparation.model_validate({
+            "id": identity, "space_ids": members, "reason": declaration["reason"],
+            "source_refs": strings(declaration["source_refs"], True),
+            "assumptions": strings(declaration.get("assumptions", [])),
+        }).model_dump(mode="json")
+        result.append(record)
+    return result

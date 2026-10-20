@@ -211,6 +211,14 @@ For each identified lift service storey, include a hosted landing door connectin
 the floor's circulation to the continuous shaft. Reuse an evidenced landing layout
 as an explicit inference where details are missing; ground/top doors alone do not
 represent intermediate service. Do not add stops to unserved or equipment levels.
+Account for every identified vertical stack in the first declaration, including
+pipe/air ducts and atria as well as lifts and stairs. Adopt evidenced continuity
+with a spanning volume or continuous_spaces in that same build; a shaft role or
+a note saying "continuous" does not remove intermediate floor/ceiling faces.
+Check all relevant spaces, not only those already listed as spanning members.
+New mesh builds require an explicit decision for detected adjacent identical
+shaft/stair/atrium members. Real separations use evidenced separated_spaces;
+resolve all reported stacks together, without remeasuring unchanged rooms.
 Once the main envelope and spatial organization meet the requested scope, keep
 them as the working baseline. Finish the known functional and legal defects with
 scoped edits; do not reopen whole-building shape measurement just to improve
@@ -221,7 +229,8 @@ the saved handoff review. Retained notes are not automatically accepted and are
 not automatically extra work: decide whether each affects the requested delivery.
 Resolve known independent repairs together using patch_parametric_bim. Use
 core_connections for declared service doors; continuous_spaces can consolidate
-an explicitly identified identical stair stack without redrawing other rooms.
+explicitly identified identical stair, shaft, duct or atrium stacks together
+without redrawing other rooms.
 Read the parametric reference for these operations. Recheck affected relationships
 and current overlays; unchanged regions do not need another discovery pass.
 When requested shape/relations are adequate, required functions and source
@@ -1148,6 +1157,13 @@ served storey includes it through explicit spanning_space_ids membership. Do not
 the core per storey or insert fake intermediate slabs simply to fit a repeated-floor
 template. Conversely, do not invent a continuous void when separate rooms or real
 floors are supported.
+This includes pipe ducts, air ducts and atria, not just lift/stair cores. Record
+the adopted relationship when first declaring the repeated spaces, and apply all
+known continuous stacks in the same build. A semantic role or a free-text
+continuity assumption alone is not a geometric connection. Keep evidenced
+terminations and real horizontal separations explicit; equipment rooms are not
+automatically shafts. When reviewing continuity, enumerate all relevant spaces,
+including ordinary per-storey members, and check their actual horizontal faces.
 
 An identified lift service storey needs a landing door connecting its accessible
 floor space or lobby to the shaft; continuous shaft membership alone supplies no
@@ -1318,8 +1334,8 @@ An exceptional door layout uses a separate disjoint service selection. Equipment
 roof and non-stopping floors are never inferred as stops merely by intersection.
 Unknown service is a question/assumption to resolve, not permission to stop everywhere.
 
-CONTINUITY WITHOUT REDRAWING. For an already declared identical stack, optionally
-add continuous_spaces, for example:
+CONTINUITY WITHOUT REDRAWING. For an identified identical continuous stack, put
+continuous_spaces in the first build, or add it in one local patch, for example:
 [{"id":"STAIR_W","space":"stairW","repeat_ids":["office_run"],
   "instance_ids":["ground","special"],"source_refs":["confirmed continuous stair"],
   "assumptions":["explicit service and continuity interpretation"]}].
@@ -1331,6 +1347,21 @@ are preserved and their hosts rebound. Other rooms and floor footprints stay
 unchanged. The expansion audit records the member mapping. No service stops or
 new apertures are inferred. core_connections can target STAIR_W:stairW if
 additional explicitly required landing doors are missing.
+Use the same declaration for evidenced pipe/air duct or atrium continuity;
+include all independent known stacks together. Do not wait for a separate review
+call to apply a relationship already established by the input and adopted plan.
+For real horizontal separations that must remain, use separated_spaces with the
+same space and instance_ids/repeat_ids selectors, a unique id, nonempty reason
+and source_refs (optional assumptions). For example:
+[{"id":"service_separation","space":"duct","instance_ids":["lower","upper"],
+  "reason":"Observed service spaces terminate at the intervening floor",
+  "source_refs":["source observation supporting this separation"]}].
+This preserves the selected interfaces; it is not a way to waive an unresolved
+continuity question. Continuous and separated declarations cannot contradict the
+same interface. The source check reports all unresolved identical vertical stacks
+together during build; it does not infer meaning from notes or automatically
+merge rooms. Different footprints and unobserved continuations still need an
+evidence-based architectural judgment, not a claim of universal void detection.
 Use one SHA-bound patch to add these declarations rather than retyping the whole
 plan. Different footprints, gaps, conflicting roles, overlapping selections,
 already-spanning members or an opening that would become a self-connection reject;

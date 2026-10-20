@@ -108,8 +108,25 @@ def build_source_viewer_html(display: dict, *, source_geometry_ready: bool,
     return viewer.replace("</body>", banner + "</body>")
 
 
+def _require_vertical_continuity(source: dict, policy: str | None) -> None:
+    """Promote unresolved stack decisions only for the admitted run policy.
+
+    This is a consistency requirement, not a claim that every shaft must be
+    continuous. The declared geometry or evidenced separations resolve it.
+    """
+    if policy is None:
+        return
+    if policy != "explicit_stack_v1":
+        raise ValueError(f"unknown vertical continuity policy: {policy!r}")
+    from src.agent.geometry.source_vertical_continuity import bind_vertical_continuity_review
+    source["vertical_continuity_policy"] = policy
+    bind_vertical_continuity_review(source)
+    source["validation"]["scope"] += "; explicit decisions for identified vertical stacks"
+
+
 def export_source_proposal(proposal: dict, out_dir: Path, *, provenance: dict | None = None,
-                           mesh_path: Path | None = None) -> dict:
+                           mesh_path: Path | None = None,
+                           vertical_continuity_policy: str | None = None) -> dict:
     """Write a direct agent geometry proposal to a new, inspectable source-BIM directory.
 
     ``proposal`` contains legacy v1/v2 corrected geometry plus the agent's
@@ -177,6 +194,7 @@ def export_source_proposal(proposal: dict, out_dir: Path, *, provenance: dict | 
             enclosure_declaration=enclosure,
             wall_readings=proposal.get('wall_readings'),
         )
+        _require_vertical_continuity(source, vertical_continuity_policy)
         stage("source_kernel_seconds")
         if "wall_readings" in proposal:
             from src.agent.geometry.reader_wall_metadata import bind_wall_readings
@@ -225,6 +243,8 @@ def export_source_proposal(proposal: dict, out_dir: Path, *, provenance: dict | 
             "findings": validation["findings"],
         }
         report["source_validation"] = validation
+        if vertical_continuity_policy is not None:
+            report["vertical_continuity_review"] = source["vertical_continuity_review"]
         report["status"] = "severe" if validation["status"] == "severe" else "not_evaluated"
         report["source_geometry_ready"] = validation["status"] in {"pass", "warning"}
         report["counts"] = {

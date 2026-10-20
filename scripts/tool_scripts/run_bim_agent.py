@@ -1422,7 +1422,8 @@ class Toolkit:
             provenance["architectural_regularization"] = architectural_regularization
         stage("admission_seconds")
         report = export_source_proposal(proposal, self.run/candidate, provenance=provenance,
-            mesh_path=self.run/'assets'/'input.glb' if proposal.get('mesh_frame') else None)
+            mesh_path=self.run/'assets'/'input.glb' if proposal.get('mesh_frame') else None,
+            vertical_continuity_policy=self.manifest.get('vertical_continuity_policy'))
         stage("export_seconds")
         if operations is not None:
             dump(self.run/candidate/"operations.json", operations)

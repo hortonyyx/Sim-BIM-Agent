@@ -2,6 +2,10 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_source_vertical_continuity.py": {
+      "group": "targeted",
+      "reason": "All source stacks require an explicit continuity decision, preserving evidenced separations and actual open horizontal boundaries"
+    },
     "tests/test_mesh_closeout_entry.py": {
       "group": "targeted",
       "reason": "Real MCP local continuity patch and mesh finish preserve shape, unknowns and evidence; contact warnings do not bypass validity"

@@ -421,6 +421,8 @@ def apply_source_enclosure(base_source: dict, declaration: dict | None) -> dict:
                                                 row.get("scope", ""), row.get("condition", ""))),
         "open_connections": connections,
     }
+    from src.agent.geometry.source_vertical_continuity import bind_vertical_continuity_review
+    bind_vertical_continuity_review(result)
     result["source_model_sha256"] = _digest({key: value for key, value in result.items()
                                                if key != "source_model_sha256"})
     return result

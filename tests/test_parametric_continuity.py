@@ -209,3 +209,24 @@ def test_adoption_checks_every_continuous_member_even_when_only_one_is_served():
     with pytest.raises(ArchitecturalRegularizationError) as caught:
         regularize_architectural_plan(plan, policy=policy)
     assert any(row["code"] == "cross_template_host_conflict" for row in caught.value.audit["rejections"])
+
+
+@pytest.mark.parametrize("offset", [-1e-8, 1e-8, -2e-7, 2e-7])
+def test_continuity_uses_source_numerical_touching_without_moving_other_spaces(offset):
+    plan = storeys()
+    plan.pop("repeats")
+    plan["instances"] = [{"id": "F1", "template": "typical", "z": 0, "height": 3},
+                         {"id": "F2", "template": "typical", "z": 3 + offset, "height": 3}]
+    before = expand_parametric_proposal(plan)
+    plan["continuous_spaces"] = [{"id": "STAIR", "space": "stair", "instance_ids": ["F1", "F2"],
+                                  "source_refs": ["explicit continuous core"]}]
+    if abs(offset) > 1e-7:
+        with pytest.raises(ValueError, match="gap or overlap"):
+            expand_parametric_proposal(plan)
+    else:
+        after = expand_parametric_proposal(plan)
+        assert after["geometry"]["floors"][-1]["ceiling_height"] == 6 + offset
+        for old, new in zip(before["geometry"]["floors"], after["geometry"]["floors"]):
+            assert old["cells"][1] == new["cells"][0]
+            assert old["z_floor"] == new["z_floor"]
+            assert old["ceiling_height"] == new["ceiling_height"]
