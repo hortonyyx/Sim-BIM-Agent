@@ -251,11 +251,12 @@ def _source_template(template, curves):
     return expanded['floors'][0]
 
 
-def expand_parametric_proposal(plan: dict) -> dict:
+def expand_parametric_proposal(plan: dict, *, expansion_audit: dict | None = None) -> dict:
     from src.agent.geometry.parametric_primitives import normalize_parametric_primitives
     plan = normalize_parametric_primitives(plan)
     fields(plan, ('templates', 'instances', 'assumptions', 'unresolved'),
-           ('connections', 'schema_version', 'mesh_frame', 'boundary_curves', 'repeats', 'core_connections'))
+           ('connections', 'schema_version', 'mesh_frame', 'boundary_curves', 'repeats',
+            'core_connections', 'continuous_spaces'))
     json.dumps(plan, allow_nan=False)
     schema_version = plan.get('schema_version', '2')
     if schema_version not in ('2', 'source_polygon_v1'):
@@ -414,6 +415,8 @@ def expand_parametric_proposal(plan: dict) -> dict:
     if not isinstance(connections, list) or any(not isinstance(row, dict) for row in connections):
         raise ValueError('connections must be a list of opening records')
     openings.extend(copy.deepcopy(connections))
+    from src.agent.geometry.parametric_continuity import apply_continuous_spaces
+    continuity = apply_continuous_spaces(plan, instances, groups, floors, windows, openings)
     openings.extend(_core_openings(plan, instances, groups, floors, openings))
     if len(windows)+len(openings)>5000:
         raise ValueError('aperture expansion exceeds experiment limit')
@@ -430,4 +433,6 @@ def expand_parametric_proposal(plan: dict) -> dict:
         proposal['mesh_frame'] = validate_mesh_frame(copy.deepcopy(plan['mesh_frame']))
     if 'boundary_curves' in plan:
         proposal['geometry']['boundary_curves'] = copy.deepcopy(plan['boundary_curves'])
+    if expansion_audit is not None and continuity:
+        expansion_audit['continuous_spaces'] = continuity
     return proposal

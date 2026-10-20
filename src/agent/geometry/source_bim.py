@@ -10,6 +10,7 @@ import math
 from itertools import combinations
 from urllib.parse import quote
 
+from shapely.affinity import translate
 from shapely.geometry import Polygon, box, LineString, Point
 from shapely.ops import unary_union
 
@@ -23,6 +24,32 @@ from src.agent.geometry.source_model import _digest, source_primitives
 
 # Numerical comparison only, not a drawing snap distance or minimum EP edge.
 EPS = 1e-7
+
+
+def _space_overlap_area(a, b):
+    """Return original overlap area only for a numerically resolvable intrusion.
+
+    Area alone amplifies a sub-EPS boundary offset along a long shared edge.
+    Test whether the intersection retains interior after an EPS/2 inset.
+    A long strip must therefore be wider than EPS; for corners and wedges this
+    is an interior-radius test, not a maximum penetration-depth test. This
+    temporary erosion is only a predicate: source polygons, contacts and
+    reported volumes are unchanged.
+    Full containment (including duplicate footprints) is always a conflict,
+    even when a valid contained space is narrower than the length tolerance.
+    """
+    overlap = a.intersection(b)
+    area = overlap.area
+    if area <= EPS ** 2:
+        return 0.0
+    if a.covers(b) or b.covers(a):
+        return area
+    # GEOS can collapse even metre-wide polygons when applying a sub-micron
+    # inset at large world coordinates. Only the temporary predicate geometry
+    # is moved near the origin; retain the original intersection area above.
+    x_min, y_min, _, _ = overlap.bounds
+    local_overlap = translate(overlap, xoff=-x_min, yoff=-y_min)
+    return area if local_overlap.buffer(-EPS / 2).area > 0.0 else 0.0
 
 
 def _parts(shape):
@@ -239,8 +266,8 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
     for a, b in combinations(spaces, 2):
         height = min(a.z_floor+a.height, b.z_floor+b.height) - max(a.z_floor, b.z_floor)
         if height > EPS:
-            overlap = polygons[a.id].intersection(polygons[b.id]).area
-            if overlap > EPS ** 2:
+            overlap = _space_overlap_area(polygons[a.id], polygons[b.id])
+            if overlap:
                 fail("source.space_overlap", space_ids=[a.id, b.id], volume_m3=overlap*height)
     relations = _contacts(boundaries)
     openings, unbuilt, connections = [], [], []

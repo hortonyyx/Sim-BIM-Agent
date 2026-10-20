@@ -5,11 +5,12 @@ import json
 from pathlib import Path
 
 import pytest
-from shapely.geometry import Polygon
+from shapely.affinity import rotate, translate
+from shapely.geometry import Polygon, box
 
 from src.agent.correction.parse import ensure_corrected_geometry
 from src.agent.correction.schema import CorrectedGeometry, WallOpening
-from src.agent.geometry.source_bim import build_source_bim, source_view_geometry, _on_wall
+from src.agent.geometry.source_bim import EPS, build_source_bim, source_view_geometry, _on_wall, _space_overlap_area
 from src.agent.geometry.source_model import _digest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -141,6 +142,111 @@ def test_missing_room_and_overlapping_room_block_source_geometry():
     assert any(f["code"]=="source.floor_coverage" for f in build_source_bim(geom,capability_profile="orthogonal_polygon")["validation"]["findings"])
     geom=three_rooms();geom.floors[0].cells[2].y=[2,6]
     assert any(f["code"]=="source.space_overlap" for f in build_source_bim(geom,capability_profile="orthogonal_polygon")["validation"]["findings"])
+
+
+@pytest.mark.parametrize("angle,offset", [(0, 0), (31, 0), (0, 1e6), (31, 1e6)])
+@pytest.mark.parametrize("width,conflict", [(-EPS / 2, False), (EPS / 4, False), (2 * EPS, True), (0.001, True)])
+def test_space_overlap_uses_length_tolerance_under_rotation_and_translation(angle, offset, width, conflict):
+    # A very long boundary must not turn a microscopic seam into a severe
+    # conflict; even a two-EPS true intrusion remains a conflict.
+    a, b = box(0, 0, 3, 100), box(3 - width, 0, 6, 100)
+    a, b = [translate(rotate(p, angle, origin=(0, 0)), offset, -offset) for p in (a, b)]
+    originals = a.wkb, b.wkb
+    result = _space_overlap_area(a, b)
+    assert bool(result) == conflict
+    if conflict:
+        assert result == a.intersection(b).area
+    reversed_result = _space_overlap_area(b, a)
+    assert bool(reversed_result) == conflict
+    assert reversed_result == pytest.approx(result)
+    assert (a.wkb, b.wkb) == originals
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_contained_or_duplicate_narrow_space_is_still_a_conflict(duplicate):
+    narrow = box(0, 0, EPS / 4, 10)
+    other = narrow if duplicate else box(-1, -1, 1, 11)
+    assert narrow.buffer(-EPS / 2).is_empty
+    assert _space_overlap_area(narrow, other) == narrow.area
+    assert _space_overlap_area(other, narrow) == narrow.area
+
+
+def test_nonconvex_and_corner_intrusions_are_not_hidden_by_small_contact_regions():
+    a = box(0, 0, 4, 4)
+    corner = Polygon([(3.999, 4), (4, 3.999), (5, 5)])
+    nonconvex = Polygon([(3.999, 0), (5, 0), (5, 5), (0, 5), (0, 3.999), (3.999, 3.999)])
+    for b in (corner, nonconvex):
+        assert _space_overlap_area(a, b) == a.intersection(b).area > 0
+
+
+@pytest.mark.parametrize("half_width,depth,conflict", [(EPS / 8, 20 * EPS, False), (2 * EPS, 3 * EPS, True)])
+def test_short_corner_and_sharp_wedge_use_interior_radius_not_maximum_depth(half_width, depth, conflict):
+    a = box(-1, 0, 1, 1)
+    wedge = Polygon([(-2 * half_width, -depth), (2 * half_width, -depth), (0, depth)])
+    # The first wedge extends far beyond EPS but has no numerically resolved
+    # interior. The second small triangle has enough interior and must block.
+    intersection = a.intersection(wedge)
+    assert intersection.area > EPS ** 2
+    assert bool(_space_overlap_area(a, wedge)) == conflict
+
+
+@pytest.mark.parametrize("width,conflict", [(EPS / 4, False), (2 * EPS, True)])
+def test_source_overlap_filter_preserves_geometry_and_original_volume(width, conflict):
+    geom = three_rooms()
+    geom.windows, geom.openings = [], []
+    geom.floors[0].cells[2].y = [3 - width, 6]
+    original = geom.model_dump(mode="json")
+    source = build_source_bim(geom, capability_profile="orthogonal_polygon")
+    overlap = [f for f in source["validation"]["findings"] if f["code"] == "source.space_overlap"]
+    assert bool(overlap) == conflict
+    if conflict:
+        assert overlap[0]["volume_m3"] == pytest.approx((3 - (3 - width)) * 3 * 3)
+    assert geom.model_dump(mode="json") == original
+    spaces = {s["id"]: s for s in source["spaces"]}
+    assert set(spaces) == {"hall", "a", "b"}
+    assert spaces["b"]["polygon"] == [[3, 3 - width], [6, 3 - width], [6, 6], [3, 6]]
+
+
+@pytest.mark.parametrize("offset", [2e7, 2e8, 1e9])
+def test_source_overlap_does_not_disappear_at_large_world_coordinates(offset):
+    geom = CorrectedGeometry.model_validate({
+        "schema_version": "2",
+        "footprint_x": [offset, offset + 6],
+        "footprint_y": [-offset, 100 - offset],
+        "floors": [{
+            "name": "F1", "z_floor": 0, "ceiling_height": 3,
+            "cells": [
+                {"id": "a", "x": [offset, offset + 3], "y": [-offset, 100 - offset]},
+                {"id": "b", "x": [offset + 2, offset + 6], "y": [-offset, 100 - offset]},
+            ],
+        }],
+    })
+    original = geom.model_dump(mode="json")
+    source = build_source_bim(geom, capability_profile="orthogonal_polygon")
+    overlaps = [f for f in source["validation"]["findings"] if f["code"] == "source.space_overlap"]
+    assert source["validation"]["status"] == "severe"
+    assert len(overlaps) == 1
+    assert overlaps[0]["space_ids"] == ["a", "b"]
+    assert overlaps[0]["volume_m3"] == 300
+    assert geom.model_dump(mode="json") == original
+    assert [s["polygon"] for s in source["spaces"]] == [
+        [[offset, -offset], [offset + 3, -offset], [offset + 3, 100 - offset], [offset, 100 - offset]],
+        [[offset + 2, -offset], [offset + 6, -offset], [offset + 6, 100 - offset], [offset + 2, 100 - offset]],
+    ]
+
+
+@pytest.mark.parametrize("z_overlap,conflict", [(EPS / 4, False), (2 * EPS, True)])
+def test_identical_footprints_in_adjacent_storeys_keep_length_tolerance_in_z(z_overlap, conflict):
+    geom = three_rooms()
+    geom.windows, geom.openings = [], []
+    upper = geom.floors[0].model_copy(deep=True)
+    upper.name, upper.z_floor = "F2", 3 - z_overlap
+    for cell in upper.cells:
+        cell.id += "_up"
+    geom.floors.append(upper)
+    source = build_source_bim(geom, capability_profile="orthogonal_polygon")
+    overlaps = [f for f in source["validation"]["findings"] if f["code"] == "source.space_overlap"]
+    assert len(overlaps) == (3 if conflict else 0)
 
 
 def test_display_preserves_full_boundary_area_holes_and_partial_contact_visibility():

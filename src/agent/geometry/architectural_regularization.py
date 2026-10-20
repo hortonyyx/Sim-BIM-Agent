@@ -447,12 +447,23 @@ def regularize_architectural_plan(plan, *, policy=None):
         from src.agent.geometry.parametric_proposal import expand_parametric_instances
         old_instances = expand_parametric_instances(original)
         by_id = {r['id']: r for r in old_instances}
+        from src.agent.geometry.parametric_continuity import declared_continuity_members
+        continuous_members = declared_continuity_members(original)
+        continuous_hosts = {row['space_id']: row['member_space_ids'] for row in continuous_members}
+        for row in continuous_members:
+            members = [by_id[sid.split(':', 1)[0]] for sid in row['member_space_ids']]
+            base = min(member['z'] for member in members)
+            top = max(member['z'] + member['height'] for member in members)
+            by_id[row['id']] = dict(id=row['id'], z=base, height=top-base)
 
         def global_pair(row, hosts, path):
             candidates = []
-            for host in hosts:
+            # A derived continuous host must agree at every explicitly selected
+            # member. Never choose a representative that hides differing frames.
+            expanded_hosts = [member for host in hosts for member in continuous_hosts.get(host, [host])]
+            for host in expanded_hosts:
                 fid, sid = host.split(':',1)
-                if fid not in by_id:
+                if fid not in by_id or 'template' not in by_id[fid]:
                     reject('unknown_connection_host', path, 'unknown global connection instance')
                 candidates.append(move_pair(by_id[fid]['template'], sid, row['p1'], row['p2'], path))
             if not candidates or any(math.dist(a,b)>EPS for pair in candidates[1:] for a,b in zip(candidates[0],pair)):

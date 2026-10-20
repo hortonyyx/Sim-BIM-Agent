@@ -145,9 +145,11 @@ def update_building_context(engine, event, raw_result):
             "fields": ["spaces", "boundaries", "openings"],
             "basis": "saved values; geometric consistency does not establish observation accuracy"}, "computed", source)
         save("source-bim-assumptions", "general", saved.get("assumptions", []), "assumed", source)
-        unresolved = {name: saved.get(name, []) for name in ("conflicts", "unbuilt_openings", "unsupported")}
+        from scripts.tool_scripts.bim_agent_closeout import closeout_summary, source_blockers
+        unresolved = source_blockers(saved)
         unresolved_sources = (source,)
         report_path = path.parent / "report.json"
+        report = {}
         if report_path.is_file():
             report_source = source_for(report_path)
             unresolved_sources += (report_source,)
@@ -156,12 +158,37 @@ def update_building_context(engine, event, raw_result):
         else:
             unresolved["report_status"] = "not available"
         has_unresolved = any(unresolved.get(name) for name in (
-            "conflicts", "unbuilt_openings", "unsupported", "report_unresolved"))
-        save("source-bim-unresolved", "unresolved", unresolved, "unresolved", unresolved_sources,
-             active=has_unresolved)
-        save("source-bim-todo", "todo", {"unresolved": unresolved,
-            "status": "open items from saved artifacts; empty does not certify whole-case quality"}, "unresolved", unresolved_sources,
-             active=has_unresolved)
+            "source_validation", "conflicts", "unbuilt_openings", "unsupported", "report_unresolved"))
+        manifest_path = run / "inputs.json"
+        manifest = json.loads(manifest_path.read_bytes()) if manifest_path.is_file() else {}
+        if manifest.get("mesh_input"):
+            supplied = metadata.get("closeout")
+            review = None
+            if (isinstance(supplied, dict) and supplied.get("schema") == "mesh_closeout_v1"
+                    and supplied.get("candidate") == path.parent.name
+                    and supplied.get("source_model_sha256") == saved.get("source_model_sha256")):
+                current_review = supplied.get("mesh_review", {})
+                review = {**current_review, "candidate": path.parent.name,
+                          "complete_building": current_review.get("current_whole_building_declaration") is True}
+            # Recompute machine facts from saved files rather than replaying a
+            # tool reply. Do not hash original mesh/images on unrelated tools;
+            # absent fresh review evidence is explicitly "not_rechecked".
+            closeout = closeout_summary(path.parent.name, saved, report, review=review)
+            save("mesh-closeout", "constraint", closeout, "computed", unresolved_sources)
+            notes = {"report_unresolved": unresolved.get("report_unresolved", []),
+                     "meaning": "Reported unknowns, not accepted omissions or automatic repair tasks; judge user scope."}
+            save("source-bim-unresolved", "unresolved", notes, "unresolved", unresolved_sources,
+                 active=bool(notes["report_unresolved"]))
+            machine = closeout["machine_check"]
+            save("source-bim-todo", "todo", {"machine_check": machine,
+                "status": "Repair current machine defects locally; clear does not certify requested functionality or fidelity."},
+                 "unresolved", unresolved_sources, active=machine["status"] != "clear")
+        else:
+            save("source-bim-unresolved", "unresolved", unresolved, "unresolved", unresolved_sources,
+                 active=has_unresolved)
+            save("source-bim-todo", "todo", {"unresolved": unresolved,
+                "status": "open items from saved artifacts; empty does not certify whole-case quality"}, "unresolved", unresolved_sources,
+                 active=has_unresolved)
         # Explicitly superseded notes retire from the current checklist, even
         # when the older claim record remains immutable in the audit archive.
         proposal_path = path.parent / "proposal.json"

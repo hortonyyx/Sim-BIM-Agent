@@ -595,7 +595,7 @@ def delivery_tool_reply(result: dict) -> dict:
         'selection_origin', 'drawing_fidelity', 'response_compacted',
         'full_delivery_report', 'review_scope_status_counts', 'current_review_count',
         'stale_review_count', 'source_image_feedback_summary', 'space_relation_review_summary',
-        'room_use_review',
+        'room_use_review', 'closeout',
     ) if key in compact}
     minimal.update(detail_level='counts_only', more_details_omitted=True,
         generation_state=result.get('generation_status', {}).get('state'),
@@ -893,6 +893,9 @@ class Toolkit:
         if self.manifest.get('mesh_input'):
             from scripts.tool_scripts.bim_agent_mesh_review import mesh_review_status
             result['mesh_review'] = mesh_review_status(self, candidate)
+            from scripts.tool_scripts.bim_agent_closeout import mesh_closeout
+            result['closeout'] = mesh_closeout(self, candidate, source=source,
+                                               review=result['mesh_review'])
         # Keep full claims in their files; summarize unresolved execution in handoff.
         result["claim_applications"] = [{key: row.get(key) for key in
             ("id", "parent_candidate", "candidate", "claim_ids", "status", "error", "parameters_without_claims")}
@@ -1522,6 +1525,9 @@ class Toolkit:
                     result["source_plan_errors"].append({"candidate": candidate,
                         "floor_id": floor_id, "error": str(error)})
             stage("plan_views_seconds")
+        if self.manifest.get("mesh_input") and source_path.exists():
+            from scripts.tool_scripts.bim_agent_closeout import mesh_closeout
+            result["closeout"] = mesh_closeout(self, candidate, source=source, report=report)
         result["build_timings"] = {**build_timings, "total_seconds": time.perf_counter() - started}
         dump(self.run/candidate/'build_timings.json', result["build_timings"])
         saved_source_result(self.run, result, parent=parent)
@@ -3046,6 +3052,8 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
             with immutable report reads for issue IDs and scopes. Unknown, stale and
             unexamined scopes stay distinct; this is not a quality gate or checklist.
             current_checks always covers the whole candidate, even with floor_id.
+            Mesh closeout separates current machine blockers, retained unknown
+            notes and the saved delivery review; it does not certify visual quality.
             floor_id selects one floor. If geometry is still too large, the response
             keeps only the summary; read_candidate_items pages cells/windows/openings.
             A selected page is NOT a whole replacement proposal.
@@ -3090,6 +3098,9 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
                 from scripts.tool_scripts.bim_agent_precision import annotated_wall_placement
                 result['wall_placement'] = annotated_wall_placement(toolkit, json.loads(source_path.read_bytes()),
                     proposal.get('wall_references', []), proposal.get('wall_dimensions', []))
+                if toolkit.manifest.get("mesh_input"):
+                    from scripts.tool_scripts.bim_agent_closeout import mesh_closeout
+                    result["closeout"] = mesh_closeout(toolkit, candidate, report=report)
             if review_requested:
                 from scripts.tool_scripts.bim_agent_saved_result import candidate_review, candidate_review_summary
                 from scripts.tool_scripts.bim_agent_replies import compact_reply, report_reference
@@ -3111,7 +3122,7 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
                 result['current_checks'] = small
                 if len(json.dumps(result, ensure_ascii=False).encode()) > 24000:
                     result = {key: result[key] for key in ('candidate', 'geometry_included',
-                        'floor_filter', 'current_checks', 'details_file', 'details_sha256', 'details_read')
+                        'floor_filter', 'current_checks', 'closeout', 'details_file', 'details_sha256', 'details_read')
                         if key in result}
             toolkit.log("inspect_candidate", {"candidate": candidate, 'include_geometry': include_geometry})
             if include_plan:

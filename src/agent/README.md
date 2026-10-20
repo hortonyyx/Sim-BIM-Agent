@@ -10,6 +10,8 @@ EnergyPlus graph. The product model is `work model + runtime + domain`.
 | Deterministic geometry and relationships | [geometry](geometry/__init__.py) |
 | Declared curve approximation and courtyard footprints | [source curves](geometry/source_curves.py), [shared parametric templates](geometry/parametric_proposal.py) |
 | Explicit repeated floors and core service connections | [parametric expansion](geometry/parametric_proposal.py); declared exceptions, service sets and role evidence |
+| Local continuous-space consolidation | [continuity expansion](geometry/parametric_continuity.py); explicit adjacent equal-footprint members, retained aperture IDs/positions, no inferred continuity |
+| Current mesh closeout facts | [closeout projection](../../scripts/tool_scripts/bim_agent_closeout.py), [domain context](runtime_context.py); machine findings, retained unknowns and current delivery declarations remain distinct |
 | Local basic geometry and explicit relations | [rectangle unions and local baselines](geometry/parametric_primitives.py); one connected space, explicit hosts, no fitted corners or invented partitions |
 | Straight path adoption | [shared line path adapter](geometry/architectural_line_paths.py); same ring checks, retained curve identities and protected true curves |
 | Architectural parameter adoption | [local-frame regularization](geometry/architectural_regularization.py), [run-bound artifacts](../../scripts/tool_scripts/bim_agent_architectural.py); new mesh runs adopt main parameters at 0.1 m, preserving source observations, host identities and real gaps |

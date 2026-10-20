@@ -118,7 +118,8 @@ def precision_summary(report):
     if report.get('status') not in {'reported', 'pass', 'rejected'}:
         return report
     result = pick(report, ('schema', 'status', 'source_model_sha256', 'total', 'counts', 'evidence_errors',
-                           'axis_rule_applicability'))
+                           'axis_rule_applicability', 'warnings', 'warning_count', 'warning_counts',
+                           'policy_classification'))
     placement = copy.deepcopy(report.get('wall_placement', {}))
     if placement:
         # No truncation, including serious placement findings after the fourth.
@@ -132,7 +133,8 @@ def precision_summary(report):
     if not report.get('items') and not changes.get('resolved'):
         c = report.get('coverage', {})
         tolerances = {f: t.get('default_m') for f, t in report.get('tolerances', {}).items()}
-        result['coverage'] = (f"0 findings; floors {c.get('floors', [])}, tolerances m {tolerances}, "
+        finding_label = "0 blocking precision findings" if report.get('warning_count') or report.get('warnings') else "0 findings"
+        result['coverage'] = (f"{finding_label}; floors {c.get('floors', [])}, tolerances m {tolerances}, "
             f"storey pairs {c.get('adjacent_storey_pairs', [])}, {c.get('orthogonal_wall_lines', 0)} wall lines; "
             f"unassessed floors {c.get('floors_without_tolerance', [])}, "
             f"nonorthogonal walls {c.get('nonorthogonal_walls_not_checked', 0)}; "
@@ -255,7 +257,7 @@ def compact_reply(run: Path, tool: str, result: dict, *, full_result: dict | Non
 
         document = result if full_result is None else full_result
         for key, value in list(reply.items()):
-            if key in document and _reply_bytes(value) > 3000:
+            if key != 'closeout' and key in document and _reply_bytes(value) > 3000:
                 pointer = '/' + key.replace('~', '~0').replace('/', '~1')
                 reply[key] = bounded_json_view(document, pointer=pointer,
                     reference_for=lambda at, item: report_reference(relative, sha, at, item))
@@ -265,6 +267,10 @@ def compact_reply(run: Path, tool: str, result: dict, *, full_result: dict | Non
         from src.agent.runtime_roles.trial_feedback import bounded_json_view
         document = result if full_result is None else full_result
         bounded = {key: reply[key] for key in ('details_file', 'details_sha256', 'details_read')}
+        if 'closeout' in reply:
+            # Closeout is already a bounded domain projection. Keep its current
+            # blockers/unknowns/actions visible even when inventories are huge.
+            bounded['closeout'] = reply['closeout']
         bounded['report_view'] = bounded_json_view(document,
             reference_for=lambda at, item: report_reference(relative, sha, at, item))
         if _reply_bytes(bounded) > 22000:

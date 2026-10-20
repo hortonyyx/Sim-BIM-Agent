@@ -16,7 +16,7 @@ from src.agent.geometry.parametric_proposal import expand_parametric_proposal
 
 
 PATCH_ROOTS = frozenset({"templates", "instances", "repeats", "connections",
-    "core_connections", "assumptions", "unresolved", "schema_version",
+    "core_connections", "continuous_spaces", "assumptions", "unresolved", "schema_version",
     "mesh_frame", "boundary_curves", "modelling", "primitive_frames"})
 _DRAFT = re.compile(r"draft_[0-9]+\.json\Z")
 
@@ -276,7 +276,10 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
         compiled_plan, regularization = prepare_parametric_plan(toolkit, plan, draft_path=path)
         if regularization is not None:
             state["architectural_regularization"] = regularization
-        proposal = expand_parametric_proposal(compiled_plan)
+        expansion_audit = {}
+        proposal = expand_parametric_proposal(compiled_plan, expansion_audit=expansion_audit)
+        if expansion_audit:
+            state["expansion_audit"] = expansion_audit
     except (ValueError, TypeError, KeyError) as error:
         state.update(status="invalid_plan", error=str(error))
         if isinstance(getattr(error, "audit", None), dict):
@@ -313,6 +316,8 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
             binding["feedback_parent_unavailable"] = feedback_parent_error
         if regularization is not None:
             binding["architectural_regularization"] = regularization
+        if expansion_audit:
+            binding["expansion_audit"] = expansion_audit
         if binding["source_file_sha256"] is None:
             binding["status"] = "unbuilt"
         _write(folder / "parametric_state.json", binding)

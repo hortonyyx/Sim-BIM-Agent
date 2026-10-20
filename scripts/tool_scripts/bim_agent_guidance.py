@@ -211,6 +211,24 @@ For each identified lift service storey, include a hosted landing door connectin
 the floor's circulation to the continuous shaft. Reuse an evidenced landing layout
 as an explicit inference where details are missing; ground/top doors alone do not
 represent intermediate service. Do not add stops to unserved or equipment levels.
+Once the main envelope and spatial organization meet the requested scope, keep
+them as the working baseline. Finish the known functional and legal defects with
+scoped edits; do not reopen whole-building shape measurement just to improve
+optional detail or a numerical comparison score. Missing required landing doors,
+blocked stair continuity, real overlaps and wrong aperture hosts still need repair.
+The closeout field separates current machine blockers from retained notes and
+the saved handoff review. Retained notes are not automatically accepted and are
+not automatically extra work: decide whether each affects the requested delivery.
+Resolve known independent repairs together using patch_parametric_bim. Use
+core_connections for declared service doors; continuous_spaces can consolidate
+an explicitly identified identical stair stack without redrawing other rooms.
+Read the parametric reference for these operations. Recheck affected relationships
+and current overlays; unchanged regions do not need another discovery pass.
+When requested shape/relations are adequate, required functions and source
+validity hold, and no intended correction remains unapplied, finish_bim with the
+current whole-building mesh review. That review may accompany finish; no separate
+registration round is needed. A saved pass alone is not visual acceptance.
+Do not turn stated simplifications into an unbounded improvement checklist.
 Interpret auxiliary plans, relationship sketches and text by the information each
 part supplies. One image may combine reliable dimensions, approximate proportions
 and spatial relationships. Use the reconstruction reference only for regions that
@@ -1300,6 +1318,24 @@ An exceptional door layout uses a separate disjoint service selection. Equipment
 roof and non-stopping floors are never inferred as stops merely by intersection.
 Unknown service is a question/assumption to resolve, not permission to stop everywhere.
 
+CONTINUITY WITHOUT REDRAWING. For an already declared identical stack, optionally
+add continuous_spaces, for example:
+[{"id":"STAIR_W","space":"stairW","repeat_ids":["office_run"],
+  "instance_ids":["ground","special"],"source_refs":["confirmed continuous stair"],
+  "assumptions":["explicit service and continuity interpretation"]}].
+The selected instance/repeat members must contain the named local space, have
+identical footprints and role evidence, and tile one continuous height range.
+Their spaces become STAIR_W:stairW with only bottom/top caps; original storeys
+retain spanning membership. Existing door/window IDs, world positions and sizes
+are preserved and their hosts rebound. Other rooms and floor footprints stay
+unchanged. The expansion audit records the member mapping. No service stops or
+new apertures are inferred. core_connections can target STAIR_W:stairW if
+additional explicitly required landing doors are missing.
+Use one SHA-bound patch to add these declarations rather than retyping the whole
+plan. Different footprints, gaps, conflicting roles, overlapping selections,
+already-spanning members or an opening that would become a self-connection reject;
+resolve only the stated conflict, never force unlike spaces into a shared shape.
+
 ARCHITECTURAL ADOPTION. New native-mesh manifests declare
 architectural_modelling_policy={"schema_version":"1","grid_m":0.1,
 "simplification_tolerance_m":0.3}. The tool regularizes main supporting-line
@@ -1340,6 +1376,10 @@ space_intents accepts room/shaft/cabinet/component. Narrow geometry-only
 blade/parapet spaces require a semantic correction or an explicit omission;
 component is a diagnostic intent, not a supported solid-component constructor.
 Never widen/delete a genuine shaft simply to clear this diagnostic.
+For native mesh with this policy, a thin horizontal contact partition is advisory:
+one roof can contact several lower rooms in narrow regions without a geometric
+defect. Do not reshape solely to eliminate that warning. Real overlaps, missing
+coverage, opening hosts and other source constraints still apply.
 Generic build/revise applies the same policy to floor footprints/cells (or the
 existing explicit common footprint_x/y rectangle),
 retaining IDs and current edits. Local frame context follows a bound parent.

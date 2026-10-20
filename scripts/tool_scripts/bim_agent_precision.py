@@ -90,10 +90,11 @@ def building_precision(toolkit, candidate, source=None):
                               wall_references=proposal.get('wall_references', []))
     from scripts.tool_scripts.bim_agent_regularization import (
         apply_cross_storey_skip_policy, candidate_reports,
-        collect_candidate_report, source_reports,
+        classify_source_precision, collect_candidate_report, source_reports,
     )
     for regularization_report in candidate_reports(toolkit, candidate, source):
         report = apply_cross_storey_skip_policy(report, regularization_report)
+    report = classify_source_precision(report, toolkit.manifest)
     report['wall_placement'] = annotated_wall_placement(toolkit, source,
         proposal.get('wall_references', []), proposal.get('wall_dimensions', []))
     audit_path = path / 'regularization_report.json'

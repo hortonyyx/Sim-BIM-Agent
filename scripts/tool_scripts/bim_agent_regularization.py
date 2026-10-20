@@ -24,6 +24,40 @@ def selected_rule(manifest):
     return rule
 
 
+def classify_source_precision(report, manifest):
+    """Keep mesh contact-partition size advisory, without changing source validity.
+
+    A roof can contact several rooms below it in narrow regions even though all
+    solids, coverage and hosts are valid. This is not evidence of a thin room.
+    Drawing policies and every other precision rule retain their existing scope.
+    """
+    if not (manifest.get("mesh_input") and manifest.get("architectural_modelling_policy")):
+        return report
+    warnings = [row for row in report.get("items", [])
+                if row.get("type") == "thin_horizontal_contact"]
+    if not warnings:
+        return report
+    result = copy.deepcopy(report)
+    result["items"] = [row for row in result["items"]
+                       if row.get("type") != "thin_horizontal_contact"]
+    result["warnings"] = [{**row, "severity": "warning",
+        "original_fix": row.get("fix"),
+        "fix": "A narrow horizontal contact partition alone does not require reshaping. "
+               "Revise only if evidence shows a real coverage, connection or geometry defect; "
+               "source validity checks still apply."} for row in copy.deepcopy(warnings)]
+    result["warning_count"] = len(warnings)
+    result["warning_counts"] = dict(Counter(row["type"] for row in warnings))
+    result["total"] = len(result["items"])
+    result["counts"] = dict(Counter(row["type"] for row in result["items"]))
+    result["status"] = "rejected" if result["items"] else "reported"
+    result["policy_classification"] = {
+        "scope": "native mesh with architectural adoption",
+        "advisory_types": ["thin_horizontal_contact"],
+        "source_validity": "unchanged; precision warnings do not certify source geometry",
+    }
+    return result
+
+
 def selected_grid_step(manifest):
     """Only newly admitted drawing runs declare the current whole-building grid."""
     if "lite_bim_grid_step_m" not in manifest:
@@ -181,6 +215,7 @@ def reject_source_proposal(toolkit, proposal, *, plan_assembly=None, parent=None
     if parent is not None:
         for regularization in candidate_reports(toolkit, parent):
             report = apply_cross_storey_skip_policy(report, regularization)
+    report = classify_source_precision(report, toolkit.manifest)
     grid = None
     if grid_step is not None:
         grid = source_grid_report(source, grid_step)
