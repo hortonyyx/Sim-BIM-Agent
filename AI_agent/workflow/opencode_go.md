@@ -10,7 +10,7 @@
 
 DNS使用`https://cloudflare-dns.com/dns-query`，仅查询`opencode.ai`的A记录，不携带Go鉴权/session；解析和连接计入既有超时，结果按TTL最多缓存300秒。bootstrap默认`1.1.1.1`；本机该地址直连超时，因此在同一显式仓库外文件配置当前核验可达的Cloudflare DNS地址`104.16.248.249`。这是DNS服务的引导地址，非Go服务器静态地址；变更后仍必须通过Cloudflare域名证书校验。没有按失败自动切换DNS、模型服务或网络路径。机器网络改变后，新建Go运行/适配器时重新发现物理接口；现有适配器保留已选接口，旧运行不原地更换封印版本。
 
-可复制 [Go配置示例](../../product/config.opencode-go.example.json)，修改实际输入和输出目录，再执行产品`check/run`。原 [默认配置](../../product/config.example.json)仍是6 Sol，两个示例不互相改写历史结果。Go的Kimi K3默认省略思考档和采样参数，按服务默认运行；当前只接纳明确的`max`思考档，不能把6 Sol的`high`原样套过去。
+可复制 [Go配置示例](../../product/config.opencode-go.example.json)，修改实际输入和输出目录，再执行产品`check/run`。原 [默认配置](../../product/config.example.json)仍是6 Sol，两个示例不互相改写历史结果。Go的Kimi K3默认省略思考档和采样参数，按服务默认运行；2026-10-21核对官方low/high/max及两次Go实测后，明确接纳`high`与`max`，次高档为high，未顺带开放未经该路由核验的low。真实Go回包的`reasoning`和`reasoning_details`按原结构保留于后续工具轮，历史策略只作用于发送投影。实测/离线边界与Opus接入状态见[次高档核验](../reports/2026-10-21_model_effort_preflight.md)；HTTP接受不等于对服务内部计算档位的独立证明。
 
 Haiku整案采用独立的 [流程贯通配置](../../product/config.opencode-go-haiku.example.json)：`claude-haiku-5-5/medium`、64,000输出tokens、48请求/240工具、无整案时间硬截止。输入和楼层范围应按实际案例填写。runtime v19/domain v80已修复签名历史前缀、状态快照移动和无正式交付却报完成的问题；sm25原六图单次冷启动在8分39秒自主完成两层BIM及查看器。相同代码的`high/32,000`仍连续截断，不能沿用旧参数宣称已经跑通；质量和跨次稳定性未评，详见 [Haiku整案修复记录](../reports/2026-10-15_haiku_whole_case_repair.md)。
 

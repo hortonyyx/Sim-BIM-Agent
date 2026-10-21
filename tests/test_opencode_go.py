@@ -48,7 +48,11 @@ def test_go_model_protocol_sampling_and_reasoning_fail_closed():
     assert provider_parameters('opencode-go', model='kimi-k3', output_tokens=32000) == {'max_tokens':32000}
     assert provider_parameters('opencode-go', model='gpt-6-luna', output_tokens=32000,
         reasoning_effort='low') == {'max_tokens':32000, 'reasoning_effort':'low'}
-    for kwargs in ({'reasoning_effort':'high'}, {'temperature':0}, {'thinking':False}):
+    for effort in ('high', 'max'):
+        assert provider_parameters('opencode-go', model='kimi-k3', output_tokens=32000,
+            reasoning_effort=effort) == {'max_tokens':32000, 'reasoning_effort':effort}
+    for kwargs in ({'reasoning_effort':'medium'}, {'reasoning_effort':'low'},
+                   {'temperature':0}, {'thinking':False}):
         with pytest.raises(ValueError):
             provider_parameters('opencode-go', model='kimi-k3', output_tokens=32000, **kwargs)
 
@@ -112,13 +116,31 @@ def native_response(model, *, tool=False):
         'usage':{'input_tokens':40,'output_tokens':11,'total_tokens':51}}
 
 
-@pytest.mark.parametrize('model', ['glm-5.3-flash','mimo-v2.6-flash','minimax-m3','gpt-6-luna'])
+def kimi_go_response(*, tool=False):
+    # Shape and reasoning fields from the two 2026-10-21 Go/high preflight
+    # captures. Only the first message's tool call is synthetic for this loop.
+    raw = response(('view-1', 'view', {})) if tool else response(text='OK')
+    text = ('The user wants exactly OK. Final should be exactly OK.' if tool else
+            'The user wants exact reply OK. Need final exactly OK no extra. Ensure no punctuation. ')
+    raw.update(model='kimi-k3', object='chat.completion')
+    raw['choices'][0]['message'].update(refusal=None, reasoning=text,
+        reasoning_details=[{'type':'reasoning.text', 'text':text, 'format':'unknown', 'index':0}])
+    raw['usage'] = {'prompt_tokens':90, 'completion_tokens':26 if tool else 33,
+                    'total_tokens':116 if tool else 123,
+                    'completion_tokens_details':{'reasoning_tokens':15 if tool else 19}}
+    return raw
+
+
+@pytest.mark.parametrize('model', ['glm-5.3-flash','mimo-v2.6-flash','kimi-k3','minimax-m3','gpt-6-luna'])
 def test_go_real_runtime_preserves_tool_images_native_history_usage_and_subscription(tmp_path, model):
-    chat_model = model in {'glm-5.3-flash', 'mimo-v2.6-flash'}
+    chat_model = model in {'glm-5.3-flash', 'mimo-v2.6-flash', 'kimi-k3'}
     replies=[response(('view-1','view',{}),reasoning=True),response(text='OK',reasoning=True)] if chat_model else [native_response(model,tool=True),native_response(model)]
+    if model == 'kimi-k3':
+        replies = [kimi_go_response(tool=True), kimi_go_response()]
     engine=runtime(tmp_path,replies,limits=RunLimits(model_calls=2,tool_calls=4,seconds=30,tokens=200000))
     engine.model=model
-    engine.parameters=provider_parameters('opencode-go',model=model,output_tokens=32000)
+    engine.parameters=provider_parameters('opencode-go',model=model,output_tokens=32000,
+        reasoning_effort='high' if model == 'kimi-k3' else None)
     engine.strict_model_profile=True
     engine.versions=engine.versions.model_copy(update={'remote_model':engine.versions.remote_model.model_copy(
         update={'route_id':'opencode-go','remote_alias':model})})
@@ -147,7 +169,8 @@ def test_go_real_runtime_preserves_tool_images_native_history_usage_and_subscrip
         assert result['billing_usd'] is None and result['estimated_cost_cny'] is None
         profile=engine._config()['model_profile']
         assert profile['text_safety_factor']==2.0 and 'unverified_endpoint' in profile['profile_status']
-        assert profile['context_window_tokens']=={'gpt-6-luna':1050000,'mimo-v2.6-flash':1048576}.get(model,1000000)
+        assert profile['context_window_tokens']=={'gpt-6-luna':1050000,'mimo-v2.6-flash':1048576,
+            'kimi-k3':1048576}.get(model,1000000)
         requests=[event.payload for event in engine.store.events if event.payload.event_type=='adapter_request']
         assert len(requests[1].images)==(2 if model == 'mimo-v2.6-flash' else 1)
         execution = next(e.payload for e in engine.store.events if e.payload.event_type == 'tool_execution')
@@ -163,6 +186,8 @@ def test_go_real_runtime_preserves_tool_images_native_history_usage_and_subscrip
         assert shown['images'][0]['sha256'] == requests[1].images[-1].sent.sha256
         for wire,event in zip(engine.adapter.requests,requests):
             assert wire==engine.store.capture_bytes(event.final_request_body)
+            if model == 'kimi-k3':
+                assert json.loads(wire)['reasoning_effort'] == 'high'
             body=json.loads(wire)
             assert body['model']==model and body['stream'] is False
             if chat_model:
@@ -189,7 +214,93 @@ def test_go_real_runtime_preserves_tool_images_native_history_usage_and_subscrip
             second=json.loads(engine.adapter.requests[1])
             assert any(item.get('encrypted_content')=='opaque-replay' for item in second['input'])
             assert any(item.get('type')=='function_call_output' for item in second['input'])
+        if model=='kimi-k3':
+            second=json.loads(engine.adapter.requests[1])
+            assistant=next(message for message in second['messages'] if message['role']=='assistant')
+            observed = replies[0]['choices'][0]['message']
+            for field in ('reasoning', 'reasoning_details'):
+                assert assistant[field] == observed[field]
+            assert 'reasoning_content' not in assistant
+            assert assistant['tool_calls'][0]['id']=='view-1'
         engine.store.validate()
+
+
+@pytest.mark.parametrize('policy', ['all', 'current_tool_chain'])
+def test_go_kimi_real_shape_survives_image_tool_resume_and_history_selection(tmp_path, policy):
+    class Crash(BaseException):
+        pass
+
+    def configured(replies, tools=None):
+        engine = runtime(tmp_path, replies, tools=tools,
+            limits=RunLimits(model_calls=2, tool_calls=4, seconds=60, tokens=200000))
+        engine.model = 'kimi-k3'
+        engine.parameters = provider_parameters('opencode-go', model=engine.model,
+            output_tokens=32000, reasoning_effort='high')
+        engine.versions = engine.versions.model_copy(update={'remote_model':
+            engine.versions.remote_model.model_copy(update={'route_id':'opencode-go',
+                                                         'remote_alias':engine.model})})
+        engine.reasoning_history = policy
+        return engine
+
+    tool_response = kimi_go_response(tool=True)
+    older = kimi_go_response()['choices'][0]['message']
+    older['content'] = 'Previous complete answer'
+    messages = copy.deepcopy(MESSAGES) + [copy.deepcopy(older),
+                {'role':'user', 'content':'Inspect the tool image and finish.'}]
+    engine = configured([tool_response])
+    fields = ['reasoning_content', 'reasoning', 'reasoning_details']
+    assert engine._config()['echo_fields'] == fields  # Also valid before run().
+    def interrupt(name, current):
+        if name == 'after_response' and current.counts['model_calls'] == 1:
+            raise Crash()
+    engine.fault_hook = interrupt
+    with engine.store, pytest.raises(Crash):
+        asyncio.run(engine.run(messages))
+    resumed = configured([kimi_go_response()], tools=engine.tools)
+    assert resumed._config()['echo_fields'] == fields
+    with resumed.store:
+        result = asyncio.run(resumed.run(messages, resume=True))
+        assert result['status'] == 'completed'
+        assert result['model_calls'] == 2 and result['tool_calls'] == 1
+        assert resumed.tools.calls == [('view', {})]
+        wire = json.loads(resumed.adapter.requests[0])
+        assistants = [m for m in wire['messages'] if m['role'] == 'assistant']
+        assert len(assistants) == 2
+        for field in ('reasoning', 'reasoning_details'):
+            assert assistants[-1][field] == tool_response['choices'][0]['message'][field]
+            if policy == 'all':
+                assert assistants[0][field] == older[field]
+            else:
+                assert field not in assistants[0]
+        assert assistants[0]['content'] == 'Previous complete answer'
+        assert assistants[-1]['tool_calls'][0]['id'] == 'view-1'
+        assert any(m.get('tool_call_id') == 'view-1' for m in wire['messages'])
+        request = next(e.payload for e in reversed(resumed.store.events)
+                       if e.payload.event_type == 'adapter_request')
+        assert len(request.images) == 1
+        # Filtering only affects wire history, never the preserved audit record.
+        original = next(m for m in resumed.messages if m.get('content') == 'Previous complete answer')
+        assert original['reasoning_details'] == older['reasoning_details']
+        resumed.store.validate()
+
+
+@pytest.mark.parametrize('route,model', [('opencode-go','glm-5.3-flash'), ('paratera','kimi-k3')])
+def test_go_kimi_native_echo_does_not_expand_other_routes(tmp_path, route, model):
+    from src.agent_runtime.adapter import parse_response, reasoning_history_messages
+    engine = runtime(tmp_path, [])
+    engine.model = model
+    engine.versions = engine.versions.model_copy(update={'remote_model':
+        engine.versions.remote_model.model_copy(update={'route_id':route, 'remote_alias':model})})
+    assert engine._effective_echo_fields() == ('reasoning_content',)
+    with engine.store:
+        parsed = parse_response(kimi_go_response(), 'request-test', engine.store,
+                                echo_fields=engine._effective_echo_fields())
+        assert 'reasoning' not in parsed.assistant_message
+        assert 'reasoning_details' not in parsed.assistant_message
+    # Existing generic policy still only strips its original pair of fields.
+    older = kimi_go_response()['choices'][0]['message']
+    selected = reasoning_history_messages([older, {'role':'user','content':'next'}], 'current_tool_chain')
+    assert selected[0]['reasoning_details'] == older['reasoning_details']
 
 
 def test_go_mixed_role_configuration_preserves_selected_models_and_concurrency(tmp_path):

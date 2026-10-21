@@ -68,7 +68,8 @@ def decode_image_url(url: str) -> tuple[bytes, str]:
     return base64.b64decode(encoded, validate=True), header[5:].split(";", 1)[0]
 
 
-def reasoning_history_messages(messages: list[dict], policy: str, message_sources=None) -> list[dict]:
+def reasoning_history_messages(messages: list[dict], policy: str, message_sources=None,
+                               *, reasoning_fields=("reasoning_content", "reasoning")) -> list[dict]:
     """Keep audited history intact; select reasoning only for the wire request.
 
     A chain includes successive tool-call batches for one real user turn.
@@ -98,7 +99,7 @@ def reasoning_history_messages(messages: list[dict], policy: str, message_source
                 break
     return [{key: value for key, value in message.items()
              if i in keep or message.get("role") != "assistant"
-             or key not in {"reasoning_content", "reasoning"}}
+             or key not in reasoning_fields}
             for i, message in enumerate(messages)]
 
 
@@ -153,7 +154,12 @@ def prepare_request(*, store: EventStore, model: str, messages: list[dict],
         raise ValueError("request parameters cannot override model, messages, tools, stream or n")
     if len(message_sources) != len(messages):
         raise ValueError("every request message needs a recorded source")
-    selected = reasoning_history_messages(messages, reasoning_history, message_sources)
+    reasoning_fields = ("reasoning_content", "reasoning")
+    if versions.remote_model.route_id == "opencode-go" and model == "kimi-k3":
+        from .opencode_go import KIMI_CHAT_REASONING_FIELDS
+        reasoning_fields = KIMI_CHAT_REASONING_FIELDS
+    selected = reasoning_history_messages(messages, reasoning_history, message_sources,
+                                          reasoning_fields=reasoning_fields)
     message_sources = [source if selected[i] == message else store.source(
         "reasoning-history-selection", {"policy": reasoning_history,
             "original_source": source.model_dump(mode="json"),

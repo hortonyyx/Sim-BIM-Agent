@@ -425,6 +425,14 @@ class Runtime:
             # Pause does not cancel remote work or buy more wall-clock time.
             await asyncio.sleep(min(0.1, remaining))
 
+    def _effective_echo_fields(self):
+        # Resolve before both initial capture and resume comparisons, including
+        # callers that inspect _config() before run(). Other routes stay intact.
+        if self.versions.remote_model.route_id == "opencode-go" and self.model == "kimi-k3":
+            from .opencode_go import KIMI_CHAT_REASONING_FIELDS
+            return tuple(dict.fromkeys((*self.echo_fields, *KIMI_CHAT_REASONING_FIELDS)))
+        return self.echo_fields
+
     def _config(self):
         model_profile = asdict(self._effective_model_profile())
         # The persisted JSON decodes tuples as lists. Normalize here so resume
@@ -439,7 +447,7 @@ class Runtime:
             "limits": self.limits.model_dump(mode="json"),
             "context_policy": self.context_policy.model_dump(mode="json") if self.context_policy else None,
             "pricing": self.pricing.model_dump(mode="json") if self.pricing else None,
-            "echo_fields": list(self.echo_fields),
+            "echo_fields": list(self._effective_echo_fields()),
             "reasoning_history": self.reasoning_history,
             **({"route_dispatch": asdict(route_policies()[self.versions.remote_model.route_id])}
                if self.versions.remote_model.route_id in route_policies() else {}),
@@ -942,7 +950,7 @@ class Runtime:
                     self.stage = "model_response"
                     parse_started = perf_counter()
                     with self._measure("response_parse_capture"):
-                        parsed = parse_response(raw, request.event_id, self.store, echo_fields=self.echo_fields)
+                        parsed = parse_response(raw, request.event_id, self.store, echo_fields=self._effective_echo_fields())
                     parse_elapsed = perf_counter() - parse_started
                     elapsed = time.monotonic() - sent_at
                     adjustment = lease.succeeded() if lease else None
@@ -1287,7 +1295,7 @@ class Runtime:
             request = next(e for e in self.store.events if e.event_id == event.payload.request_event_id)
             self.context.commit_request_state(request)
         parsed = parse_response(self.store.resolve(event.payload.raw_response), event.payload.request_event_id,
-                                self.store, echo_fields=self.echo_fields)
+                                self.store, echo_fields=self._effective_echo_fields())
         if parsed.protocol_error:
             self.terminal_reason = parsed.protocol_error
             return
@@ -1751,7 +1759,7 @@ class Runtime:
                     elapsed = json.loads(self.store.get_bytes(timing))["elapsed_seconds"] if timing else None
                     reason = self._settle(reservation_id, usage, seconds=elapsed)
                     parsed = parse_response(self.store.resolve(p.raw_response), p.request_event_id,
-                        self.store, echo_fields=self.echo_fields)
+                        self.store, echo_fields=self._effective_echo_fields())
                     if parsed.finish_reason == "length":
                         truncation = self._record_truncation(event, blocked=reason or (
                             "token_usage_unavailable" if reported_tokens(usage) is None else None))

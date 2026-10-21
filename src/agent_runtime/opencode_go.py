@@ -19,6 +19,9 @@ from .estimation import estimate_chat_request, get_model_profile
 from .store import json_bytes
 
 PROVIDER = "opencode-go"
+# Captured Go/Kimi replies expose both fields, rather than reasoning_content.
+# Retain the original structures without translating or combining them.
+KIMI_CHAT_REASONING_FIELDS = ("reasoning_content", "reasoning", "reasoning_details")
 # Subscription/catalog scope retained in explicit credential files. Inference
 # bases are protocol-specific; the catalog URL is not a chat/messages base.
 BASE_URL = "https://opencode.ai/inference/go/v1"
@@ -32,7 +35,9 @@ PROTOCOL_BASE_URLS = {
 MODELS = {
     "glm-5.3-flash": ("openai_chat_completions", 1_000_000, ("low", "high", "max")),
     "mimo-v2.6-flash": ("openai_chat_completions", 1_048_576, ()),
-    "kimi-k3": ("openai_chat_completions", 1_048_576, ("max",)),
+    # Kimi documents low/high/max; high is admitted after a Go route probe.
+    # Acceptance confirms transport support, not attested server-side effort.
+    "kimi-k3": ("openai_chat_completions", 1_048_576, ("high", "max")),
     "minimax-m3": ("anthropic_messages", 1_000_000, ()),
     "qwen3.8-max": ("anthropic_messages", 1_000_000, ("low", "medium", "xhigh")),
     "claude-haiku-5-5": ("anthropic_messages", 1_000_000, ("low", "medium", "high", "xhigh", "max")),
