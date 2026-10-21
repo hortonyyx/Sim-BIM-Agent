@@ -83,6 +83,30 @@ def provider_parameters(provider: str, *, output_tokens: int,
         from .opencode_go import parameters
         return parameters(model, output_tokens=output_tokens, temperature=temperature,
                           thinking=thinking, reasoning_effort=reasoning_effort)
+    if provider == "paratera" and isinstance(model, str):
+        # Original-vendor contracts, separately accepted by Paratera in the
+        # 2026-10-22 image/tool preflight. Acceptance does not attest effort.
+        name = model.casefold()
+        if name in {"kimi-k3", "qwen3.8-max"}:
+            if thinking is not True:
+                raise ValueError("reviewed Paratera flagship route requires thinking")
+            kimi = name == "kimi-k3"
+            maximum = 1_048_576 if kimi else 131_072
+            if type(output_tokens) is not int or not 0 < output_tokens <= maximum:
+                raise ValueError(f"{model} output_tokens must be within 1..{maximum}")
+            efforts = {"low", "high", "max"} if kimi else {"low", "medium", "xhigh"}
+            effort = reasoning_effort or ("max" if kimi else "xhigh")
+            if effort not in efforts:
+                raise ValueError("unreviewed Paratera reasoning_effort for " + model)
+            if kimi and temperature not in {None, 1.0}:
+                raise ValueError("Kimi-K3 requires its original-vendor temperature 1.0")
+            # Kimi: platform.kimi.ai/docs/guide/kimi-k3-quickstart
+            # Qwen Chat: docs.qwencloud.com/api-reference/chat/openai-chat
+            # Qwen max_tokens limits the final answer; native effort governs
+            # thinking. Do not reuse the Go Messages combined-cap semantics.
+            output_key = "max_completion_tokens" if kimi else "max_tokens"
+            return {output_key: output_tokens, "reasoning_effort": effort,
+                    "temperature": (1.0 if kimi else 0.6) if temperature is None else temperature}
     parameters = {"max_tokens": output_tokens}
     if provider == CHATGPT_SUBSCRIPTION:
         if temperature is not None or thinking is not True:

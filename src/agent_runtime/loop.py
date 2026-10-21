@@ -440,6 +440,9 @@ class Runtime:
 
     def _config(self):
         model_profile = asdict(self._effective_model_profile())
+        if model_profile["context_output_headroom_tokens"] is None:
+            # Preserve the frozen shape of profiles predating this opt-in.
+            model_profile.pop("context_output_headroom_tokens")
         # The persisted JSON decodes tuples as lists. Normalize here so resume
         # compares the live profile with the same shape that was saved.
         model_profile["aliases"] = list(model_profile["aliases"])
@@ -651,12 +654,26 @@ class Runtime:
             return model_profile(self.model)
         return get_model_profile(self.model, strict=self.strict_model_profile)
 
+    def _context_output_headroom(self):
+        if self.versions.remote_model.route_id != "paratera":
+            return None
+        profile = self._effective_model_profile()
+        headroom = profile.context_output_headroom_tokens
+        output = self.parameters.get("max_tokens", self.parameters.get("max_completion_tokens", 1))
+        return headroom if headroom is not None and output > headroom else None
+
     def _context_pressure(self):
         profile = self._effective_model_profile()
         windows = [n for n in (profile.context_window_tokens, self.limits.context_tokens) if n is not None]
         window = min(windows) if windows else None
         explicit = self.context.policy.compact_at_tokens
         output = self.parameters.get("max_tokens", self.parameters.get("max_completion_tokens", 1))
+        context_headroom = self._context_output_headroom()
+        if context_headroom is not None:
+            # A native maximum can equal the whole shared window. Reserve a
+            # planning interval for compaction, not that entire generation cap.
+            # A smaller explicitly configured window also needs usable input.
+            output = min(context_headroom, max(1, window // 2)) if window else context_headroom
         calibration = self._refresh_context_calibration()
         growth = calibration.largest_growth if calibration else 0
         # Leave room for another output and a recently observed large input
@@ -666,6 +683,7 @@ class Runtime:
         pressure = (min(explicit, automatic) if explicit is not None and automatic is not None
                     else explicit if explicit is not None else automatic)
         target = (int(pressure * self.context.policy.compact_to_ratio) if explicit is not None
+                  else max(1, pressure - 2 * headroom) if context_headroom is not None and pressure is not None
                   else max(output + 1, pressure - 2 * headroom) if pressure is not None else None)
         return pressure, target
 
@@ -696,11 +714,15 @@ class Runtime:
                 strict=self.strict_model_profile)
             calibration = self._refresh_context_calibration()
             return calibration.estimate(body, estimate, strict=self.strict_model_profile).reservation_tokens
-        return estimate_chat_request({"model": self.model,
+        estimate = estimate_chat_request({"model": self.model,
                 "messages": (messages if self.versions.remote_model.route_id == "glm-subscription-anthropic"
                     else reasoning_history_messages(messages, self.reasoning_history, sources)),
                 "tools": self.specs, **self.parameters},
-                strict=self.strict_model_profile).reservation_tokens
+                strict=self.strict_model_profile)
+        # Shared-window compaction compares input occupancy with an input
+        # threshold. A budget upper bound is not a context occupancy estimate.
+        return (estimate.input_tokens_upper_bound if self._context_output_headroom() is not None
+                else estimate.reservation_tokens)
 
     def _compact_before_retry(self, messages, sources):
         if self.context is None:
@@ -711,18 +733,26 @@ class Runtime:
         self._checkpoint()
         return projection if after < before else None
 
-    def _context_recovery_stop(self, *, reason, prepared=None):
+    def _context_recovery_stop(self, *, reason, prepared=None, context_output=None):
         evidence = {"reason": reason, "recoverable": True,
             "next_action": ("A provider retry hint blocks automatic resend. Inspect the saved failure and preserve completed tools before explicitly planning any new request."
                 if reason == "provider_retry_hint_veto" else
                 "Resume from the saved task state with a smaller required working set or corrected window evidence; do not replay completed tools."),
             "checkpoint": str(self.store.task_directory / "checkpoint.json"),
             "configured_context_limit": self.limits.context_tokens,
-            "estimate": asdict(prepared.token_estimate) if prepared is not None else None}
+            "estimate": asdict(prepared.token_estimate) if prepared is not None else None,
+            **({"context_output": context_output} if context_output is not None else {})}
         self.store.append(RunLifecyclePayload(action="failure", failure_stage="context_management",
             reason="context_recovery_required"), source_refs=(self.store.source("context-recovery", evidence),))
         self._checkpoint()
         return "context_recovery_required"
+
+    def _prepare_model_request(self, messages, sources, tools, parameters):
+        return self._calibrate_prepared(prepare_request(store=self.store, model=self.model,
+            messages=messages, message_sources=sources, tools=tools,
+            tool_source=self.tool_source, parameters=parameters, versions=self.versions,
+            image_originals=self.originals, reasoning_history=self.reasoning_history,
+            strict_model_profile=self.strict_model_profile))
 
     async def _model_call(self, messages, sources, *, purpose, tools, context_event_id=None):
         parameters = dict(self.parameters)
@@ -737,18 +767,37 @@ class Runtime:
                     continue
                 self.stage = "prepare_request"
                 with self._measure("request_prepare"):
-                    prepared = prepare_request(store=self.store, model=self.model,
-                        messages=messages, message_sources=sources, tools=tools,
-                        tool_source=self.tool_source, parameters=parameters, versions=self.versions,
-                        image_originals=self.originals,
-                        reasoning_history=self.reasoning_history,
-                        strict_model_profile=self.strict_model_profile)
-                    prepared = self._calibrate_prepared(prepared)
+                    prepared = self._prepare_model_request(messages, sources, tools, parameters)
                 profile_limit = prepared.context_window_tokens
                 configured_limit = self.limits.context_tokens
                 available_limits = tuple(limit for limit in (profile_limit, configured_limit)
                                          if limit is not None)
                 effective_context_limit = min(available_limits) if available_limits else None
+                context_output = None
+                context_headroom = self._context_output_headroom()
+                if context_headroom is not None and effective_context_limit is not None:
+                    input_upper = prepared.input_token_upper_bound
+                    output_remaining = effective_context_limit - input_upper
+                    effective_output = min(prepared.output_token_limit, output_remaining)
+                    context_output = {
+                        "policy": "shared_context_remaining_output",
+                        "context_window_tokens": effective_context_limit,
+                        "input_tokens_upper_bound": input_upper,
+                        "configured_output_token_limit": self.parameters.get("max_tokens",
+                            self.parameters.get("max_completion_tokens")),
+                        "requested_output_token_limit": prepared.output_token_limit,
+                        "effective_output_token_limit": max(0, effective_output),
+                        "planning_headroom_tokens": context_headroom,
+                        "context_source": self._effective_model_profile().context_source,
+                        "input_estimate_source": prepared.estimate_source,
+                        "uncertainty": prepared.token_estimate.uncertainty,
+                        "note": "Input estimate constrains the shared window; planning headroom is not a generation cap or budget reservation."}
+                    if 0 < effective_output < prepared.output_token_limit:
+                        actual_parameters = dict(parameters)
+                        key = "max_tokens" if "max_tokens" in actual_parameters else "max_completion_tokens"
+                        actual_parameters[key] = effective_output
+                        with self._measure("request_prepare"):
+                            prepared = self._prepare_model_request(messages, sources, tools, actual_parameters)
                 if (effective_context_limit is not None
                         and prepared.token_reservation_estimate > effective_context_limit):
                     projection = (self._compact_before_retry(messages, sources)
@@ -758,7 +807,7 @@ class Runtime:
                         messages, sources, context_event_id = projection
                         continue
                     return None, self._context_recovery_stop(reason="required_context_cannot_fit_after_compaction",
-                                                             prepared=prepared)
+                                                             prepared=prepared, context_output=context_output)
                 budget_revision = self._budget_capacity.revision
                 self._load_budget()
                 remaining = self._remaining()
@@ -842,6 +891,7 @@ class Runtime:
                     source_refs=(self.store.source("request-budget-decision", {
                         **decision.model_dump(mode="json"), "original_output_limit": self.parameters.get("max_tokens", self.parameters.get("max_completion_tokens")),
                         "actual_output_limit": prepared.output_token_limit,
+                        **({"context_output": context_output} if context_output is not None else {}),
                         **({"output_limit_enforcement": "local_reservation_only",
                             "service_output_cap": None,
                             "note": "ChatGPT subscription rejects output cap parameters; actual usage can exceed the reservation."}

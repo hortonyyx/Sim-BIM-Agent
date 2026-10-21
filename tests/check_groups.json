@@ -2,6 +2,14 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_paratera_flagship.py": {
+      "group": "targeted",
+      "reason": "Original-vendor Paratera Kimi/Qwen effort, output fields and captured reasoning/image/tool continuation"
+    },
+    "tests/test_runtime_shared_context.py": {
+      "group": "targeted",
+      "reason": "Shared-window native output caps follow remaining input capacity with matching wire, budget, context, recovery and child policies"
+    },
     "tests/test_source_space_holes.py": {
       "group": "targeted",
       "reason": "Single-space interior rings preserve identity, cap cutouts, core doors, contacts, adoption, persistence and visibility"

@@ -1,0 +1,181 @@
+{
+  "provenance": "Paratera authorized synthetic image/tool preflight, 2026-10-22. Public model responses only; no credentials or building input.",
+  "Kimi-K3": [
+    {
+      "id": "chatcmpl-6ad8e86e1fe2150728f83736",
+      "created": 1792600174,
+      "model": "Kimi-K3",
+      "object": "chat.completion",
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "message": {
+            "content": "I'll identify the dominant color of the image.",
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "index": 0,
+                "function": {
+                  "arguments": "{\"color\": \"green\"}",
+                  "name": "report_color"
+                },
+                "id": "report_color_0",
+                "type": "function"
+              }
+            ],
+            "reasoning_content": "The user wants me to identify the dominant color of the image. The image is clearly solid green. I need to call report_color with \"green\" once, then reply exactly OK after receiving the result.",
+            "provider_specific_fields": {
+              "refusal": null,
+              "reasoning_content": "The user wants me to identify the dominant color of the image. The image is clearly solid green. I need to call report_color with \"green\" once, then reply exactly OK after receiving the result."
+            }
+          },
+          "provider_specific_fields": {
+            "matched_stop": null
+          }
+        }
+      ],
+      "usage": {
+        "completion_tokens": 95,
+        "prompt_tokens": 258,
+        "total_tokens": 353,
+        "completion_tokens_details": {
+          "reasoning_tokens": 43
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "image_tokens": 9
+        },
+        "cached_tokens": 0
+      },
+      "metadata": {
+        "weight_version": "default"
+      }
+    },
+    {
+      "id": "chatcmpl-6ad8e8711fe2150728f83737",
+      "created": 1792600177,
+      "model": "Kimi-K3",
+      "object": "chat.completion",
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "content": "OK",
+            "role": "assistant",
+            "reasoning_content": "The tool has been called successfully with green, and the result confirms it was accepted. Now I need to reply exactly \"OK\".",
+            "provider_specific_fields": {
+              "refusal": null,
+              "reasoning_content": "The tool has been called successfully with green, and the result confirms it was accepted. Now I need to reply exactly \"OK\"."
+            }
+          },
+          "provider_specific_fields": {
+            "matched_stop": 163589
+          }
+        }
+      ],
+      "usage": {
+        "completion_tokens": 39,
+        "prompt_tokens": 400,
+        "total_tokens": 439,
+        "completion_tokens_details": {
+          "reasoning_tokens": 28
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "image_tokens": 9
+        },
+        "cached_tokens": 0
+      },
+      "metadata": {
+        "weight_version": "default"
+      }
+    }
+  ],
+  "Qwen3.8-Max": [
+    {
+      "id": "chatcmpl-0e3adf79-006f-9b91-8fe4-fee7c7bc9b47",
+      "created": 1792600185,
+      "model": "Qwen3.8-Max",
+      "object": "chat.completion",
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "message": {
+            "content": "",
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "index": 0,
+                "function": {
+                  "arguments": "{\"color\": \"green\"}",
+                  "name": "report_color"
+                },
+                "id": "call_c97ee72cd6e54cc2ba80d671",
+                "type": "function"
+              }
+            ],
+            "reasoning_content": "The image is solid green. Call report_color with \"green\".",
+            "provider_specific_fields": {
+              "refusal": null,
+              "reasoning_content": "The image is solid green. Call report_color with \"green\"."
+            }
+          },
+          "provider_specific_fields": {}
+        }
+      ],
+      "usage": {
+        "completion_tokens": 42,
+        "prompt_tokens": 406,
+        "total_tokens": 448,
+        "completion_tokens_details": {
+          "reasoning_tokens": 13,
+          "text_tokens": 28
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 340,
+          "image_tokens": 66
+        }
+      }
+    },
+    {
+      "id": "chatcmpl-5a9d57b5-6ece-9af1-9231-1e2bc532ed41",
+      "created": 1792600199,
+      "model": "Qwen3.8-Max",
+      "object": "chat.completion",
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "content": "OK",
+            "role": "assistant",
+            "reasoning_content": "The tool result has been received. The instructions say to reply exactly with \"OK\".",
+            "provider_specific_fields": {
+              "refusal": null,
+              "reasoning_content": "The tool result has been received. The instructions say to reply exactly with \"OK\"."
+            }
+          },
+          "provider_specific_fields": {}
+        }
+      ],
+      "usage": {
+        "completion_tokens": 22,
+        "prompt_tokens": 476,
+        "total_tokens": 498,
+        "completion_tokens_details": {
+          "reasoning_tokens": 17,
+          "text_tokens": 4
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "text_tokens": 410,
+          "image_tokens": 66
+        }
+      }
+    }
+  ]
+}

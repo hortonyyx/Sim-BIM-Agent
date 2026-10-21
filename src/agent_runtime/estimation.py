@@ -51,6 +51,9 @@ class ModelProfile:
     image_source: str
     image_uncertainty: str
     profile_status: str
+    # Opt in to a shared input/output context window. This is planning
+    # headroom, never an output or reasoning cap and never a budget hold.
+    context_output_headroom_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +108,14 @@ def _profile_from_dict(row: Mapping[str, Any]) -> ModelProfile:
     )
     if not isinstance(output_limit_source, str) or not output_limit_source.strip():
         raise ValueError("output_limit_source must be a non-empty string")
+    context_headroom = row.get("context_output_headroom_tokens")
+    if context_headroom is not None:
+        window = row.get("context_window_tokens")
+        if (type(context_headroom) is not int or context_headroom <= 0
+                or type(window) is not int or context_headroom >= window):
+            raise ValueError("context_output_headroom_tokens must be positive and below the shared context window")
+        if allowance:
+            raise ValueError("shared context output cap must include reasoning; no separate reasoning allowance")
     return ModelProfile(
         canonical_name=row["canonical_name"], aliases=tuple(row.get("aliases", ())),
         context_window_tokens=row.get("context_window_tokens"),
@@ -133,6 +144,7 @@ def _profile_from_dict(row: Mapping[str, Any]) -> ModelProfile:
         image_special_tokens=int(row["image_special_tokens"]),
         image_source=row["image_source"], image_uncertainty=row["image_uncertainty"],
         profile_status=row["profile_status"],
+        context_output_headroom_tokens=context_headroom,
     )
 
 
