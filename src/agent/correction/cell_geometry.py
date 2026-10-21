@@ -180,11 +180,29 @@ def cell_polygon(
     if not allow_cw and not _is_ccw(closed):
         raise ValueError(f"cell {cid}: polygon exterior ring must be CCW")
 
-    poly = Polygon(pts)
+    raw_holes = getattr(cell, "holes", []) or []
+    holes = []
+    for index, raw in enumerate(raw_holes):
+        if not isinstance(raw, (list, tuple)) or len(raw) < (4 if require_orthogonal else 3):
+            raise ValueError(f"cell {cid}: hole {index} requires a valid ring")
+        hole = [_as_pair(p, cid, i) for i, p in enumerate(raw)]
+        if hole[0] == hole[-1]:
+            hole.pop()
+        for a, b in zip(hole, hole[1:] + hole[:1]):
+            length = math.dist(a, b)
+            if length <= _EPS or (min_edge_length_m is not None and length < min_edge_length_m - _EPS):
+                raise ValueError(f"cell {cid}: hole {index} has a degenerate or short edge")
+            if require_orthogonal and not edge_is_axis_aligned(abs(a[0]-b[0]), abs(a[1]-b[1])):
+                raise ValueError(f"cell {cid}: hole {index} is not orthogonal")
+        holes.append(hole)
+    poly = Polygon(pts, holes)
     if poly.is_empty or poly.area <= _EPS:
         raise ValueError(f"cell {cid}: polygon is degenerate")
     if not poly.is_valid:
         raise ValueError(f"cell {cid}: polygon is invalid/self-intersecting")
+    exterior = Polygon(pts)
+    if any(not exterior.contains(Polygon(h)) or exterior.boundary.intersects(Polygon(h).boundary) for h in holes):
+        raise ValueError(f"cell {cid}: holes must lie strictly inside the exterior")
 
     if require_bbox_match and cell_has_polygon(cell):
         minx, miny, maxx, maxy = poly.bounds

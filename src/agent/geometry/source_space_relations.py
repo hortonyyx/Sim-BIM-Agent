@@ -69,7 +69,7 @@ def review_space_relations(source, *, floor_id, image_size, x_anchors, y_anchors
     sy, oy, ay = _axis_anchors(y_anchors, axis='y', size=image_size[1])
     if not isinstance(observations, list) or not 1 <= len(observations) <= 32:
         raise ValueError('observations must contain 1 to 32 sampled relationships')
-    polygons = [(row['id'], Polygon(row['polygon'])) for row in selected_spaces]
+    polygons = [(row['id'], Polygon(row['polygon'], row.get('holes', []))) for row in selected_spaces]
     if any(not polygon.is_valid or polygon.is_empty for _, polygon in polygons):
         raise ValueError('source has invalid space polygons')
     # Numerical boundary ambiguity only, not a new geometry acceptance tolerance.

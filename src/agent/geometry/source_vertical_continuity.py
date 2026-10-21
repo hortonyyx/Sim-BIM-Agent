@@ -21,7 +21,7 @@ STACK_ROLES = frozenset({"shaft", "stairwell", "atrium"})
 
 def review_vertical_continuity(source: dict, *, tolerance: float = EPS) -> dict:
     spaces = {row["id"]: row for row in source.get("spaces", [])}
-    polygons = {sid: Polygon(row["polygon"]) for sid, row in spaces.items()}
+    polygons = {sid: Polygon(row["polygon"], row.get('holes', [])) for sid, row in spaces.items()}
     roles = {sid: require_role(row.get("role")) for sid, row in spaces.items()}
     boundaries = source.get("boundaries", [])
     raw = source.get("vertical_separations", [])
@@ -54,7 +54,7 @@ def review_vertical_continuity(source: dict, *, tolerance: float = EPS) -> dict:
         if len(rows) != 1:
             return {"state": "unverified", "boundary_ids": [row["id"] for row in rows]}
         row = rows[0]
-        if not Polygon([p[:2] for p in row["vertices"]]).equals(polygons[sid]):
+        if not Polygon([p[:2] for p in row["vertices"]], [[p[:2] for p in h] for h in row.get('holes', [])]).equals(polygons[sid]):
             return {"state": "unverified", "boundary_ids": [row["id"]]}
         state = ("physical" if row.get("kind") == "physical" and row.get("enclosure", "physical") == "physical"
                  else row.get("enclosure", row.get("kind", "unverified")))

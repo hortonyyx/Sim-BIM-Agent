@@ -382,6 +382,7 @@ def _cell_shape(cell: dict, *, operation: str, require_orthogonal=True) -> Polyg
     try:
         shape = cell_polygon(SimpleNamespace(
             id=cell.get("id"), polygon=cell.get("polygon"), x=cell.get("x"), y=cell.get("y"),
+            holes=cell.get('holes', []),
         ), require_orthogonal=require_orthogonal)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{operation}: source space {cell.get('id')!r} has invalid geometry: {exc}") from exc

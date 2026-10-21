@@ -111,6 +111,11 @@ def _boundary_frame(boundary: dict, *, allow_nonorthogonal=False):
         _fail(f"boundary {boundary.get('id')}: unsupported geometry type {geometry_type!r}")
 
     parent = project(vertices)
+    if boundary.get('holes'):
+        holes = [project(hole) for hole in boundary['holes']]
+        if any(hole is None for hole in holes):
+            _fail(f"boundary {boundary.get('id')}: invalid interior ring plane")
+        parent = parent.difference(unary_union(holes))
     if parent is None or not parent.is_valid or parent.area <= EPS ** 2:
         _fail(f"boundary {boundary.get('id')}: invalid {plane_name} parent plane")
     if not allow_nonorthogonal and not _axis_aligned(parent):
@@ -176,6 +181,7 @@ def _region_record(entry: dict) -> dict:
     return {
         "condition": entry["condition"],
         "vertices": entry["vertices"],
+        **({'holes': entry['holes']} if entry.get('holes') else {}),
         "source_refs": entry["source_refs"],
         "assumptions": entry["assumptions"],
         "evidence_kind": entry["evidence_kind"],
@@ -354,7 +360,9 @@ def apply_source_enclosure(base_source: dict, declaration: dict | None) -> dict:
             vertices = copy.deepcopy(boundary["vertices"])
             shape = frame["parent"]
         entries_by_boundary[bid].append({"boundary_id": bid, "condition": condition, "scope": scope,
-                                         "vertices": vertices, "shape": shape, **evidence})
+                                         "vertices": vertices, "shape": shape,
+                                         **({'holes': copy.deepcopy(boundary['holes'])}
+                                            if scope == 'whole' and boundary.get('holes') else {}), **evidence})
 
     boundary_applications = []
     unknown_boundaries = []
@@ -376,6 +384,7 @@ def apply_source_enclosure(base_source: dict, declaration: dict | None) -> dict:
             boundary_applications.append({"target_type": "boundary", "target_id": bid,
                                           "condition": entry["condition"], "scope": entry["scope"],
                                           "vertices": entry["vertices"], "source_refs": entry["source_refs"],
+                                          **({'holes': entry['holes']} if entry.get('holes') else {}),
                                           "assumptions": entry["assumptions"], "evidence_kind": entry["evidence_kind"]})
         boundary["enclosure_regions"] = [_region_record(entry) for entry in entries]
         if whole:

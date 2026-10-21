@@ -176,7 +176,7 @@ def test_floor_footprint_hole_preserves_declared_spaces_and_has_no_fake_slab(tmp
     assert export_source_proposal(value, tmp_path / 'courtyard')['source_geometry_ready']
     bad = copy.deepcopy(value)
     bad['geometry']['floors'][0]['cells'] = [{'id': 'one', 'role': 'office', 'x': [0, 10], 'y': [0, 10], 'holes': [hole]}]
-    with pytest.raises(ValueError, match='single-space holes'):
+    with pytest.raises(ValueError, match='explicit polygon'):
         build(bad)
     bad['geometry']['floors'][0]['cells'][0].pop('holes')
     assert any(row['code'] == 'source.floor_coverage' for row in build(bad)['validation']['findings'])

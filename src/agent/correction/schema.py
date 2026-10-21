@@ -237,6 +237,7 @@ class SourceSpace(BaseModel):
     id: str
     floor_id: str
     polygon: list[list[float]]
+    holes: list[list[list[float]]] = Field(default_factory=list, exclude_if=lambda value: not value)
     z_floor: float
     height: float
     role: str
@@ -266,6 +267,7 @@ class SourceBoundary(BaseModel):
     kind: Literal["physical", "virtual"]
     geometry_type: Literal["wall", "floor", "ceiling"]
     vertices: list[list[float]]
+    holes: list[list[list[float]]] = Field(default_factory=list, exclude_if=lambda value: not value)
     adjacent_space_ids: list[str] = Field(default_factory=list)
     counterpart_ids: list[str] = Field(default_factory=list)
     source_refs: list[str] = Field(default_factory=list)

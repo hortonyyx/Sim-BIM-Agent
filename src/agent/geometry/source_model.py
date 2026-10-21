@@ -53,21 +53,29 @@ def source_primitives(geom: CorrectedGeometry, *, polygon_builder=_cell_polygon,
             poly = polygon_builder(cell)
             polygons[cell.id] = poly
             ring = _ring(poly)
+            holes = []
+            for interior in orient(poly.simplify(0), sign=1).interiors:
+                points = list(interior.coords)[:-1]
+                start = min(range(len(points)), key=points.__getitem__)
+                holes.append([list(p) for p in points[start:] + points[:start]])
             breaks = (wall_breakpoints or {}).get(floor_id, [])
-            if breaks:
+            def subdivide(points):
                 split_ring = []
-                for a, b in zip(ring, ring[1:] + ring[:1]):
+                for a, b in zip(points, points[1:] + points[:1]):
                     line = LineString([a, b])
                     interior = [p for p in breaks if line.distance(Point(p)) < 1e-7
                                 and 1e-7 < line.project(Point(p)) < line.length - 1e-7]
                     split_ring.extend([a, *[list(p) for p in sorted(
                         interior, key=lambda p: line.project(Point(p)))]])
-                ring = split_ring
+                return split_ring
+            if breaks:
+                ring = subdivide(ring)
+                holes = [subdivide(points) for points in holes]
             z0 = float(floor.z_floor)
             z1 = z0 + float(floor.ceiling_height)
             ref = f"correction:floor/{quote(floor_id, safe='')}/cell/{quote(cell.id, safe='')}"
             space = SourceSpace(
-                id=cell.id, floor_id=floor_id, polygon=ring, z_floor=z0,
+                id=cell.id, floor_id=floor_id, polygon=ring, holes=holes, z_floor=z0,
                 height=z1-z0, role=cell.role,
                 source_refs=getattr(cell, "source_refs", []),
                 assumptions=getattr(cell, "assumptions", []),
@@ -82,6 +90,11 @@ def source_primitives(geom: CorrectedGeometry, *, polygon_builder=_cell_polygon,
                 rows.append((f"wall/{index}", "wall", [
                     [*a, z0], [*b, z0], [*b, z1], [*a, z1],
                 ]))
+            for hole_index, points in enumerate(holes):
+                for index, (a, b) in enumerate(zip(points, points[1:] + points[:1])):
+                    rows.append((f"wall/hole/{hole_index}/{index}", "wall", [
+                        [*a, z0], [*b, z0], [*b, z1], [*a, z1],
+                    ]))
             rows.extend([
                 ("floor", "floor", [[*p, z0] for p in ring]),
                 ("ceiling", "ceiling", [[*p, z1] for p in ring]),
@@ -92,6 +105,7 @@ def source_primitives(geom: CorrectedGeometry, *, polygon_builder=_cell_polygon,
                 boundaries[bid] = SourceBoundary(
                     id=bid, space_id=cell.id, kind="physical", geometry_type=kind,
                     vertices=vertices, source_refs=[ref],
+                    holes=[[[*p, z0 if kind == 'floor' else z1] for p in h] for h in holes] if kind != 'wall' else [],
                 )
                 by_space[cell.id].append(bid)
 

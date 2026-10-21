@@ -99,7 +99,7 @@ def render_mesh_bim_overlay(picture, observation, source, *, floor_id=None, exte
     boundary_parts = []
     for boundary in bounds:
         if not exterior_only:
-            boundary_parts.append({**boundary, 'holes': []})
+            boundary_parts.append({**boundary, 'holes': boundary.get('holes', [])})
             continue
         origin = boundary['vertices'][0][:2]
         direction, _ = _frame(origin, boundary['vertices'][1][:2])

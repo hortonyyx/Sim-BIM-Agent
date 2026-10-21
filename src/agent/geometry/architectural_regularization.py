@@ -81,6 +81,13 @@ def _rings(template):
                 raise ValueError('rect must have positive dimensions')
             space['polygon'] = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
         yield f"spaces[{space['id']}].polygon", space['polygon']
+        for i, ring in enumerate(space.get('holes', [])):
+            yield f"spaces[{space['id']}].holes[{i}]", ring
+
+
+def _space_edges(space):
+    return [(a, b) for ring in [space['polygon'], *space.get('holes', [])]
+            for a, b in zip(ring, ring[1:] + ring[:1])]
 
 
 def _width(points):
@@ -239,7 +246,7 @@ def regularize_architectural_plan(plan, *, policy=None):
             original['templates'][name] = copy.deepcopy(template)
             for space in template['spaces']:
                 path = f"templates.{name}.spaces[{space['id']}]"
-                old_polygons[(name, space['id'])] = copy.deepcopy(space['polygon'])
+                old_polygons[(name, space['id'])] = copy.deepcopy(_space_edges(space))
                 width = _width(space['polygon'])
                 if width < .6 - EPS:
                     intent = intents.get(f"{name}:{space['id']}")
@@ -279,8 +286,10 @@ def regularize_architectural_plan(plan, *, policy=None):
                 if len(edges) != len(points):
                     continue
                 records.append((name, path, ring, points, edges))
-                if path.startswith('spaces['):
-                    host_supports[(name, path[len('spaces['):-len('].polygon')])] = edges
+                for space in template['spaces']:
+                    if any(ring is r for r in [space['polygon'], *space.get('holes', [])]):
+                        host_supports.setdefault((name, space['id']), []).extend(edges)
+                        break
         finish_stage('input_rings', ['ring_adoption', 'apertures', 'vertical', 'contacts'])
         for fid, groups in families.items():
             for group in groups:
@@ -353,7 +362,7 @@ def regularize_architectural_plan(plan, *, policy=None):
             ring[:] = rebuilt
         finish_stage('ring_adoption', ['apertures', 'vertical', 'contacts'])
 
-        new_polygons = {(name, s['id']): s['polygon'] for name, t in adopted['templates'].items()
+        new_polygons = {(name, s['id']): _space_edges(s) for name, t in adopted['templates'].items()
                         if not _curved(t) for s in t['spaces']}
 
         def move_pair(name, sid, p1, p2, path, spans=None):
@@ -372,7 +381,7 @@ def regularize_architectural_plan(plan, *, policy=None):
             matched = []
             for span in physical_spans:
                 physical = span_pair([p1,p2], span)
-                matches = [i for i,(a,b) in enumerate(zip(before,before[1:]+before[:1]))
+                matches = [i for i,(a,b) in enumerate(before)
                            if all(LineString([a,b]).distance(Point(p)) <= SEAM_M for p in physical)]
                 if len(matches) != 1:
                     reject('ambiguous_aperture_host', path, 'aperture must have one complete original straight host',
@@ -389,7 +398,7 @@ def regularize_architectural_plan(plan, *, policy=None):
                 along = sum(v*w for v,w in zip(t,local)) + tangent_shift
                 result.append(_world([n[j]*normal + t[j]*along for j in (0,1)], frames[name]))
             for span,i in matched:
-                aa,bb = after[i], after[(i+1)%len(after)]
+                aa,bb = after[i]
                 physical = span_pair(result,span)
                 distances = [LineString([aa,bb]).distance(Point(p)) for p in physical]
                 if max(distances) > SEAM_M:
@@ -430,7 +439,7 @@ def regularize_architectural_plan(plan, *, policy=None):
                     owners = []
                     for sid in (s['id'] for s in original['templates'][name]['spaces']):
                         polygon = old_polygons[(name,sid)]
-                        if Polygon(polygon).boundary.covers(LineString(pair)):
+                        if any(LineString(edge).covers(LineString(pair)) for edge in polygon):
                             owners.append(sid)
                     if len(owners) != 1:
                         reject('ambiguous_window_host', f'templates.{name}.window_rows', 'window span needs one original host')
@@ -626,7 +635,7 @@ def _protect_volume_contacts(original, adopted, audit, reject):
                 continue
             for space in template['spaces']:
                 result[f"{inst['id']}:{space['id']}"] = (
-                    Polygon(space['polygon']), inst['z'], inst['z']+inst['height'])
+                    Polygon(space['polygon'], space.get('holes', [])), inst['z'], inst['z']+inst['height'])
         return result
 
     def relation(a, b):
@@ -713,7 +722,7 @@ def regularize_architectural_proposal(proposal, *, policy=None):
                 cell_ids[cid] = f'{fid}:{sid}'
                 cell_rows[cid] = (fid, sid, cell)
                 space = dict(id=sid, role=cell.get('role', 'unknown'), source_refs=copy.deepcopy(cell.get('source_refs', [])))
-                for key in ('polygon', 'boundary_path', 'assumptions', 'role_evidence'):
+                for key in ('polygon', 'holes', 'boundary_path', 'assumptions', 'role_evidence'):
                     if key in cell:
                         space[key] = copy.deepcopy(cell[key])
                 if 'polygon' not in space and not space.get('boundary_path'):
@@ -747,7 +756,7 @@ def regularize_architectural_proposal(proposal, *, policy=None):
                         x,y = cell['x'],cell['y']
                         p = [[x[0],y[0]],[x[1],y[0]],[x[1],y[1]],[x[0],y[1]]]
                     if p is not None:
-                        floor_polygons.append(Polygon(p))
+                        floor_polygons.append(Polygon(p, cell.get('holes', [])))
             exterior = unary_union(floor_polygons).boundary
             for cid, (fid, sid, cell) in cell_rows.items():
                 if fid != floor_id or (declared is not None and declared != cid):
@@ -829,6 +838,8 @@ def regularize_architectural_proposal(proposal, *, policy=None):
                     polygon, _ = path_vertices(space['boundary_path'], curve_samples)
                 if polygon is not None:
                     cell['polygon'] = copy.deepcopy(polygon)
+                    if space.get('holes'):
+                        cell['holes'] = copy.deepcopy(space['holes'])
                     cell['x'] = [min(p[0] for p in cell['polygon']), max(p[0] for p in cell['polygon'])]
                     cell['y'] = [min(p[1] for p in cell['polygon']), max(p[1] for p in cell['polygon'])]
         result['geometry']['footprint_x'] = [min(p[0] for p in points), max(p[0] for p in points)]

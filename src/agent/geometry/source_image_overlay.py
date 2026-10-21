@@ -315,9 +315,14 @@ def render_source_overlay(
         world_polygon = _plan_points(space.get("polygon"), name=f"space {space['id']} polygon")
         pixel_polygon = [project(point) for point in world_polygon]
         draw.line(pixel_polygon + [pixel_polygon[0]], fill=_MAGENTA, width=3, joint="curve")
+        pixel_holes = [[project(point) for point in _plan_points(h, name=f"space {space['id']} hole")]
+                       for h in space.get('holes', [])]
+        for hole in pixel_holes:
+            draw.line(hole + hole[:1], fill=_MAGENTA, width=3, joint='curve')
         projected_spaces.append({
             "id": space["id"],
             "pixel_polygon": [[round(x, 6), round(y, 6)] for x, y in pixel_polygon],
+            **({'pixel_holes': [[[round(x, 6), round(y, 6)] for x, y in h] for h in pixel_holes]} if pixel_holes else {}),
             "out_of_image": any(outside(point) for point in pixel_polygon),
         })
 

@@ -174,21 +174,30 @@ def expand_source_polygon_geometry(raw: dict) -> dict:
                     raise ValueError("footprint rings/holes must form one valid positive-area polygon")
                 all_points.extend(footprint["vertices"])
         for cell in floor.get("cells", []):
-            if cell.get("holes"):
-                raise ValueError("single-space holes are not supported; never split a room to imitate a hole")
             if cell.get("boundary_path") is not None:
                 points, uses = path_vertices(cell["boundary_path"], sampled)
                 if cell.get("polygon") is not None:
                     _same_ring(cell["polygon"], points, "cell.polygon")
                 cell.update(polygon=points, boundary_path=uses)
             if cell.get("polygon"):
-                points = cell["polygon"]
+                points = cell["polygon"] = _ring(cell["polygon"], "cell.polygon")
+                holes = [_ring(hole, "space hole") for hole in cell.get("holes", [])]
+                if holes:
+                    exterior = Polygon(points)
+                    shape = Polygon(points, holes)
+                    if (not shape.is_valid or shape.area <= JOIN_TOLERANCE_M ** 2
+                            or any(not exterior.contains(Polygon(hole))
+                                   or exterior.boundary.intersects(Polygon(hole).boundary) for hole in holes)):
+                        raise ValueError("space holes must be disjoint valid rings strictly inside the exterior")
+                    cell["holes"] = holes
                 for field, axis in (("x", 0), ("y", 1)):
                     derived = [min(p[axis] for p in points), max(p[axis] for p in points)]
                     if field in cell and (len(cell[field]) != 2 or any(
                             abs(a-b) > JOIN_TOLERANCE_M for a, b in zip(cell[field], derived))):
                         raise ValueError(f"cell {field} does not match declared boundary")
                     cell[field] = derived
+            elif cell.get("holes"):
+                raise ValueError("space holes require an explicit polygon or boundary_path exterior")
     for opening in result.get("openings", []):
         if opening.get("curve_segment") is None:
             continue

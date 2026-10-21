@@ -96,8 +96,8 @@ def reference_partition(geom, document, *, tolerance_m=.02, source_spaces=None):
     internal = []
     if comparison["status"] != "not_evaluated":
         for fid, _, _ in floor_rows:
-            ref_polys = [Polygon(s["polygon"]) for s in refs if s["floor_id"] == fid]
-            cand_polys = [Polygon(s["polygon"]) for s in candidates if s["floor_id"] == fid]
+            ref_polys = [Polygon(s["polygon"], s.get('holes', [])) for s in refs if s["floor_id"] == fid]
+            cand_polys = [Polygon(s["polygon"], s.get('holes', [])) for s in candidates if s["floor_id"] == fid]
             if not ref_polys or not cand_polys or any(not p.is_valid for p in cand_polys):
                 continue
             # Compare physical partitions in the footprint area common to both

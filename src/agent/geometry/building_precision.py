@@ -70,7 +70,8 @@ def precision_report(source, *, floor_evidence=(), wall_references=()):
     """
     spaces = {s['id']: s for s in source['spaces']}
     floors = {f['id']: f for f in source['floors']}
-    orthogonal_spaces = {sid for sid, space in spaces.items() if _orthogonal_ring(space['polygon'])}
+    orthogonal_spaces = {sid for sid, space in spaces.items()
+                         if all(_orthogonal_ring(ring) for ring in [space['polygon'], *space.get('holes', [])])}
     excluded_spaces = sorted(spaces.keys() - orthogonal_spaces)
     excluded_floors = {fid for fid, floor in floors.items()
                        if not _orthogonal_ring(floor['footprint'])
@@ -266,7 +267,7 @@ def precision_report(source, *, floor_evidence=(), wall_references=()):
         if limit is None:
             continue
         ring = space['polygon']
-        polygon = Polygon(ring)
+        polygon = Polygon(ring, space.get('holes', []))
         width, location = minimum_orthogonal_space_width(polygon)
         _, length = _width(polygon)
         if NUMERICAL_M < width < MIN_SPACE_WIDTH_M - NUMERICAL_M:
@@ -298,7 +299,7 @@ def precision_report(source, *, floor_evidence=(), wall_references=()):
         if fid in excluded_floors:
             continue
         limit = tolerance(fid)
-        polygons = [Polygon(s['polygon']) for s in spaces.values() if s['floor_id'] == fid]
+        polygons = [Polygon(s['polygon'], s.get('holes', [])) for s in spaces.values() if s['floor_id'] == fid]
         if limit is None or not polygons or not floor.get('footprint'):
             continue
         gap = Polygon(floor['footprint'], floor.get('footprint_holes', [])).difference(unary_union(polygons))

@@ -76,11 +76,11 @@ def apply_continuous_spaces(plan, instances, groups, floors, windows, openings):
             members.append(cells[sid])
         members.sort(key=lambda row: row[0]["z_floor"])
         reference = members[0][1]
-        polygon = Polygon(reference["polygon"])
+        polygon = Polygon(reference["polygon"], reference.get('holes', []))
         for index, (floor, cell) in enumerate(members):
             if cell["role"] != reference["role"] or cell.get("role_evidence") != reference.get("role_evidence"):
                 raise ValueError(f"{target_floor}: member roles and role evidence must agree")
-            if not polygon.equals(Polygon(cell["polygon"])):
+            if not polygon.equals(Polygon(cell["polygon"], cell.get('holes', []))):
                 raise ValueError(f"{target_floor}: member footprints differ; no shape adoption is performed")
             if index:
                 previous = members[index - 1][0]
@@ -102,7 +102,8 @@ def apply_continuous_spaces(plan, instances, groups, floors, windows, openings):
         top = last["z_floor"] + last["ceiling_height"]
         height = top - base
         additions.append(dict(name=target_floor, z_floor=base, ceiling_height=height,
-                              footprint={"vertices": copy.deepcopy(merged["polygon"])}, cells=[merged]))
+                              footprint={"vertices": copy.deepcopy(merged["polygon"]),
+                                         **({'holes': copy.deepcopy(merged['holes'])} if merged.get('holes') else {})}, cells=[merged]))
         audit.append(dict(id=target_floor, space_id=target_space, member_space_ids=member_ids,
                           z=[base, top], source_refs=refs, assumptions=assumptions))
 

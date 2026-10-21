@@ -134,7 +134,7 @@ def _contacts(boundaries):
                 min(v[2] for v in vertices), max(v[2] for v in vertices),
             )
         elif boundary.geometry_type in {"floor", "ceiling"}:
-            polygon = Polygon([v[:2] for v in vertices])
+            polygon = Polygon([v[:2] for v in vertices], [[v[:2] for v in h] for h in boundary.holes])
             horizontal[boundary.id] = (vertices[0][2], polygon, polygon.bounds)
     relations = []
     for a, b in combinations(ordered, 2):
@@ -211,6 +211,8 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
         if not math.isfinite(floor.z_floor) or not math.isfinite(floor.ceiling_height) or floor.ceiling_height <= 0:
             raise ValueError(f"floor {floor.name}: height/base must be finite and height positive")
         for cell in floor.cells:
+            if getattr(cell, 'holes', []) and not simple_polygon:
+                raise ValueError('space holes require source_polygon_v1')
             if not cell.id.strip():
                 raise ValueError("source space identity must not be empty")
             if cell.polygon and not schema_supports(geom, FEATURE_CELL_POLYGON):
@@ -263,6 +265,8 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
     for boundary in boundaries.values():
         if boundary.geometry_type == "floor":
             boundary.vertices.reverse()  # source space outward normal is down
+            for hole in boundary.holes:
+                hole.reverse()
     for a, b in combinations(spaces, 2):
         height = min(a.z_floor+a.height, b.z_floor+b.height) - max(a.z_floor, b.z_floor)
         if height > EPS:
@@ -477,8 +481,8 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
     if simple_polygon:
         payload['geometry_capability'] = {
             'profile': 'simple_polygon', 'input_schema': geom.schema_version,
-            'scope': 'simple polygon prisms; declared circular arcs approximated by tolerance-bound chords; floor footprints may have holes covered by the declared spaces',
-            'not_supported': ['analytic curved surfaces', 'single-space holes', 'sloping or continuously height-varying spaces',
+            'scope': 'polygon prisms with explicit interior rings; declared circular arcs approximated by tolerance-bound chords; storey coverage and space identities are preserved',
+            'not_supported': ['analytic curved surfaces', 'sloping or continuously height-varying spaces',
                               'one opening spanning multiple curve chords'],
         }
         if geom.boundary_curves:
@@ -563,6 +567,7 @@ def source_view_geometry(source: dict) -> dict:
         display["enclosure_regions"] = [
             {"boundary_id": b["id"], "space_id": b["space_id"],
              "condition": r["condition"], "verts": r["vertices"],
+             **({'holes': r['holes']} if r.get('holes') else {}),
              "source_refs": r.get("source_refs", []), "assumptions": r.get("assumptions", []),
              "evidence_kind": r.get("evidence_kind")}
             for b in source["boundaries"] for r in b.get("enclosure_regions", [])]
@@ -593,6 +598,8 @@ def _display_parts(source):
             project = lambda ring: Polygon([v[:2] for v in ring])
             lift = lambda ring: [[x,y,z] for x,y in ring]
         parent = project(vertices)
+        if boundary.get('holes'):
+            parent = parent.difference(unary_union([project(h) for h in boundary['holes']]))
         holes = [project(o["vertices"]) for o in source["openings"]
                  if bid in source["opening_hosts"][o["id"]]]
         wall = parent.difference(unary_union(holes))

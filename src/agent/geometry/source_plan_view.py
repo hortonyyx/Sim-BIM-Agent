@@ -40,11 +40,19 @@ def render_source_plan(source: dict, floor_id: str):
     draw.polygon([(1050, 25), (1045, 35), (1055, 35)], fill="black")
     for index, space in enumerate(rooms):
         ring = [convert(point) for point in space["polygon"]]
-        draw.polygon(ring, fill=(220 + (index * 11) % 30, 225, 235), outline="black", width=3)
+        holes = [[convert(point) for point in h] for h in space.get('holes', [])]
+        mask = Image.new('L', pic.size, 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.polygon(ring, fill=255)
+        for hole in holes:
+            mask_draw.polygon(hole, fill=0)
+        pic.paste((220 + (index * 11) % 30, 225, 235), mask=mask)
+        for outline in [ring, *holes]:
+            draw.line(outline + outline[:1], fill='black', width=3, joint='curve')
     # Draw labels after all room fills so a neighbouring polygon cannot erase
     # a label. Concave rooms use their interior horizontal span for wrapping.
     for space in rooms:
-        polygon = Polygon(space["polygon"])
+        polygon = Polygon(space["polygon"], space.get('holes', []))
         point = polygon.representative_point()
         span = polygon.intersection(LineString([(x0, point.y), (x1, point.y)]))
         spans = list(span.geoms) if hasattr(span, "geoms") else [span]

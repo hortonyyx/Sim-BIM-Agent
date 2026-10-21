@@ -248,7 +248,7 @@ def test_concave_polygon_preserves_reentrant_exterior_window(tmp_path):
     assert {tuple(vertex[:2]) for vertex in host["vertices"]} == {(4, 4), (2, 2)}
 
 
-@pytest.mark.parametrize("field", ["holes", "curves", "top_polygon"])
+@pytest.mark.parametrize("field", ["curves", "top_polygon"])
 def test_unimplemented_shape_fields_fail_instead_of_disappearing(field):
     value = proposal()["geometry"]
     value["floors"][0]["cells"][0][field] = []

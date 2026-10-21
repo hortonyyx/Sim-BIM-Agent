@@ -232,7 +232,7 @@ def _source_template(template, curves):
     from src.agent.geometry.source_curves import expand_source_polygon_geometry
     cells = []
     for space in template['spaces']:
-        fields(space, ('id', 'role', 'source_refs'), ('polygon', 'rect', 'boundary_path', 'assumptions', 'role_evidence'))
+        fields(space, ('id', 'role', 'source_refs'), ('polygon', 'rect', 'boundary_path', 'holes', 'assumptions', 'role_evidence'))
         if sum(key in space for key in ('polygon', 'rect', 'boundary_path')) != 1:
             raise ValueError('space needs exactly one of polygon, rect or boundary_path')
         cell = copy.deepcopy(space)
@@ -316,6 +316,8 @@ def expand_parametric_proposal(plan: dict, *, expansion_audit: dict | None = Non
                 **_evidence(space, instance), **_role_evidence(space)))
             if 'boundary_path' in space:
                 cells[-1]['boundary_path'] = copy.deepcopy(space['boundary_path'])
+            if space.get('holes'):
+                cells[-1]['holes'] = copy.deepcopy(space['holes'])
         if not cells:
             raise ValueError('instance requires explicitly declared spaces')
         spanning_space_ids = strings(instance.get('spanning_space_ids', []))

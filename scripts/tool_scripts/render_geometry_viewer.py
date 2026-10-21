@@ -315,7 +315,7 @@ _APP_JS = r"""
     // to see without restoring a physical wall, changing volume, or connectivity.
     const material=new THREE.MeshBasicMaterial({color:ENCLOSURE_COLOR,side:THREE.DoubleSide,
       transparent:true,opacity:ENCLOSURE_OPACITY,depthWrite:false});
-    const mesh=new THREE.Mesh(ringGeom(r.verts),material); mesh.userData=userData;
+    const mesh=new THREE.Mesh(ringGeom(r.verts,r.holes||[]),material); mesh.userData=userData;
     enclosureMeshes.push(mesh); root.add(mesh);
     enclosureLines.push(dashedEdge(r.verts,ENCLOSURE_COLOR,radius*0.012,radius*0.008,{...userData}));
   });
@@ -508,8 +508,8 @@ _APP_JS = r"""
   function boundaryFor(u){ const bid=((SOURCE_MAP.surfaces||{})[u.name] || u.name); return SOURCE_BOUNDARIES[bid] || null; }
   function coverageFor(b){
     if(!b || !(b.vertices||[]).length) return '';
-    const total=polyArea(b.vertices)||1, area={open:0,unknown:0};
-    (b.enclosure_regions||[]).forEach(r=>{if(area[r.condition]!=null) area[r.condition]+=polyArea(r.vertices||[]);});
+    const total=(polyArea(b.vertices)-(b.holes||[]).reduce((sum,h)=>sum+polyArea(h),0))||1, area={open:0,unknown:0};
+    (b.enclosure_regions||[]).forEach(r=>{if(area[r.condition]!=null) area[r.condition]+=polyArea(r.vertices||[])-(r.holes||[]).reduce((sum,h)=>sum+polyArea(h),0);});
     if(!(b.enclosure_regions||[]).length){ if(b.enclosure==='open') area.open=total; if(b.enclosure==='unknown') area.unknown=total; }
     const physical=Math.max(0,total-area.open-area.unknown), rows=[];
     [['实体',physical],['开敞',area.open],['未知',area.unknown]].forEach(([k,a])=>{if(a>total*1e-8) rows.push(k+' '+(a/total*100).toFixed(0)+'%');});

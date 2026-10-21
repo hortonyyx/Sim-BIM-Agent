@@ -54,7 +54,7 @@ def build_public_names(source: dict) -> dict:
     # separate and do not imply geographic/architectural storey identity.
     floor_names = {f["id"]: f"F{i}" for i, f in enumerate(floors, 1)}
     floor_order = {f["id"]: i for i, f in enumerate(floors)}
-    polys = {s["id"]: Polygon(s["polygon"]) for s in source["spaces"]}
+    polys = {s["id"]: Polygon(s["polygon"], s.get('holes', [])) for s in source["spaces"]}
     points = [p for f in floors for p in f["footprint"]]
     xs, ys = [p[0] for p in points], [p[1] for p in points]
     ordered = _ordered_spaces(source["spaces"], polys, floor_order)

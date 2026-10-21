@@ -2,6 +2,10 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_source_space_holes.py": {
+      "group": "targeted",
+      "reason": "Single-space interior rings preserve identity, cap cutouts, core doors, contacts, adoption, persistence and visibility"
+    },
     "tests/test_bim_edit_route.py": {
       "group": "targeted",
       "reason": "Exact parametric edit routes, actionable rejection and continuous-core frame preservation"

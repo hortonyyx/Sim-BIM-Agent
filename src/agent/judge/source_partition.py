@@ -83,7 +83,13 @@ def _validate(spaces: list[dict], side: str) -> tuple[list[_Space], list[dict]]:
                 if not all(isfinite(value) for value in xy):
                     raise ValueError("polygon coordinates must be finite")
                 coordinates.append(xy)
-            polygon = Polygon(coordinates)
+            holes = raw.get('holes', [])
+            for hole in holes:
+                if (not isinstance(hole, (list, tuple)) or len(hole) < 3
+                        or any(not isinstance(p, (list, tuple)) or len(p) != 2
+                               or not all(isfinite(float(v)) for v in p) for p in hole)):
+                    raise ValueError('holes require finite XY rings')
+            polygon = Polygon(coordinates, holes)
             if (
                 polygon.is_empty
                 or not polygon.is_valid

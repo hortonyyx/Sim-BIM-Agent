@@ -3,7 +3,7 @@
 The common source builder, identities, contacts and display remain unchanged.
 This contract does not change drawing schemas 1/2/3. Circular curves are explicit
 tolerance-bound polygon approximations; a floor footprint may exclude holes,
-but each source space remains one single-ring prism.
+and source spaces may have explicitly declared interior rings.
 """
 from typing import Literal
 
@@ -20,6 +20,7 @@ from src.agent.geometry.source_curves import (
 
 class SourcePolygonCell(Cell):
     model_config = ConfigDict(extra="forbid")
+    holes: list[list[Point2]] = Field(default_factory=list, exclude_if=lambda value: not value)
     source_refs: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     role_evidence: RoomRoleEvidence | None = None

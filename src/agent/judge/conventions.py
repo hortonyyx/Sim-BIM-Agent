@@ -79,7 +79,7 @@ def _validated_rules(policy, references):
                 raise ValueError('cross-floor alignment requires another reference floor')
         else:
             raise ValueError('unsupported convention category')
-        target_boundaries = unary_union([Polygon(s['polygon']).boundary for s in references
+        target_boundaries = unary_union([Polygon(s['polygon'], s.get('holes', [])).boundary for s in references
                                         if s['floor_id'] == rule['target_floor']])
         target = _line(rule, rule['target_m'])
         # The target must be a pre-existing reference line, never an average or
@@ -88,7 +88,7 @@ def _validated_rules(policy, references):
         if category == 'cross_floor_alignment':
             supported = target.difference(target_boundaries.buffer(1e-6)).length <= 1e-6
         else:
-            exterior = unary_union([Polygon(s['polygon']) for s in references
+            exterior = unary_union([Polygon(s['polygon'], s.get('holes', [])) for s in references
                                     if s['floor_id'] == rule['floor_id']]).boundary
             extended = _line({**rule, 'span_m': [-1e5, 1e5]}, rule['target_m'])
             supported = exterior.intersection(extended.buffer(1e-6)).length > .1
@@ -100,17 +100,18 @@ def _validated_rules(policy, references):
 
 def _variant(reference, rules):
     vertices = deepcopy(reference['polygon'])
+    holes = deepcopy(reference.get('holes', []))
     used = []
     for rule in rules:
         changed = False
         axis, (lo, hi) = rule['axis'], rule['span_m']
-        for point in vertices:
+        for point in [p for ring in [vertices, *holes] for p in ring]:
             if abs(point[axis] - rule['reference_m']) <= 1e-6 and lo-EPS <= point[1-axis] <= hi+EPS:
                 point[axis] = rule['target_m']
                 changed = True
         if changed:
             used.append(rule)
-    return Polygon(vertices), used
+    return Polygon(vertices, holes), used
 
 
 def classify_conventions(raw: dict, source: dict, policy: dict, *, inventory: dict, heights: dict) -> dict:
@@ -159,7 +160,7 @@ def classify_conventions(raw: dict, source: dict, policy: dict, *, inventory: di
                     alternative, used = _variant(ref, subset)
                     if not used or not alternative.is_valid or alternative.area <= 0:
                         continue
-                    if _near(alternative, Polygon(candidate['polygon']), tolerance):
+                    if _near(alternative, Polygon(candidate['polygon'], candidate.get('holes', [])), tolerance):
                         # A changed host or connection in these rooms prevents
                         # dimensional leniency for their walls. Other defects
                         # remain separate severe findings in all cases.
@@ -170,7 +171,7 @@ def classify_conventions(raw: dict, source: dict, policy: dict, *, inventory: di
                             continue
                         classes = sorted({r['category'] for r in used})
                         evidence = dict(rules=used, residual_boundary_m=alternative.boundary.hausdorff_distance(
-                            Polygon(candidate['polygon']).boundary))
+                            Polygon(candidate['polygon'], candidate.get('holes', [])).boundary))
                         for rule in used:
                             line = _line(rule, rule['reference_m']).union(_line(rule, rule['target_m']))
                             band = box(*line.bounds).buffer(tolerance + EPS)

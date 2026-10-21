@@ -806,7 +806,10 @@ and limits; this is an audited polygonal approximation, not exact curved faces.
 Spaces remain vertical prisms with horizontal floors/ceilings. Sloped walls and
 continuously changing cross-sections within one space are unsupported. Each floor
 can have its own outline and courtyard holes when actual member spaces cover the
-declared ring; a single space with holes is unsupported. Per-floor footprints,
+declared ring. In source_polygon_v1 cells may declare holes:[[[x,y],...],...] strictly
+inside the explicit polygon/boundary_path exterior. Each such cell remains one
+space, with inner walls and genuine floor/ceiling cutouts. Excluded cores must
+remain separately represented; a hole alone does not create a core or door. Per-floor footprints,
 spanning_space_ids and explicit open enclosure regions use the shared contacts.
 Parametric templates may select source_polygon_v1; cardinal elevation views retain
 their limits, so use native mesh camera/host overlays for oblique facades.
@@ -1264,7 +1267,14 @@ set top-level schema_version="source_polygon_v1". Triangles and arbitrary simple
 polygons are then allowed. Supply top-level boundary_curves and use boundary_path
 instead of a space polygon; footprint may be an object with boundary_path or
 vertices and optional holes (see source_curves). Repeated floors reuse the same
-declared XY curves and tolerance. One space with holes remains unsupported.
+declared XY curves and tolerance. In source_polygon_v1 a space may also declare
+holes:[[[x,y],...],...], with one ring for each enclosed excluded region. Rings
+must be valid, disjoint and strictly inside its exterior. The office/corridor
+remains ONE source space; its inner walls and floor/ceiling cutouts are preserved.
+Describe the excluded cores as separate spaces or explicit spanning members,
+unless the storey footprint itself excludes a real courtyard. A hole is not a
+door, an automatic room, or evidence of a shaft. Doors on inner walls use the
+same explicit space/other_space host contract. Preserve hole order on edits.
 For explicit simple geometry use schema_version="source_polygon_v1" and
 primitive_frames={"core":{"origin":[10,20],"yaw_degrees":17}}. A space can use
 primitive={"frame":"core","rects":[[0,0,2.4,2.4]]} instead of rect/polygon/boundary_path.
@@ -1285,8 +1295,8 @@ instance may set spanning_space_ids:["CORE:core"] using final global expanded ID
 These spaces must cover that entire storey height; they are referenced, never cloned.
 Keep the core inside the overall storey footprint and outside its local room polygons.
 Different instances may have independent footprints, setbacks, heights and base levels.
-Never insert fake intermediate slabs to simplify a core. Holes within
-one space ring are unsupported: do not split a continuous open room just to fit.
+Never insert fake intermediate slabs to simplify a core. Use explicit space
+holes around enclosed cores; do not split a continuous open room just to fit.
 For windows declare facade, plane, spans, relative z, id and source_refs; optional
 assumptions. The code resolves each whole span to exactly ONE outward room edge
 on that plane. It refuses spanning a partition, wrong plane or wrong direction;
@@ -1469,8 +1479,10 @@ Changing a curve requires an explicit revised full proposal/template, preserving
 evidence and rebuilding derived endpoints. Do not retain stale polygon/p1/p2
 values inconsistent with the changed declaration. Per-floor footprint holes use
 explicit interior rings; actual spaces must cover the remaining floor area without
-fake walls. A single room with a hole, arbitrary splines and continuously sloped
-spaces are unsupported. These limits are independent of observed mesh completeness.
+fake walls. A source_polygon_v1 space may likewise declare polygon holes, retaining
+one identity and its inner walls/cap cutouts; see parametric. Hole paths must be
+explicit straight-edged rings. Arbitrary splines and continuously sloped spaces
+are unsupported. These limits are independent of observed mesh completeness.
 """
 
 # A2-T replaces the T1 sm25 register/adopt/confirm sequence (61/147 calls,

@@ -26,7 +26,7 @@ def compare_plan_inventory(source: dict, observations: list[dict], floor_mapping
             (p0, v0), (p1, v1) = obs['calibration'][axis + '_anchors']
             return v0 + (value - p0) * (v1 - v0) / (p1 - p0)
 
-        spaces = {s['id']: Polygon(s['polygon']) for s in source['spaces'] if s['floor_id'] == fid}
+        spaces = {s['id']: Polygon(s['polygon'], s.get('holes', [])) for s in source['spaces'] if s['floor_id'] == fid}
         identities = {key: [sid for sid, poly in spaces.items()
                            if poly.contains(Point(coordinate(p[0], 'x'), coordinate(p[1], 'y')))]
                       for key, p in obs['spaces'].items()}

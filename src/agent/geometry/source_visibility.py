@@ -58,6 +58,9 @@ def source_depth_buffer(boundaries, transform, camera, span, size, *, open_apert
         mask_image = Image.new('1', tuple((hi-lo+1).tolist()))
         draw = ImageDraw.Draw(mask_image)
         draw.polygon([tuple(p) for p in screen-lo], fill=1)
+        for vertices in boundary.get('holes', []):
+            hole = project_points(transform(vertices), camera, span, size)
+            draw.polygon([tuple(p) for p in hole-lo], fill=0)
         for region in boundary.get('enclosure_regions', []):
             if region.get('condition') == 'open':
                 hole = project_points(transform(region['vertices']), camera, span, size)
