@@ -369,7 +369,8 @@ class MeshWorkerTools:
                 reasoning_history=self.reasoning_history, low_output_limit_reason=self.low_output_limit_reason,
                 context_policy=context_policy, context_update=update_observer_budget,
                 request_timeout_seconds=(self.limits.seconds / (self.max_concurrent + 1)
-                                         if self.limits.seconds is not None else None),
+                                         if self.limits.seconds is not None
+                                         and self.limits.time_budget_mode == "wall_and_requests" else None),
                 answer_validator=lambda answer: hydrate_mesh_worker_answer(answer, record["packet"], child, child_run),
                 max_answer_repairs=1)
             saved = child.latest_checkpoint()

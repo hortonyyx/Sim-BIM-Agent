@@ -106,6 +106,50 @@ MESSAGES = [{"role": "system", "content": "unchanged system guidance"},
             {"role": "user", "content": "exercise tool protocol"}]
 
 
+def test_wall_mode_deadline_keeps_downtime_on_resume_and_stops_before_late_tool(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from src.agent_runtime import loop
+
+    clock, timeouts = [1000.0], []
+    monkeypatch.setattr(loop, "time", SimpleNamespace(time=lambda: clock[0], monotonic=lambda: clock[0]))
+
+    class Crash(BaseException):
+        pass
+
+    limits = RunLimits(model_calls=80, tool_calls=400, seconds=5400, tokens=None,
+                       time_budget_mode="wall", model_reconnect_seconds=180)
+    first = runtime(tmp_path, [], limits=limits)
+
+    def crash_before_request(boundary, engine):
+        if boundary == "before_request":
+            raise Crash()
+
+    first.fault_hook = crash_before_request
+    with first.store:
+        with pytest.raises(Crash):
+            asyncio.run(first.run(MESSAGES))
+    clock[0] += 5399  # Restart downtime must not grant a fresh 90 minutes.
+
+    class Adapter:
+        async def send(self, prepared, *, timeout):
+            timeouts.append(timeout)
+            clock[0] += 2
+            return response(("late-write", "save", {"value": "must not be written"}))
+
+    resumed = runtime(tmp_path, [], limits=limits, tools=first.tools)
+    resumed.adapter = Adapter()
+    with resumed.store:
+        receipt = asyncio.run(resumed.run(MESSAGES, resume=True))
+        assert receipt["status"] == "time_budget_exhausted"
+        assert timeouts == [1.0]
+        assert receipt["elapsed_seconds"] == 5401 and receipt["deadline_epoch"] == 6400
+        assert receipt["model_calls"] == 1 and receipt["tool_calls"] == 0
+        assert resumed.tools.calls == [] and not (tmp_path / "tools/saved.json").exists()
+        assert receipt["budget"]["total_limit"]["seconds"] is None
+        assert resumed.budget.ledger.charged.seconds == 2
+        resumed.store.validate()
+
+
 def test_single_role_keeps_complete_request_result_images_errors_and_public_thinking(tmp_path):
     engine = runtime(tmp_path, [response(("a", "view", {}), ("b", "error", {}),
         ("c", "save", {"value": 7}), reasoning=True), response(text="Done")])

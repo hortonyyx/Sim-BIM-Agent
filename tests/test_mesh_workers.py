@@ -443,6 +443,102 @@ def test_parent_cannot_exceed_root_tool_limit_after_child_spends_it(tmp_path, lo
         assert local_tools[0].calls == [("inputs", {})]
 
 
+def test_wall_mode_parallel_long_workers_keep_request_seconds_without_spending_wall_twice(
+        tmp_path, local_tools, monkeypatch):
+    from types import SimpleNamespace
+    from src.agent_runtime import loop
+
+    clock, sent_timeouts, engines = [1000.0], [], []
+    fake_time = SimpleNamespace(time=lambda: clock[0], monotonic=lambda: clock[0])
+    monkeypatch.setattr(loop, "time", fake_time)
+    monkeypatch.setattr(workers, "time", fake_time)
+    release = asyncio.Event()
+
+    class Adapter:
+        async def send(self, prepared, *, timeout):
+            sent_timeouts.append(timeout)
+            if len(sent_timeouts) == 8:
+                clock[0] += 700  # Eight overlapping requests, not 5,600 wall seconds.
+                release.set()
+            await release.wait()
+            return response(text=_answer())
+
+    def child_engine(**kwargs):
+        engine = Runtime(**kwargs)
+        engines.append(engine)
+        return engine
+
+    monkeypatch.setattr(workers, "Runtime", child_engine)
+    run = _inputs(tmp_path)
+    limits = _limits(model_calls=80, tool_calls=400, seconds=5400, tokens=None,
+                     time_budget_mode="wall", model_reconnect_seconds=180)
+    with EventStore(tmp_path / "audit", run_id="mesh-wall-parallel", task_id="coordinator",
+                    budget_limit=limits.ledger_limit()) as store:
+        wrapper, _ = _wrapper(store, run, limits, {}, max_concurrent=8,
+                               factory=lambda task, child: Adapter())
+        wrapper.start_epoch = clock[0]
+        tasks = [_task(f"worker-{index}", seconds=None, tokens=None) for index in range(8)]
+        engine = _root_engine(store, wrapper, limits, [
+            response(("delegate", "delegate_mesh_workers", {"tasks": tasks})),
+            response(text="All independent observations retained.")])
+        receipt = asyncio.run(engine.run([{"role": "user", "content": "Observe the admitted mesh."}]))
+        assert receipt["status"] == "completed" and receipt["model_calls"] == 2
+        assert receipt["elapsed_seconds"] == 700 and receipt["deadline_epoch"] == 6400
+        assert sent_timeouts == [5400] * 8  # No automatic 5400 / 9 = 600 second slice.
+        assert all(child.request_timeout_seconds is None for child in engines)
+        assert all(row["status"] == "completed" for row in wrapper.state()["tasks"])
+        budget = RuntimeBudget.from_events(store.budget_limit, store.all_events)
+        assert budget.ledger.total_limit.seconds is None and budget.available.seconds is None
+        assert all(row.amounts.seconds is None for row in budget.ledger.reservations)
+        assert budget.ledger.charged.seconds == 5600
+        assert budget.ledger.charged.calls == 10
+        assert engine.remaining_budget_status()["dimensions"]["seconds"]["remaining"] == "4700.0"
+        durations = [json.loads(store.get_bytes(ref.blob))["elapsed_seconds"]
+                     for event in store.all_events for ref in event.source_refs
+                     if ref.source_id == "request-duration"]
+        assert durations.count(700) == 8
+        assert all(child._config()["limits"]["time_budget_mode"] == "wall" for child in engines)
+        store.validate()
+
+
+@pytest.mark.parametrize("child_seconds,advance,expected_seconds", [
+    (650, 651, 650), (9000, 4000, 4000), (None, 4000, 4000)])
+def test_wall_mode_worker_keeps_its_explicit_time_and_parent_deadline(
+        tmp_path, local_tools, monkeypatch, child_seconds, advance, expected_seconds):
+    from types import SimpleNamespace
+    from src.agent_runtime import loop
+
+    clock, sent_timeouts = [1000.0], []
+    fake_time = SimpleNamespace(time=lambda: clock[0], monotonic=lambda: clock[0])
+    monkeypatch.setattr(loop, "time", fake_time)
+    monkeypatch.setattr(workers, "time", fake_time)
+
+    class Adapter:
+        async def send(self, prepared, *, timeout):
+            sent_timeouts.append(timeout)
+            clock[0] += advance
+            return response(("late-tool", "inputs", {}))
+
+    run, limits = _inputs(tmp_path), _limits(seconds=5400, tokens=None, time_budget_mode="wall")
+    with EventStore(tmp_path / "audit", run_id="mesh-wall-child-limit", task_id="coordinator",
+                    budget_limit=limits.ledger_limit()) as store:
+        _start(store)
+        wrapper, _ = _wrapper(store, run, limits, {}, factory=lambda task, child: Adapter())
+        wrapper.start_epoch = 1000
+        clock[0] += 1400  # Parent already spent this wall time before delegation.
+        result = _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {
+            "tasks": [_task(seconds=child_seconds, tokens=None)]})))
+        assert result["status"].endswith("time_budget_exhausted")
+        assert sent_timeouts == [expected_seconds]
+        child = store.for_task("inspect", parent_task_id=store.task_id)
+        timing = json.loads((child.task_directory / "mesh_worker.json").read_bytes())["timing"]
+        assert timing["time_budget_seconds"] == expected_seconds
+        assert timing["deadline_epoch"] <= wrapper.start_epoch + limits.seconds
+        assert local_tools[0].calls == []  # Expired responses cannot start another tool.
+        assert len([e for e in child.events if e.payload.event_type == "adapter_request"]) == 1
+        store.validate()
+
+
 def test_child_recovery_replays_durable_response_without_new_request(tmp_path, local_tools, monkeypatch):
     crashed = [False]
 

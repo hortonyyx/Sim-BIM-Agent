@@ -268,12 +268,15 @@ def validate_budget(case: dict) -> RunLimits:
         raise ValueError("set tokens explicitly (null disables it), or supply a CNY ceiling")
     if "model_reconnect_seconds" in limits and case.get("mode") != "single_model":
         raise ValueError("model_reconnect_seconds currently supports single_model only")
+    if "time_budget_mode" in limits and case.get("mode") != "single_model":
+        raise ValueError("time_budget_mode currently supports single_model only")
     values = {
         name: limits.get(name) for name in
         ("model_calls", "tool_calls", "seconds", "tokens", "money_cny")}
     for configured, field in (("model_retries", "max_model_retries"),
                               ("retry_backoff_seconds", "retry_backoff_seconds"),
-                              ("model_reconnect_seconds", "model_reconnect_seconds")):
+                              ("model_reconnect_seconds", "model_reconnect_seconds"),
+                              ("time_budget_mode", "time_budget_mode")):
         if configured in limits:
             values[field] = limits[configured]
     parsed = RunLimits.model_validate_json(json.dumps(values))
@@ -308,6 +311,8 @@ def argv_for(case: dict, *, resume: bool = False) -> list[str]:
             "--tool-calls", str(limits["tool_calls"]),
             "--output-tokens", str(case["output_tokens"])]
     argv += ["--no-time-limit"] if budget.seconds is None else ["--seconds", str(limits["seconds"])]
+    if "time_budget_mode" in limits:
+        argv += ["--time-budget-mode", budget.time_budget_mode]
     if case.get("process_reviews"):
         argv += ["--process-reviews"]
     if mesh_worker_concurrency(case):

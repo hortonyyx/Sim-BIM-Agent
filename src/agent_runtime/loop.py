@@ -114,6 +114,10 @@ class RunLimits(ContractModel):
     model_calls: int = Field(ge=1)
     tool_calls: int = Field(ge=0)
     seconds: float | None = Field(gt=0)
+    # Omit the legacy default from frozen JSON so old checkpoints and worker
+    # configurations without this field remain byte-shape compatible.
+    time_budget_mode: Literal["wall_and_requests", "wall"] = Field(
+        default="wall_and_requests", exclude_if=lambda mode: mode == "wall_and_requests")
     tokens: int | None = Field(ge=1)
     money_usd: Decimal | None = Field(default=None, ge=0)
     money_cny: Decimal | None = Field(default=None, ge=0)
@@ -130,7 +134,8 @@ class RunLimits(ContractModel):
 
     def ledger_limit(self):
         return BudgetAmounts(tokens=self.tokens, calls=self.model_calls,
-            seconds=Decimal(str(self.seconds)) if self.seconds is not None else None,
+            seconds=(Decimal(str(self.seconds))
+                     if self.seconds is not None and self.time_budget_mode == "wall_and_requests" else None),
             money_usd=self.money_usd, money_cny=self.money_cny)
 
 
@@ -511,6 +516,10 @@ class Runtime:
             caps = [(getattr(b.total_limit, name), getattr(b.available, name))
                     for b in (self.budget, self.task_budget)
                     if getattr(b.total_limit, name) is not None]
+            if name == "seconds" and self.limits.time_budget_mode == "wall" and self.limits.seconds is not None:
+                # Wall-only runs still publish their deadline to tools/models;
+                # the unbounded request-time ledger is observation, not a cap.
+                caps.append((Decimal(str(self.limits.seconds)), Decimal(str(self._remaining()))))
             if not caps:
                 continue
             remaining = min(value for _, value in caps)
@@ -791,7 +800,8 @@ class Runtime:
                     additional_image_tokens_estimate=(prepared.token_estimate.image_tokens
                         if bills_images_separately(get_cny_price_schedule(self.model,
                             route_id=self.versions.remote_model.route_id)) else 0),
-                    output_token_limit=prepared.output_token_limit, seconds=seconds,
+                    output_token_limit=prepared.output_token_limit,
+                    seconds=None if self.limits.time_budget_mode == "wall" else seconds,
                     reasoning_token_allowance=prepared.token_estimate.reasoning_token_allowance,
                     estimate_source=prepared.estimate_source,
                     pricing=self.pricing, cny_pricing=self.cny_pricing)

@@ -142,6 +142,7 @@ async def execute(args) -> dict:
         require_cny_price_schedule(effective_model, route_id=args.provider)
     limits = RunLimits(model_calls=args.model_calls, tool_calls=args.tool_calls,
         seconds=args.seconds, tokens=args.tokens, money_usd=args.money_usd, money_cny=args.money_cny,
+        time_budget_mode=getattr(args, "time_budget_mode", "wall_and_requests"),
         near_limit=args.near_limit, min_output_tokens=args.min_output_tokens,
         context_tokens=args.context_tokens, max_model_retries=args.model_retries,
         retry_backoff_seconds=args.retry_backoff_seconds,
@@ -453,6 +454,8 @@ def parser():
     time_limit.add_argument("--seconds", type=float, default=180.0)
     time_limit.add_argument("--no-time-limit", dest="seconds", action="store_const", const=None,
                             help="disable the overall deadline; retain finite network I/O waits and other budgets")
+    p.add_argument("--time-budget-mode", choices=("wall_and_requests", "wall"), default="wall_and_requests",
+                   help="wall keeps the elapsed deadline without a cumulative request-time ceiling; default also caps summed request time")
     token_limit = p.add_mutually_exclusive_group()
     token_limit.add_argument("--tokens", type=int, default=5_000_000)
     token_limit.add_argument("--no-token-limit", dest="tokens", action="store_const", const=None,

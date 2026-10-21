@@ -105,6 +105,51 @@ def test_ordinary_cold_start_is_not_turned_into_continuation(tmp_path):
     assert "--model-reconnect-seconds" not in args
 
 
+def test_wall_time_mode_preserves_the_formal_limits_through_cli(tmp_path):
+    from src.agent.runtime_entry import parser
+    from src.agent.runtime_configuration import validate_budget
+
+    configured = configuration(tmp_path)
+    configured["maximum_seconds_per_case"] = 5400
+    case = configured["cases"][0]
+    case.pop("continuation")
+    case["mesh_workers"] = {"max_concurrent": 8}
+    case["limits"].update(model_calls=80, tool_calls=400, seconds=5400, time_budget_mode="wall")
+    selected = load(tmp_path, configured)
+    command = argv_for(selected)
+    args = parser().parse_args(command[3:])
+    assert args.time_budget_mode == "wall" and args.seconds == 5400
+    assert args.model_calls == 80 and args.tool_calls == 400 and args.tokens is None
+    assert args.mesh_workers == 8 and args.model_reconnect_seconds == 180
+    assert "--no-time-limit" not in command and "--no-token-limit" in command
+    assert validate_budget(selected).ledger_limit().seconds is None
+    case["limits"].pop("time_budget_mode")
+    selected = load(tmp_path, configured)
+    args = parser().parse_args(argv_for(selected)[3:])
+    assert args.time_budget_mode == "wall_and_requests"
+    assert validate_budget(selected).ledger_limit().seconds == 5400
+    assert "time_budget_mode" not in validate_budget(selected).model_dump(mode="json")
+
+
+@pytest.mark.parametrize("value", ["elapsed", None, True, 5400])
+def test_invalid_time_mode_fails_before_launch(tmp_path, value):
+    configured = configuration(tmp_path)
+    configured["cases"][0]["limits"]["time_budget_mode"] = value
+    with pytest.raises(ValueError):
+        load(tmp_path, configured)
+
+
+def test_wall_time_mode_cannot_be_silently_ignored_by_another_entrypoint(tmp_path):
+    from src.agent.runtime_configuration import validate_budget
+
+    case = configuration(tmp_path)["cases"][0]
+    case["mode"] = "role_division"
+    case["limits"].update(seconds=5400, time_budget_mode="wall")
+    case["limits"].pop("model_reconnect_seconds")
+    with pytest.raises(ValueError, match="time_budget_mode currently supports single_model only"):
+        validate_budget(case)
+
+
 def test_resume_of_continuation_verifies_source_without_reimporting(tmp_path):
     from src.agent.runtime_entry import parser
 

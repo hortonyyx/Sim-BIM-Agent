@@ -1,5 +1,14 @@
 # 当前任务
 
+## 2026-10-21 幸福中心首批两案并行已授权
+
+- 最新指令暂不做Opus，先Astra xhigh与最新DeepSeek Flash high各一次，独立冷启动、共同输入和工具权限，完整保留评测轨迹。第二次重复、Kimi、Opus及失败重跑不自动启动。
+- 启动前修正已定的90分钟墙钟语义：显式wall模式保留准备/工具/worker/网络恢复截止，累计请求秒仅作记录，不再按8worker自动切600秒；旧默认兼容。runtime39/domain136，最终共同提交与配置封存于批次seal.json，运行中不改产品。
+- 用户授权处理12个已核实MCP服务；按实时资源门槛准入两案，3秒采样两进程树。控制器status、原生receipt、候选与独立质量分别判断，配置封存不等于模型已发出请求。原先等待Opus/禁止整案的状态已被本次首批授权取代。
+- 详细配置、验证边界、全部证据目录及后续评价约定见当前交接。桌面未更新；实际启动与终态以外部批次记录为准。
+
+**当前交接：** [Astra与Flash首批配置、墙钟保护及评测记录](../reports/2026-10-21_energy_plaza_batch01.md)。
+
 ## 2026-10-21 幸福中心测试准备，分批启动尚待安排
 
 - 正式组为Astra、Opus 5.5（替换6.1 Sol）、DeepSeek Flash、Kimi K3，各两次独立冷启动；同一harness与原三输入。用户要求先逐部分定好再发，不同时启动全部，当前0正式测试。
@@ -8,7 +17,7 @@
 - 各服务取次高档：Astra xhigh、Flash high；本轮确认Opus xhigh与Kimi high。Kimi两次Go小测HTTP200/OK、239tokens，本地开放high并补齐真实推理字段的多轮保留。Opus新增三次小测（含已核验US出口及默认路由控制）仍403/attempt=0，尚未接通，需OpenRouter账户/支持侧核查；不把目录或鉴权成功当成模型可用。
 - 原约定保留于case audit/comparison-protocol.v0.json；最新协议与最终runtime登记见当前交接。原输入manifest与参考稿保持；仅作必要接线修复与小测，0整案、桌面未更新。仍待Opus就绪、共同配置封存和首批顺序。
 
-**当前交接：** [Opus与Kimi次高档核验](../reports/2026-10-21_model_effort_preflight.md)。原[参考稿与测试准备约定](../reports/2026-10-21_space_holes_energy_plaza_reference.md)保留；下列收尾安排为历史，以上述最新约定为准。
+**前次交接：** [Opus与Kimi次高档核验](../reports/2026-10-21_model_effort_preflight.md)。原[参考稿与测试准备约定](../reports/2026-10-21_space_holes_energy_plaza_reference.md)保留；下列收尾安排为历史，以上述最新约定为准。
 
 ## 2026-10-21 幸福中心标杆获用户确认，本轮收尾
 

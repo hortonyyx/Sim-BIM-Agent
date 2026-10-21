@@ -54,11 +54,12 @@ def _response(identity, tool=None, arguments=None, answer=None):
         "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}}
 
 
-def test_native_mesh_workers_return_verified_views_and_complete_shared_handoff(tmp_path):
-    asyncio.run(_native_mesh_worker_handoff(tmp_path))
+@pytest.mark.parametrize("time_budget_mode", ["wall_and_requests", "wall"])
+def test_native_mesh_workers_return_verified_views_and_complete_shared_handoff(tmp_path, time_budget_mode):
+    asyncio.run(_native_mesh_worker_handoff(tmp_path, time_budget_mode))
 
 
-async def _native_mesh_worker_handoff(tmp_path):
+async def _native_mesh_worker_handoff(tmp_path, time_budget_mode):
     case = _case(tmp_path)
     inputs = Path(case["input_root"])
     mesh = inputs / "building.glb"
@@ -109,9 +110,13 @@ async def _native_mesh_worker_handoff(tmp_path):
         "--building-input", str(inputs / "declaration.json"),
         "--provider", "scripted", "--script", str(parent_script), "--mesh-workers", "2",
         "--mesh-worker-script", str(worker_script), "--model-calls", "16", "--tool-calls", "24",
-        "--seconds", "300", "--no-token-limit", "--image-history-batches", "1"])
+        "--seconds", "300", "--time-budget-mode", time_budget_mode,
+        "--no-token-limit", "--image-history-batches", "1"])
     receipt = await runtime_entry.execute(args)
     assert receipt["status"] == "completed", receipt
+    assert receipt["limits"].get("time_budget_mode", "wall_and_requests") == time_budget_mode
+    assert ("time_budget_mode" in receipt["limits"]) == (time_budget_mode == "wall")
+    assert (receipt["budget"]["total_limit"]["seconds"] is None) == (time_budget_mode == "wall")
     assert receipt["finalization"]["completion_valid"] is True
     assert receipt["finalization"]["delivery"]["complete_building"] is True
     assert receipt["completion"]["mesh_review"]["fidelity"] == "not_evaluated"
@@ -131,6 +136,11 @@ async def _native_mesh_worker_handoff(tmp_path):
     resumed = await runtime_entry.execute(args)
     assert resumed["whole_run_counts"] == receipt["whole_run_counts"]
     assert (out / "events.jsonl").read_bytes() == before
+    args.time_budget_mode = "wall" if time_budget_mode == "wall_and_requests" else "wall_and_requests"
+    with pytest.raises(ValueError, match="limits/identity cannot change on resume|configuration changed"):
+        await runtime_entry.execute(args)
+    assert (out / "events.jsonl").read_bytes() == before
+    args.time_budget_mode = time_budget_mode
     args.mesh_workers = 3
     with pytest.raises(ValueError, match="configuration changed"):
         await runtime_entry.execute(args)

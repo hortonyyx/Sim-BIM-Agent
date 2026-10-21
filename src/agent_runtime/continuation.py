@@ -257,7 +257,9 @@ def continuation_allowance(source: ReadOnlyRun, requested_limits, *, expected_ev
         "recovery_policy_changes": changed_recovery,
         "reconnect_consumed_before_seconds": reconnect_consumed,
         "new_run_is_explicit_continuation": True, "replays_failed_request": False,
-        "time_policy": "New execution epoch; subtract prior active wall duration and shared request-time charges. Offline repair downtime is not execution time.",
+        "time_policy": ("New execution epoch; subtract prior active wall duration only; summed request time is observational. Offline repair downtime is not execution time."
+                        if old_limits.time_budget_mode == "wall" else
+                        "New execution epoch; subtract prior active wall duration and shared request-time charges. Offline repair downtime is not execution time."),
         "usage_policy": "Original receipts and unknown holds remain in source_ledger; the new ledger is limited to remaining capacity, never a replacement of original billing evidence.",
     }
     source.verify_unchanged()
