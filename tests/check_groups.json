@@ -1865,6 +1865,26 @@
     "tests/test_mesh_readiness.py": {
       "group": "targeted",
       "reason": "Offline frozen original mesh case allowlist, configuration, screening and version readiness"
+    },
+    "tests/test_source_vertical_sections.py": {
+      "group": "targeted",
+      "reason": "One source identity for a stepped volume, exact shell and volume, hole and seam-spanning aperture semantics"
+    },
+    "tests/test_source_vertical_sections_consumers.py": {
+      "group": "targeted",
+      "reason": "Section-aware floor selection, sampled relations and continuity; explicit unsupported downstream scoring/EP"
+    },
+    "tests/test_vertical_sections_regularization.py": {
+      "group": "targeted",
+      "reason": "Section-aware support-line and height adoption, aperture binding and actual volume contacts"
+    },
+    "tests/test_wall_hole_exterior.py": {
+      "group": "targeted",
+      "reason": "Actual wall holes remain absent from exterior exposure and mesh overlays"
+    },
+    "tests/test_vertical_sections_edit_guards.py": {
+      "group": "targeted",
+      "reason": "Legacy edits and template expansion cannot flatten or leave stale stepped volume declarations"
     }
   }
 }

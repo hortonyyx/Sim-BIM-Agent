@@ -27,6 +27,7 @@ FEATURE_TYPED_NORTH_AXIS = "typed_north_axis"
 FEATURE_SIMPLE_POLYGON = "simple_polygon"
 FEATURE_EXPLICIT_CURVE_CHORDS = "explicit_curve_chords"
 FEATURE_FOOTPRINT_HOLES = "footprint_holes"
+FEATURE_VERTICAL_SECTIONS = "vertical_sections"
 
 SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION_V1, SCHEMA_VERSION_V2, SCHEMA_VERSION_V3, SCHEMA_VERSION_SOURCE_POLYGON})
 SCHEMA_VERSION_SHAPES = {
@@ -43,7 +44,7 @@ SCHEMA_VERSION_FEATURES = {
         FEATURE_FACADE_SEGMENTS, FEATURE_TYPED_NORTH_AXIS,
     }),
     SCHEMA_VERSION_SOURCE_POLYGON: frozenset({FEATURE_CELL_POLYGON, FEATURE_PER_FLOOR_FOOTPRINT,
-        FEATURE_SIMPLE_POLYGON, FEATURE_EXPLICIT_CURVE_CHORDS, FEATURE_FOOTPRINT_HOLES}),
+        FEATURE_SIMPLE_POLYGON, FEATURE_EXPLICIT_CURVE_CHORDS, FEATURE_FOOTPRINT_HOLES, FEATURE_VERTICAL_SECTIONS}),
 }
 CAPABILITY_PROFILE_SHAPES = {
     CAPABILITY_PROFILE_RECTANGULAR: frozenset({SHAPE_RECTANGULAR}),
@@ -88,6 +89,9 @@ def require_supported_geometry_contract(
     geom: Any, capability_profile: str
 ) -> None:
     version = schema_version_of(geom)
+    if version != SCHEMA_VERSION_SOURCE_POLYGON and any(
+            getattr(cell, "vertical_sections", []) for floor in getattr(geom, "floors", []) for cell in floor.cells):
+        raise ValueError("vertical sections require source_polygon_v1")
     if version not in SUPPORTED_SCHEMA_VERSIONS:
         supported = ", ".join(sorted(SUPPORTED_SCHEMA_VERSIONS))
         raise ValueError(

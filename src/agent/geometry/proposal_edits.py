@@ -122,6 +122,8 @@ def _reflect(geometry: dict, *, axis: str, reason: str) -> dict:
         if floor.get("footprint"):
             raise ValueError("reflect: nonempty floor.footprint requires an explicit per-floor footprint edit")
         for cell in floor.get("cells", []):
+            if cell.get("vertical_sections"):
+                raise ValueError("reflect: vertical_sections requires an explicit revised build_bim proposal")
             cell[axis] = _interval_reflected(cell[axis], midpoint)
             polygon = cell.get("polygon")
             if polygon is not None:
@@ -361,6 +363,8 @@ def _reshape_spaces(proposal: dict, geometry: dict, operation: dict) -> dict:
     after = {}
     for identity, ring, x, y in replacements:
         cell = cells_by_id[identity]
+        if cell.get("vertical_sections"):
+            raise ValueError("reshape_spaces: vertical_sections requires an explicit revised build_bim proposal, including every section")
         before[identity] = copy.deepcopy(cell)
         cell["polygon"] = ring
         cell["x"] = x
@@ -379,6 +383,8 @@ def _reshape_spaces(proposal: dict, geometry: dict, operation: dict) -> dict:
 
 def _cell_shape(cell: dict, *, operation: str, require_orthogonal=True) -> Polygon:
     """Return one existing cell's complete plan shape under the shared contract."""
+    if cell.get("vertical_sections"):
+        raise ValueError(f"{operation}: vertical_sections requires an explicit revised build_bim proposal")
     try:
         shape = cell_polygon(SimpleNamespace(
             id=cell.get("id"), polygon=cell.get("polygon"), x=cell.get("x"), y=cell.get("y"),

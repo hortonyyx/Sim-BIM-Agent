@@ -77,6 +77,7 @@ def source_primitives(geom: CorrectedGeometry, *, polygon_builder=_cell_polygon,
             space = SourceSpace(
                 id=cell.id, floor_id=floor_id, polygon=ring, holes=holes, z_floor=z0,
                 height=z1-z0, role=cell.role,
+                vertical_sections=getattr(cell, "vertical_sections", []),
                 source_refs=getattr(cell, "source_refs", []),
                 assumptions=getattr(cell, "assumptions", []),
                 role_evidence=getattr(cell, "role_evidence", None),
@@ -85,6 +86,20 @@ def source_primitives(geom: CorrectedGeometry, *, polygon_builder=_cell_polygon,
             # input's actual drawing observations and explicit hypotheses.
             space.source_refs = list(dict.fromkeys([ref, *space.source_refs]))
             spaces.append(space)
+            if space.vertical_sections:
+                from src.agent.geometry.source_volume import section_shell, space_sections
+                rows = section_shell(space_sections(space), wall_breakpoints=breaks)
+                by_space[cell.id] = []
+                counters = {"wall": 0, "floor": 0, "ceiling": 0}
+                for row in rows:
+                    kind = row["geometry_type"]
+                    suffix = f"{kind}/section/{counters[kind]}"
+                    counters[kind] += 1
+                    bid = f"space/{quote(cell.id, safe='')}/{suffix}"
+                    boundaries[bid] = SourceBoundary(
+                        id=bid, space_id=cell.id, kind="physical", source_refs=[ref], **row)
+                    by_space[cell.id].append(bid)
+                continue
             rows = []
             for index, (a, b) in enumerate(zip(ring, ring[1:] + ring[:1])):
                 rows.append((f"wall/{index}", "wall", [

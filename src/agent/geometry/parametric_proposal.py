@@ -232,6 +232,9 @@ def _source_template(template, curves):
     from src.agent.geometry.source_curves import expand_source_polygon_geometry
     cells = []
     for space in template['spaces']:
+        if space.get('vertical_sections'):
+            raise ValueError('vertical_sections uses absolute elevations and requires an explicit source_polygon_v1 '
+                             'build_bim proposal; it is not a reusable parametric template')
         fields(space, ('id', 'role', 'source_refs'), ('polygon', 'rect', 'boundary_path', 'holes', 'assumptions', 'role_evidence'))
         if sum(key in space for key in ('polygon', 'rect', 'boundary_path')) != 1:
             raise ValueError('space needs exactly one of polygon, rect or boundary_path')

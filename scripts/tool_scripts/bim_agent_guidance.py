@@ -200,6 +200,9 @@ final save or finish_bim; record_inference remains available for a separate note
 build_parametric_bim expands the declaration. Use repeats for confirmed identical
 storeys and core_connections for their explicitly declared service stops, rather
 than writing each floor/connection again. Read get_bim_reference('parametric').
+For one continuous space with a stepped exterior or ceiling, use the generic
+build_bim vertical_sections contract in get_bim_reference('geometry'); geometry
+pieces must not become extra source zones connected by invented passages.
 The saved edit_route supplies the current plan hash and recommended edit tool;
 inspect_parametric_plan reads details when needed. patch_parametric_bim edits only
 changed declarations, including a rejected draft. Saved save_facts supplies source
@@ -1630,4 +1633,24 @@ suffixes follow actual boundary kind; source ceiling does not assert exterior ro
 Viewer fragments append Part1, open/unknown regions Open1/Unknown1, edges Edge1.
 Geometry/ordering edits may change public numbers; stable source IDs and all
 host/connection/evidence references stay unchanged. Unknown role is never office.
+"""
+
+REFERENCES['geometry'] += """
+
+One source space with a stepped exterior/ceiling can use source_polygon_v1 cell
+vertical_sections:[{"z":[0,1.5],"polygon":[[0,0],[8,0],[8,6],[0,6]],"holes":[]},
+ {"z":[1.5,3.5],"polygon":[[1,0],[8,0],[8,6],[1,6]],"holes":[]}].
+These are absolute metre elevations in an explicit build_bim proposal, not a
+parametric reusable template. Keep ONE cell ID/role/floor. The cell polygon/holes
+must equal the complete XY projection; sections must cover its floor's full height
+in order without gaps or overlap, with positive shared area between adjacent
+sections. Each section explicitly preserves its core holes. Internal interfaces
+are removed and coplanar walls united before opening binding. Do not represent the
+same office as separate rooms joined by artificial doors/passages. Sloping walls,
+parametric section repetition and section-aware legacy partition scoring/EP are
+unsupported; those consumers reject or report not_evaluated instead of flattening.
+Reshape/reflect/repartition of sectioned cells needs a complete explicit revised
+build_bim proposal including all sections, openings and any bound declarations.
+Space relation observations may specify z_m (absolute height); without a height,
+ownership that changes between sections is indeterminate, not a definite split.
 """

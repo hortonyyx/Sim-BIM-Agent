@@ -69,6 +69,8 @@ def derive_ep_geometry(source: dict, zone_names: dict[str, str], *, opening_poli
     floor_index = {f["id"]: i for i, f in enumerate(floors)}
     volumes = []
     for sid, space in spaces.items():
+        if space.get('vertical_sections'):
+            raise ValueError('EP adapter does not yet support source spaces with vertical sections; no prism approximation is allowed')
         if space.get('holes'):
             raise ValueError('EP adapter does not yet support source spaces with holes')
         fi = floor_index[space["floor_id"]]

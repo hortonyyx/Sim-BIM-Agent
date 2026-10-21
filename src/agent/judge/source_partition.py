@@ -196,6 +196,24 @@ def compare_partitions(
     tolerance_m = float(tolerance_m)
     if not isfinite(tolerance_m) or tolerance_m < 0:
         raise ValueError("tolerance_m must be finite and nonnegative")
+    sectioned = {side: [row.get("id") for row in rows
+                        if isinstance(row, dict) and row.get("vertical_sections")]
+                 for side, rows in (("reference", reference), ("candidate", candidate))}
+    if any(sectioned.values()):
+        # This established evaluator defines tolerance and correspondence on
+        # prismatic rooms. Their XY projection cannot stand in for stepped
+        # volume: identical plans can have different ledges and ceiling levels.
+        return {
+            "schema_version": 1, "status": "not_evaluated", "tolerance_m": tolerance_m,
+            "reference_count": len(reference), "candidate_count": len(candidate),
+            "matched_count": 0, "matches": [], "evaluated": [],
+            "findings": [_finding("vertical_sections_not_supported", "info",
+                "This partition evaluator does not compare stepped source volumes; no prism score was computed.",
+                reference_ids=sectioned["reference"], candidate_ids=sectioned["candidate"])],
+            "not_evaluated": ["source_space_correspondence", "partition_geometry", "floor_assignment",
+                              "vertical_extent", "stepped_volume", "doors", "openings", "connectivity",
+                              "false_slabs", "physical_wall_types"],
+        }
     refs, ref_findings = _validate(reference, "reference")
     cands, cand_findings = _validate(candidate, "candidate")
     ref_findings.extend(_overlaps(refs, "reference", tolerance_m))

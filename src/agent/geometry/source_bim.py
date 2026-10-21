@@ -73,9 +73,21 @@ def _project_on_wall(vertices, origin, direction):
 
 def _contained(vertices, boundary):
     aperture = _on_wall(vertices, boundary)
-    parent = _on_wall(boundary.vertices, boundary)
+    parent = _wall_polygon(boundary)
     return (aperture is not None and aperture.is_valid and aperture.area > EPS ** 2
             and parent.buffer(EPS).covers(aperture))
+
+
+def _wall_polygon(boundary, *, origin=None, direction=None):
+    """Project the complete physical wall, including any shell interior rings."""
+    if origin is None:
+        origin = boundary.vertices[0][:2]
+        direction, _ = _frame(origin, boundary.vertices[1][:2])
+    exterior = _project_on_wall(boundary.vertices, origin, direction)
+    holes = [_project_on_wall(ring, origin, direction) for ring in boundary.holes]
+    if exterior is None or any(hole is None for hole in holes):
+        return None
+    return exterior.difference(unary_union(holes)) if holes else exterior
 
 
 def _opening_height_host_diagnostic(aperture, spaces_by_id):
@@ -130,7 +142,7 @@ def _contacts(boundaries):
             direction, _ = _frame(origin, vertices[1][:2])
             walls[boundary.id] = (
                 _newell(vertices), origin, direction,
-                _project_on_wall(vertices, origin, direction),
+                _wall_polygon(boundary, origin=origin, direction=direction),
                 min(v[2] for v in vertices), max(v[2] for v in vertices),
             )
         elif boundary.geometry_type in {"floor", "ceiling"}:
@@ -151,7 +163,7 @@ def _contacts(boundaries):
                 continue
             if float(normal_a @ normal_b) > -1 + EPS:
                 continue
-            projected = _project_on_wall(b.vertices, origin, direction)
+            projected = _wall_polygon(b, origin=origin, direction=direction)
             if projected is None:
                 continue
             contact = parent.intersection(projected)
@@ -213,6 +225,8 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
         for cell in floor.cells:
             if getattr(cell, 'holes', []) and not simple_polygon:
                 raise ValueError('space holes require source_polygon_v1')
+            if getattr(cell, 'vertical_sections', []) and not simple_polygon:
+                raise ValueError('vertical sections require source_polygon_v1')
             if not cell.id.strip():
                 raise ValueError("source space identity must not be empty")
             if cell.polygon and not schema_supports(geom, FEATURE_CELL_POLYGON):
@@ -257,7 +271,16 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
                 raise ValueError(f"floor {fid}: spanning space {sid} is already a local member")
             if space.z_floor > floor.z_floor + EPS or space.z_floor + space.height < floor.z_floor + floor.ceiling_height - EPS:
                 raise ValueError(f"floor {fid}: spanning space {sid} does not cover the whole storey height")
-        actual = unary_union([polygons[c.id] for c in floor.cells] + [polygons[sid] for sid in spanning])
+        spanning_polygons = []
+        for sid in spanning:
+            space = source_spaces_by_id[sid]
+            if space.vertical_sections:
+                from src.agent.geometry.source_volume import section_polygon, space_sections
+                spanning_polygons.append(unary_union([section_polygon(row) for row in space_sections(space)
+                    if min(row['z'][1], floor.z_floor + floor.ceiling_height) - max(row['z'][0], floor.z_floor) > EPS]))
+            else:
+                spanning_polygons.append(polygons[sid])
+        actual = unary_union([polygons[c.id] for c in floor.cells] + spanning_polygons)
         missing = expected.difference(actual.buffer(EPS)).area
         outside = actual.difference(expected.buffer(EPS)).area
         if missing > EPS ** 2 or outside > EPS ** 2:
@@ -270,9 +293,13 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
     for a, b in combinations(spaces, 2):
         height = min(a.z_floor+a.height, b.z_floor+b.height) - max(a.z_floor, b.z_floor)
         if height > EPS:
-            overlap = _space_overlap_area(polygons[a.id], polygons[b.id])
-            if overlap:
-                fail("source.space_overlap", space_ids=[a.id, b.id], volume_m3=overlap*height)
+            if a.vertical_sections or b.vertical_sections:
+                from src.agent.geometry.source_volume import space_overlap_volume
+                volume = space_overlap_volume(a, b, area_function=_space_overlap_area)
+            else:
+                volume = _space_overlap_area(polygons[a.id], polygons[b.id]) * height
+            if volume:
+                fail("source.space_overlap", space_ids=[a.id, b.id], volume_m3=volume)
     relations = _contacts(boundaries)
     openings, unbuilt, connections = [], [], []
     bindings = {}
@@ -284,9 +311,10 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
                 if boundaries[bid].geometry_type == "wall" and _contained(vertices, boundaries[bid])]
 
     def contact_shapes(boundary, other=None):
-        return [_on_wall(region["vertices"], boundary) for rel in relations
-                if boundary.id in rel["boundary_ids"] and (other is None or other in rel["space_ids"])
-                for region in rel["regions"]]
+        return [_on_wall(region["vertices"], boundary).difference(unary_union([
+                    _on_wall(hole, boundary) for hole in region.get("holes", [])]))
+                for rel in relations if boundary.id in rel["boundary_ids"]
+                and (other is None or other in rel["space_ids"]) for region in rel["regions"]]
 
     def exterior(vertices, boundary):
         aperture = _on_wall(vertices, boundary)
@@ -485,6 +513,10 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
             'not_supported': ['analytic curved surfaces', 'sloping or continuously height-varying spaces',
                               'one opening spanning multiple curve chords'],
         }
+        if any(space.vertical_sections for space in spaces):
+            payload['geometry_capability']['scope'] += '; explicit contiguous horizontal sections form one connected space with stepped enclosure'
+            payload['geometry_capability']['vertical_sections'] = 'absolute_z_contiguous_sections_v1'
+            payload['assumptions'][0] = 'Each correction cell represents one physical source space; optional horizontal sections define its stepped volume, while its polygon/holes are the full XY projection.'
         if geom.boundary_curves:
             from src.agent.geometry.source_curves import source_curve_origin
             payload['boundary_curves'] = {key: value.model_dump(mode='json') for key, value in geom.boundary_curves.items()}

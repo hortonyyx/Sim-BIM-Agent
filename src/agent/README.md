@@ -52,8 +52,11 @@ not reuse old contact verdicts or change pair order/tolerances.
 Simple polygon prisms use the explicit source_polygon_v1 contract with the same
 source builder and viewer. Declared circular arcs use a bounded chord approximation
 with retained provenance, and floor footprints can contain courtyard holes covered
-by actual member spaces. Single-space holes and continuously height-varying/sloped
-spaces remain unsupported. Mesh overlays scope arbitrary source hosts and test
+by actual member spaces. Single-space holes and explicit stepped vertical sections
+preserve one source identity; section interfaces never create interior slabs or
+extra zones. Generic build_bim accepts absolute-height sections; parametric reuse,
+legacy partition scoring, continuously sloped spaces and EP adaptation do not yet
+support this representation and must reject/report unavailable. Mesh overlays scope arbitrary source hosts and test
 source visibility. Original triangle sections and scoped same-ray depth comparisons
 provide reproducible geometric evidence, without certifying texture-window accuracy
 or whole-building fidelity. The development-only

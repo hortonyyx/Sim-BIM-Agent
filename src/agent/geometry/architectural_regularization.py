@@ -83,11 +83,29 @@ def _rings(template):
         yield f"spaces[{space['id']}].polygon", space['polygon']
         for i, ring in enumerate(space.get('holes', [])):
             yield f"spaces[{space['id']}].holes[{i}]", ring
+        for i, section in enumerate(space.get('vertical_sections', [])):
+            yield f"spaces[{space['id']}].vertical_sections[{i}].polygon", section['polygon']
+            for j, ring in enumerate(section.get('holes', [])):
+                yield f"spaces[{space['id']}].vertical_sections[{i}].holes[{j}]", ring
+
+
+def _space_rings(space):
+    """Projection rings anchor XY; section rings are the actual shell hosts."""
+    yield space['polygon'], None
+    for ring in space.get('holes', []):
+        yield ring, None
+    for section in space.get('vertical_sections', []):
+        for ring in [section['polygon'], *section.get('holes', [])]:
+            yield ring, section['z']
 
 
 def _space_edges(space):
-    return [(a, b) for ring in [space['polygon'], *space.get('holes', [])]
+    return [(a, b) for ring, _ in _space_rings(space)
             for a, b in zip(ring, ring[1:] + ring[:1])]
+
+
+def _space_edge_layers(space):
+    return [z for ring, z in _space_rings(space) for _ in ring]
 
 
 def _width(points):
@@ -236,7 +254,7 @@ def regularize_architectural_plan(plan, *, policy=None):
 
         # Collect all supporting lines before moving anything. Shared directions
         # and offsets, including partial wall segments, use one anchor family.
-        families, records, old_polygons, host_supports = {}, [], {}, {}
+        families, records, old_polygons, host_supports, old_spaces = {}, [], {}, {}, {}
         for name, template in adopted['templates'].items():
             if _curved(template):
                 audit['not_assessed'].append(dict(path=f'templates.{name}',
@@ -246,6 +264,7 @@ def regularize_architectural_plan(plan, *, policy=None):
             original['templates'][name] = copy.deepcopy(template)
             for space in template['spaces']:
                 path = f"templates.{name}.spaces[{space['id']}]"
+                old_spaces[(name, space['id'])] = copy.deepcopy(space)
                 old_polygons[(name, space['id'])] = copy.deepcopy(_space_edges(space))
                 width = _width(space['polygon'])
                 if width < .6 - EPS:
@@ -287,7 +306,7 @@ def regularize_architectural_plan(plan, *, policy=None):
                     continue
                 records.append((name, path, ring, points, edges))
                 for space in template['spaces']:
-                    if any(ring is r for r in [space['polygon'], *space.get('holes', [])]):
+                    if any(ring is r for r, _ in _space_rings(space)):
                         host_supports.setdefault((name, space['id']), []).extend(edges)
                         break
         finish_stage('input_rings', ['ring_adoption', 'apertures', 'vertical', 'contacts'])
@@ -365,7 +384,7 @@ def regularize_architectural_plan(plan, *, policy=None):
         new_polygons = {(name, s['id']): _space_edges(s) for name, t in adopted['templates'].items()
                         if not _curved(t) for s in t['spaces']}
 
-        def move_pair(name, sid, p1, p2, path, spans=None):
+        def move_pair(name, sid, p1, p2, path, spans=None, z_range=None):
             if (name, sid) not in old_polygons:
                 return copy.deepcopy([p1, p2])  # preserved curve template
             before, after = old_polygons[(name, sid)], new_polygons[(name, sid)]
@@ -378,15 +397,31 @@ def regularize_architectural_plan(plan, *, policy=None):
                 reject('invalid_aperture_spans', path, 'physical spans must lie inside the directed baseline')
             def span_pair(pair, span):
                 return [[a+(b-a)*distance/length for a,b in zip(*pair)] for distance in span]
+            source_space = old_spaces[(name, sid)]
+            layers = _space_edge_layers(source_space)
+            sections = source_space.get('vertical_sections', [])
+            height_groups = [list(range(len(before)))]
+            if sections:
+                if z_range is None or len(z_range) != 2 or z_range[1] <= z_range[0]:
+                    reject('missing_section_aperture_height', path,
+                           'sectioned space apertures require an absolute positive Z interval')
+                cuts = sorted({z_range[0], z_range[1], *[v for s in sections for v in s['z']
+                              if z_range[0] < v < z_range[1]]})
+                height_groups = [[i for i, layer in enumerate(layers) if layer is not None
+                                  and layer[0] <= (lo+hi)/2 < layer[1]]
+                                 for lo, hi in zip(cuts, cuts[1:])]
             matched = []
             for span in physical_spans:
                 physical = span_pair([p1,p2], span)
-                matches = [i for i,(a,b) in enumerate(before)
-                           if all(LineString([a,b]).distance(Point(p)) <= SEAM_M for p in physical)]
-                if len(matches) != 1:
-                    reject('ambiguous_aperture_host', path, 'aperture must have one complete original straight host',
-                           host=dict(template=name, space=sid), endpoints=physical, matching_edges=matches)
-                matched.append((span,matches[0]))
+                for group in height_groups:
+                    matches = [i for i in group
+                               if all(LineString(before[i]).distance(Point(p)) <= SEAM_M for p in physical)]
+                    if len(matches) != 1:
+                        reject('ambiguous_aperture_host', path,
+                               'aperture must have one complete original straight host at every occupied height',
+                               host=dict(template=name, space=sid), endpoints=physical,
+                               z=z_range, matching_edges=matches)
+                    matched.append((span,matches[0]))
             i = matched[0][1]
             support, offset = host_supports[(name,sid)][i]
             n, t = support['normal'], support['tangent']
@@ -398,6 +433,17 @@ def regularize_architectural_plan(plan, *, policy=None):
                 along = sum(v*w for v,w in zip(t,local)) + tangent_shift
                 result.append(_world([n[j]*normal + t[j]*along for j in (0,1)], frames[name]))
             for span,i in matched:
+                other_support, other_offset = host_supports[(name,sid)][i]
+                other_n, other_t = other_support['normal'], other_support['tangent']
+                other_pair = []
+                for point in (p1,p2):
+                    local = _local(point, frames[name])
+                    along = sum(v*w for v,w in zip(other_t,local)) + other_support['tangent_shifts'][other_offset]
+                    other_pair.append(_world([other_n[j]*other_support['mapping'][other_offset] + other_t[j]*along
+                                              for j in (0,1)], frames[name]))
+                if any(math.dist(a,b)>EPS for a,b in zip(result,other_pair)):
+                    reject('section_aperture_host_conflict', path,
+                           'aperture hosts across vertical sections must adopt the same supporting plane')
                 aa,bb = after[i]
                 physical = span_pair(result,span)
                 distances = [LineString([aa,bb]).distance(Point(p)) for p in physical]
@@ -411,9 +457,11 @@ def regularize_architectural_plan(plan, *, policy=None):
             return result
 
         def template_pair(name, row, path, spans=None):
-            result = move_pair(name, row['space'], row['p1'], row['p2'], path, spans)
+            instances = [r for r in original.get('instances', []) if r['template'] == name]
+            z_range = [instances[0]['z']+v for v in row['z']] if len(instances) == 1 else None
+            result = move_pair(name, row['space'], row['p1'], row['p2'], path, spans, z_range)
             if row.get('other_space'):
-                other = move_pair(name, row['other_space'], row['p1'], row['p2'], path, spans)
+                other = move_pair(name, row['other_space'], row['p1'], row['p2'], path, spans, z_range)
                 if any(math.dist(a,b)>EPS for a,b in zip(result,other)):
                     reject('shared_host_conflict', path, 'the two declared hosts do not adopt the same aperture',
                            hosts=[row['space'],row['other_space']], adopted_endpoints=[result,other])
@@ -443,7 +491,9 @@ def regularize_architectural_plan(plan, *, policy=None):
                             owners.append(sid)
                     if len(owners) != 1:
                         reject('ambiguous_window_host', f'templates.{name}.window_rows', 'window span needs one original host')
-                    moved = move_pair(name, owners[0], *pair, f'templates.{name}.window_rows')
+                    instances = [r for r in original.get('instances', []) if r['template'] == name]
+                    z_range = [instances[0]['z']+v for v in row['z']] if len(instances) == 1 else None
+                    moved = move_pair(name, owners[0], *pair, f'templates.{name}.window_rows', z_range=z_range)
                     if abs(moved[0][axis]-moved[1][axis]) > EPS:
                         reject('window_direction_changed', f'templates.{name}.window_rows', 'cardinal window facade must stay cardinal')
                     planes.append(moved[0][axis])
@@ -474,7 +524,8 @@ def regularize_architectural_plan(plan, *, policy=None):
                 fid, sid = host.split(':',1)
                 if fid not in by_id or 'template' not in by_id[fid]:
                     reject('unknown_connection_host', path, 'unknown global connection instance')
-                candidates.append(move_pair(by_id[fid]['template'], sid, row['p1'], row['p2'], path))
+                candidates.append(move_pair(by_id[fid]['template'], sid, row['p1'], row['p2'], path,
+                                            z_range=row.get('z')))
             if not candidates or any(math.dist(a,b)>EPS for pair in candidates[1:] for a,b in zip(candidates[0],pair)):
                 reject('cross_template_host_conflict', path, 'shared cross-template host anchors disagree',
                        hosts=hosts, adopted_endpoints=candidates)
@@ -520,6 +571,25 @@ def _vertical(original, adopted, policy, grid, simplification, audit, reject, by
         targets[(kind,identity,'base')] = base
         targets[(kind,identity,'top')] = base+count*height
     levels = list(targets.values())
+    section_templates = {}
+    from src.agent.geometry.source_volume import validate_vertical_sections
+    for name, template in original['templates'].items():
+        section_spaces = [space for space in template['spaces'] if space.get('vertical_sections')]
+        if not section_spaces:
+            continue
+        owners = [row for (kind, _), row in records.items() if row['template'] == name]
+        if len(owners) != 1 or owners[0] not in original.get('instances', []):
+            reject('absolute_sections_reused', f'templates.{name}',
+                   'absolute-Z vertical_sections require one explicit floor instance; use the generic source proposal')
+        section_templates[name] = section_spaces
+        for space in section_spaces:
+            try:
+                validate_vertical_sections(space['vertical_sections'], space['polygon'], space.get('holes', []),
+                                           owners[0]['z'], owners[0]['height'])
+            except ValueError as exc:
+                reject('invalid_vertical_sections', f"templates.{name}.spaces[{space['id']}]", str(exc))
+            for section in space['vertical_sections']:
+                levels.extend(map(_number, section['z']))
     forced = {}
     for (kind, identity), row in records.items():
         if kind != 'repeat':
@@ -600,11 +670,41 @@ def _vertical(original, adopted, policy, grid, simplification, audit, reject, by
             if row['z']!=old['z'] or row['height']!=old['height']:
                 audit['changes'].append(dict(type='main_height', path=f"{key}[{row['id']}]",
                     before=[base,old['height'],top],after=[row['z'],row['height'],z(top)]))
+    for name in section_templates:
+        owner = next(row for row in adopted['instances'] if row['template'] == name)
+        for space in adopted['templates'][name]['spaces']:
+            for index, section in enumerate(space.get('vertical_sections', [])):
+                before = copy.deepcopy(section['z'])
+                section['z'] = [round(z(value),9) for value in before]
+                if section['z'][1] <= section['z'][0]:
+                    reject('collapsed_section_height', f"templates.{name}.spaces[{space['id']}].vertical_sections[{index}]",
+                           'height adoption collapses a real vertical section')
+                if section['z'] != before:
+                    audit['changes'].append(dict(type='section_height',
+                        path=f"templates.{name}.spaces[{space['id']}].vertical_sections[{index}]",
+                        before=before, after=section['z']))
+            if space.get('vertical_sections'):
+                try:
+                    validate_vertical_sections(space['vertical_sections'], space['polygon'], space.get('holes', []),
+                                               owner['z'], owner['height'])
+                except ValueError as exc:
+                    reject('adopted_vertical_sections_invalid', f"templates.{name}.spaces[{space['id']}]", str(exc))
     for row in adopted.get('connections',[]):
-        hosts = [by_id[s.split(':',1)[0]] for s in (row['space_id'],row.get('other_space_id')) if s]
+        host_ids = [s for s in (row['space_id'],row.get('other_space_id')) if s]
+        hosts = [by_id[s.split(':',1)[0]] for s in host_ids]
         floor = max(hosts,key=lambda h:h['z'])
         shift = z(floor['z'])-floor['z']
-        row['z'] = [round(_number(v)+shift,9) for v in row['z']]
+        section_levels = []
+        for host_id, host in zip(host_ids, hosts):
+            if 'template' not in host:
+                continue
+            sid = host_id.split(':',1)[1]
+            space = next(space for space in original['templates'][host['template']]['spaces'] if space['id'] == sid)
+            section_levels.extend(v for section in space.get('vertical_sections', []) for v in section['z'])
+        row['z'] = [round(z(v) if any(abs(v-anchor) <= SEAM_M for anchor in section_levels)
+                         else _number(v)+shift,9) for v in row['z']]
+        if row['z'][1] <= row['z'][0]:
+            reject('collapsed_aperture_height', f"connections[{row['id']}]", 'height adoption collapses a real opening')
         for host in hosts:
             if row['z'][0] < z(host['z'])-EPS or row['z'][1] > z(host['z']+host['height'])+EPS:
                 reject('aperture_height_conflict', f"connections[{row['id']}]", 'adopted opening exceeds a declared host height')
@@ -621,11 +721,12 @@ def _vertical(original, adopted, policy, grid, simplification, audit, reject, by
 def _protect_volume_contacts(original, adopted, audit, reject):
     """Rounding may align separate roof tops, but cannot close a real gap.
 
-    This checks prism contact classes, not a substitute for the source kernel's
+    This checks actual section contact classes, not a substitute for the source kernel's
     complete host, containment and topology validation. A 20 micrometre input
     seam is treated as contact; no transitive proximity groups are formed.
     """
     from src.agent.geometry.parametric_proposal import expand_parametric_instances
+    from src.agent.geometry.source_volume import space_sections
 
     def volumes(plan):
         result = {}
@@ -634,8 +735,10 @@ def _protect_volume_contacts(original, adopted, audit, reject):
             if _curved(template):
                 continue
             for space in template['spaces']:
-                result[f"{inst['id']}:{space['id']}"] = (
-                    Polygon(space['polygon'], space.get('holes', [])), inst['z'], inst['z']+inst['height'])
+                sections = space_sections({**space, 'z_floor': inst['z'], 'height': inst['height']})
+                result[f"{inst['id']}:{space['id']}"] = [
+                    (Polygon(section['polygon'], section.get('holes', [])), *section['z'])
+                    for section in sections]
         return result
 
     def relation(a, b):
@@ -655,16 +758,23 @@ def _protect_volume_contacts(original, adopted, audit, reject):
             return 'edge_or_point_contact'
         return 'lateral_contact'
 
+    def volume_relation(a, b):
+        contacts = {relation(sa, sb) for sa in a for sb in b}
+        contacts.discard('separate')
+        return sorted(contacts) or ['separate']
+
     before, after = volumes(original), volumes(adopted)
     ids = list(before)
     for index, a in enumerate(ids):
         for b in ids[index+1:]:
-            old, new = relation(before[a], before[b]), relation(after[a], after[b])
+            old, new = volume_relation(before[a], before[b]), volume_relation(after[a], after[b])
             if old != new:
                 reject('volume_contact_changed', f'spaces[{a},{b}]',
                        'parameter adoption would change a real volume gap/contact; declare intended geometry explicitly',
-                       before=old, after=new)
+                       before=old[0] if len(old) == 1 else old,
+                       after=new[0] if len(new) == 1 else new)
     audit['contact_check'] = dict(status='passed', straight_prism_count=len(ids),
+        section_prism_count=sum(len(sections) for sections in before.values()),
         excluded='curved templates; caller must validate all source geometry')
 
 
@@ -722,7 +832,7 @@ def regularize_architectural_proposal(proposal, *, policy=None):
                 cell_ids[cid] = f'{fid}:{sid}'
                 cell_rows[cid] = (fid, sid, cell)
                 space = dict(id=sid, role=cell.get('role', 'unknown'), source_refs=copy.deepcopy(cell.get('source_refs', [])))
-                for key in ('polygon', 'holes', 'boundary_path', 'assumptions', 'role_evidence'):
+                for key in ('polygon', 'holes', 'vertical_sections', 'boundary_path', 'assumptions', 'role_evidence'):
                     if key in cell:
                         space[key] = copy.deepcopy(cell[key])
                 if 'polygon' not in space and not space.get('boundary_path'):
@@ -748,35 +858,46 @@ def regularize_architectural_proposal(proposal, *, policy=None):
                 reject('unknown_window_facade', f"windows[{row['id']}]", 'window facade must be cardinal')
             desired = {'North': (0, 1), 'South': (0, -1), 'East': (1, 0), 'West': (-1, 0)}[row['facade']]
             candidates = []
-            floor_polygons = []
-            for fid, _, cell in cell_rows.values():
-                if fid == floor_id:
-                    p = cell.get('polygon')
-                    if p is None and not cell.get('boundary_path'):
-                        x,y = cell['x'],cell['y']
-                        p = [[x[0],y[0]],[x[1],y[0]],[x[1],y[1]],[x[0],y[1]]]
-                    if p is not None:
-                        floor_polygons.append(Polygon(p, cell.get('holes', [])))
-            exterior = unary_union(floor_polygons).boundary
+            def cell_sections(cell):
+                if cell.get('vertical_sections'):
+                    return cell['vertical_sections']
+                p = cell.get('polygon')
+                if p is None and not cell.get('boundary_path'):
+                    x,y = cell['x'],cell['y']
+                    p = [[x[0],y[0]],[x[1],y[0]],[x[1],y[1]],[x[0],y[1]]]
+                return [dict(polygon=p, holes=cell.get('holes', []), z=row['z'])] if p else []
+
+            floor_sections = {cid: cell_sections(cell) for cid,(fid,_,cell) in cell_rows.items() if fid == floor_id}
+            cuts = sorted({*row['z'], *[v for sections in floor_sections.values() for section in sections
+                           for v in section['z'] if row['z'][0] < v < row['z'][1]]})
+            levels = [(lo+hi)/2 for lo,hi in zip(cuts,cuts[1:])]
+            exteriors = [unary_union([Polygon(section['polygon'], section.get('holes', []))
+                        for sections in floor_sections.values() for section in sections
+                        if section['z'][0] <= z < section['z'][1]]).boundary for z in levels]
             for cid, (fid, sid, cell) in cell_rows.items():
                 if fid != floor_id or (declared is not None and declared != cid):
                     continue
-                points = cell.get('polygon')
-                if not points and not cell.get('boundary_path'):
-                    x, y = cell['x'], cell['y']
-                    points = [[x[0],y[0]],[x[1],y[0]],[x[1],y[1]],[x[0],y[1]]]
-                if not points:
+                if not floor_sections[cid]:
                     reject('implicit_window_host', f"windows[{row['id']}]", 'curve window host needs saved derived points; use a parametric plan')
-                orientation = 1 if Polygon(points).exterior.is_ccw else -1
-                for a, b in zip(points, points[1:]+points[:1]):
-                    normal = (orientation*(b[1]-a[1]), orientation*(a[0]-b[0]))
-                    if (abs(a[axis]-b[axis]) <= EPS and sum(x*y for x,y in zip(normal,desired)) > 0
-                            and min(a[1-axis],b[1-axis])-EPS <= row['span'][0]
-                            and max(a[1-axis],b[1-axis])+EPS >= row['span'][1]):
-                        segment = ([[a[axis],v] for v in row['span']] if axis == 0
-                                   else [[v,a[axis]] for v in row['span']])
-                        if exterior.covers(LineString(segment)):
-                            candidates.append((cid, a[axis]))
+                planes = None
+                for z, exterior in zip(levels, exteriors):
+                    at_height = set()
+                    for section in floor_sections[cid]:
+                        if not section['z'][0] <= z < section['z'][1]:
+                            continue
+                        points = section['polygon']
+                        orientation = 1 if Polygon(points).exterior.is_ccw else -1
+                        for a, b in zip(points, points[1:]+points[:1]):
+                            normal = (orientation*(b[1]-a[1]), orientation*(a[0]-b[0]))
+                            if (abs(a[axis]-b[axis]) <= EPS and sum(x*y for x,y in zip(normal,desired)) > 0
+                                    and min(a[1-axis],b[1-axis])-EPS <= row['span'][0]
+                                    and max(a[1-axis],b[1-axis])+EPS >= row['span'][1]):
+                                segment = ([[a[axis],v] for v in row['span']] if axis == 0
+                                           else [[v,a[axis]] for v in row['span']])
+                                if exterior.covers(LineString(segment)):
+                                    at_height.add(a[axis])
+                    planes = at_height if planes is None else planes & at_height
+                candidates.extend((cid, plane) for plane in (planes or []))
             if len(candidates) != 1:
                 reject('ambiguous_window_host', f"windows[{row['id']}]", 'window needs exactly one complete original facade edge')
             cid, plane = candidates[0]
@@ -840,6 +961,8 @@ def regularize_architectural_proposal(proposal, *, policy=None):
                     cell['polygon'] = copy.deepcopy(polygon)
                     if space.get('holes'):
                         cell['holes'] = copy.deepcopy(space['holes'])
+                    if 'vertical_sections' in space:
+                        cell['vertical_sections'] = copy.deepcopy(space['vertical_sections'])
                     cell['x'] = [min(p[0] for p in cell['polygon']), max(p[0] for p in cell['polygon'])]
                     cell['y'] = [min(p[1] for p in cell['polygon']), max(p[1] for p in cell['polygon'])]
         result['geometry']['footprint_x'] = [min(p[0] for p in points), max(p[0] for p in points)]

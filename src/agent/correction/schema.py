@@ -230,6 +230,23 @@ class RoomRoleEvidence(BaseModel):
         return self
 
 
+class SourceVerticalSection(BaseModel):
+    """One horizontal slab of a single source space, using absolute world Z."""
+
+    model_config = ConfigDict(extra="forbid")
+    z: tuple[Annotated[float, AllowInfNan(False)], Annotated[float, AllowInfNan(False)]]
+    polygon: list[list[Annotated[float, AllowInfNan(False)]]] = Field(min_length=3)
+    holes: list[list[list[Annotated[float, AllowInfNan(False)]]]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_section(self):
+        from src.agent.geometry.source_volume import validate_section_polygon
+        if self.z[1] <= self.z[0]:
+            raise ValueError("vertical section height must be positive")
+        validate_section_polygon(self)
+        return self
+
+
 class SourceSpace(BaseModel):
     """Materialized source identity; independent of downstream zone numbering."""
 
@@ -238,6 +255,7 @@ class SourceSpace(BaseModel):
     floor_id: str
     polygon: list[list[float]]
     holes: list[list[list[float]]] = Field(default_factory=list, exclude_if=lambda value: not value)
+    vertical_sections: list[SourceVerticalSection] = Field(default_factory=list, exclude_if=lambda value: not value)
     z_floor: float
     height: float
     role: str
@@ -247,6 +265,10 @@ class SourceSpace(BaseModel):
 
     @model_validator(mode="after")
     def role_matches_evidence(self):
+        if self.vertical_sections:
+            from src.agent.geometry.source_volume import validate_vertical_sections
+            rows = validate_vertical_sections(self.vertical_sections, self.polygon, self.holes, self.z_floor, self.height)
+            self.vertical_sections = [SourceVerticalSection.model_validate(row) for row in rows]
         if self.role_evidence is not None:
             from src.agent.roles import require_role
             if require_role(self.role) != self.role_evidence.role:

@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import math
 import re
+from types import SimpleNamespace
 
 import numpy as np
 from PIL import ImageDraw
@@ -58,7 +59,7 @@ def render_mesh_bim_overlay(picture, observation, source, *, floor_id=None, exte
     from shapely.ops import unary_union
 
     from src.agent.geometry.openings import _frame, _lift, _project
-    from src.agent.geometry.source_bim import _parts
+    from src.agent.geometry.source_bim import _parts, _wall_polygon
     from src.agent.geometry.source_model import _digest
     from src.agent.geometry.source_visibility import (
         camera_vectors, polygon_normal, source_depth_buffer, visible_edge_segments,
@@ -103,7 +104,7 @@ def render_mesh_bim_overlay(picture, observation, source, *, floor_id=None, exte
             continue
         origin = boundary['vertices'][0][:2]
         direction, _ = _frame(origin, boundary['vertices'][1][:2])
-        parent = _project(boundary['vertices'], origin, direction)
+        parent = _wall_polygon(SimpleNamespace(vertices=boundary['vertices'], holes=boundary.get('holes', [])))
         contacts = []
         for relation in source.get('boundary_relations', []):
             if boundary['id'] not in relation.get('boundary_ids', []):

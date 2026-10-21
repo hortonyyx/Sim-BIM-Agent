@@ -6,6 +6,10 @@ reviews must use that membership, then limit openings to the storey's height.
 """
 from __future__ import annotations
 
+from shapely.ops import unary_union
+
+from src.agent.geometry.source_volume import section_polygon, space_sections
+
 _Z_EPS = 1e-7  # Display membership only; source validation owns geometry tolerances.
 
 
@@ -33,6 +37,21 @@ def select_source_floor(source: dict, floor_id: str) -> tuple[dict, list[dict]]:
         if floor_interval is not None and interval is not None:
             if min(floor_interval[1], interval[1]) - max(floor_interval[0], interval[0]) <= _Z_EPS:
                 continue
+        if row.get("vertical_sections") and floor_interval is not None:
+            # A spanning space can have a different footprint on each storey.
+            # Views use only the volume present in this storey, not its full
+            # building-height XY projection. Identity and source stay intact.
+            sections = [section for section in space_sections(row)
+                        if min(floor_interval[1], section["z"][1])
+                        - max(floor_interval[0], section["z"][0]) > _Z_EPS]
+            projection = unary_union([section_polygon(section) for section in sections])
+            if projection.is_empty:
+                continue
+            if projection.geom_type != "Polygon":
+                raise ValueError(f"floor {floor_id}: space {row['id']} has a disconnected storey projection")
+            row = {**row, "polygon": [list(p) for p in list(projection.exterior.coords)[:-1]],
+                   "holes": [[list(p) for p in list(ring.coords)[:-1]] for ring in projection.interiors],
+                   "plan_projection_z_m": list(floor_interval)}
         spaces.append(row)
     missing = selected_ids - {row["id"] for row in spaces}
     if missing:

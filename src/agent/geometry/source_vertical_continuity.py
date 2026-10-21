@@ -13,6 +13,7 @@ from shapely.geometry import Polygon
 
 from src.agent.correction.schema import VerticalSeparation
 from src.agent.geometry.source_bim import EPS
+from src.agent.geometry.source_volume import space_polygon_at_z
 from src.agent.roles import require_role
 
 
@@ -21,7 +22,6 @@ STACK_ROLES = frozenset({"shaft", "stairwell", "atrium"})
 
 def review_vertical_continuity(source: dict, *, tolerance: float = EPS) -> dict:
     spaces = {row["id"]: row for row in source.get("spaces", [])}
-    polygons = {sid: Polygon(row["polygon"], row.get('holes', [])) for sid, row in spaces.items()}
     roles = {sid: require_role(row.get("role")) for sid, row in spaces.items()}
     boundaries = source.get("boundaries", [])
     raw = source.get("vertical_separations", [])
@@ -54,7 +54,7 @@ def review_vertical_continuity(source: dict, *, tolerance: float = EPS) -> dict:
         if len(rows) != 1:
             return {"state": "unverified", "boundary_ids": [row["id"] for row in rows]}
         row = rows[0]
-        if not Polygon([p[:2] for p in row["vertices"]], [[p[:2] for p in h] for h in row.get('holes', [])]).equals(polygons[sid]):
+        if not Polygon([p[:2] for p in row["vertices"]], [[p[:2] for p in h] for h in row.get('holes', [])]).equals(space_polygon_at_z(spaces[sid], z)):
             return {"state": "unverified", "boundary_ids": [row["id"]]}
         state = ("physical" if row.get("kind") == "physical" and row.get("enclosure", "physical") == "physical"
                  else row.get("enclosure", row.get("kind", "unverified")))
@@ -83,9 +83,11 @@ def review_vertical_continuity(source: dict, *, tolerance: float = EPS) -> dict:
         candidate_role = roles[lid] == roles[uid] and roles[lid] in STACK_ROLES
         if not selected and not candidate_role:
             continue
-        if polygons[lid].intersection(polygons[uid]).area <= tolerance ** 2:
+        lower_shape = space_polygon_at_z(lower, top)
+        upper_shape = space_polygon_at_z(upper, upper['z_floor'])
+        if lower_shape.intersection(upper_shape).area <= tolerance ** 2:
             continue
-        same_shape = polygons[lid].equals(polygons[uid])
+        same_shape = lower_shape.equals(upper_shape)
         if not same_shape and not selected:
             varying.append({"space_ids": [lid, uid], "z_m": top, "reason": "different_footprints"})
             continue

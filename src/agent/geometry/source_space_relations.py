@@ -11,6 +11,7 @@ from shapely.geometry import Point, Polygon
 
 from src.agent.geometry.source_floor_selection import select_source_floor, select_source_floor_openings
 from src.agent.geometry.source_image_overlay import _axis_anchors, _number, _source_hash
+from src.agent.geometry.source_volume import space_polygon_at_z, space_sections
 
 
 def revalidate_saved_relation_review(parent, source, saved, images, *, calibration):
@@ -44,7 +45,8 @@ def revalidate_saved_relation_review(parent, source, saved, images, *, calibrati
         raise ValueError('saved space relation calibration changed')
     try:
         recovered = [{'id': row['id'], 'expected': row['expected'], 'evidence': row['evidence'],
-                      'points': [point['pixel'] for point in row['points']]}
+                      'points': [point['pixel'] for point in row['points']],
+                      **({'z_m': row['z_m']} if 'z_m' in row else {})}
                      for row in saved['observations']]
     except (KeyError, TypeError) as error:
         raise ValueError('saved space relation has no original sampled observations') from error
@@ -74,8 +76,25 @@ def review_space_relations(source, *, floor_id, image_size, x_anchors, y_anchors
         raise ValueError('source has invalid space polygons')
     # Numerical boundary ambiguity only, not a new geometry acceptance tolerance.
     epsilon = max(abs(sx), abs(sy)) * 1e-6
+    sectioned = any(row.get('vertical_sections') for row in selected_spaces)
+    floor_interval = ((float(floor['z_floor']), float(floor['z_floor']) + float(floor['height']))
+                      if 'z_floor' in floor and 'height' in floor else None)
+    if sectioned and floor_interval is None:
+        raise ValueError('sectioned space relations require a floor height interval')
+    sample_heights = []
+    if sectioned:
+        levels = sorted({*floor_interval, *[
+            z for row in selected_spaces for section in space_sections(row) for z in section['z']
+            if floor_interval[0] < z < floor_interval[1]]})
+        sample_heights = [(a + b) / 2 for a, b in zip(levels, levels[1:])]
 
-    def locate(pixel):
+    def ownership(point, shapes):
+        inside = [name for name, polygon in shapes if polygon.contains(point)]
+        boundary = [name for name, polygon in shapes
+                    if not polygon.is_empty and polygon.boundary.distance(point) <= epsilon]
+        return inside, boundary
+
+    def locate(pixel, z_m=None):
         if not isinstance(pixel, list) or len(pixel) != 2:
             raise ValueError('each pixel point must be [x, y]')
         xy = [_number(v, name='pixel coordinate') for v in pixel]
@@ -83,9 +102,18 @@ def review_space_relations(source, *, floor_id, image_size, x_anchors, y_anchors
             raise ValueError('point is outside original image bounds')
         world = [sx * xy[0] + ox, sy * xy[1] + oy]
         point = Point(world)
-        inside = [name for name, polygon in polygons if polygon.contains(point)]
-        boundary = [name for name, polygon in polygons
-                    if polygon.boundary.distance(point) <= epsilon]
+        if z_m is not None or sectioned:
+            heights = [z_m] if z_m is not None else sample_heights
+            samples = [ownership(point, [(row['id'], space_polygon_at_z(row, z))
+                                         for row in selected_spaces]) for z in heights]
+            if any(sample != samples[0] for sample in samples[1:]):
+                return {'pixel': xy, 'world_xy_m': world, 'status': 'height_dependent',
+                        'space_id': None, 'interior_space_ids': sorted({sid for a, _ in samples for sid in a}),
+                        'boundary_space_ids': sorted({sid for _, b in samples for sid in b}),
+                        'sample_z_m': heights}
+            inside, boundary = samples[0]
+        else:
+            inside, boundary = ownership(point, polygons)
         if boundary:
             status = 'on_boundary'
         elif len(inside) > 1:
@@ -96,7 +124,8 @@ def review_space_relations(source, *, floor_id, image_size, x_anchors, y_anchors
             status = 'inside_one_space'
         return {'pixel': xy, 'world_xy_m': world, 'status': status,
                 'space_id': inside[0] if status == 'inside_one_space' else None,
-                'interior_space_ids': inside, 'boundary_space_ids': boundary}
+                'interior_space_ids': inside, 'boundary_space_ids': boundary,
+                **({'z_m': z_m} if z_m is not None else {})}
 
     rows, ids = [], set()
     for observation in observations:
@@ -115,7 +144,10 @@ def review_space_relations(source, *, floor_id, image_size, x_anchors, y_anchors
         points = observation.get('points')
         if not isinstance(points, list) or len(points) != 2:
             raise ValueError('each observation requires exactly two pixel points')
-        first, second = map(locate, points)
+        z_m = _number(observation['z_m'], name='observation z_m') if 'z_m' in observation else None
+        if z_m is not None and (floor_interval is None or not floor_interval[0] <= z_m < floor_interval[1]):
+            raise ValueError('observation z_m must lie within the requested floor height interval')
+        first, second = [locate(point, z_m) for point in points]
         owners = [first['space_id'], second['space_id']]
         actual = ('indeterminate' if None in owners else
                   'same_space' if owners[0] == owners[1] else 'separate_spaces')
@@ -128,6 +160,7 @@ def review_space_relations(source, *, floor_id, image_size, x_anchors, y_anchors
                        else 'consistent_with_supplied_expectation' if actual == expected
                        else 'conflicts_with_supplied_expectation')
         rows.append({'id': name, 'expected': expected, 'evidence': evidence,
+                     **({'z_m': z_m} if z_m is not None else {}),
                      'points': [first, second], 'actual_relation': actual,
                      'direct_connections': connections, 'consistency': consistency})
     return {'schema_version': 'source_space_relation_review_v1',
@@ -135,6 +168,8 @@ def review_space_relations(source, *, floor_id, image_size, x_anchors, y_anchors
             'calibration': {'x_anchors': ax, 'y_anchors': ay},
             'calibration_unverified': True, 'drawing_fidelity': 'not_evaluated',
             'coverage': 'caller_selected_point_pairs_only', 'observations': rows,
+            **({'height_sampling': 'An omitted z_m is assessed across every constant-footprint height band; varying ownership is indeterminate.'}
+               if sectioned else {}),
             'conflict_count': sum(row['consistency'] == 'conflicts_with_supplied_expectation' for row in rows),
             'unassessed_count': sum(row['consistency'] == 'not_assessed' for row in rows),
             'interpretation': 'Different space IDs remain separate even when a door or open passage connects them. '

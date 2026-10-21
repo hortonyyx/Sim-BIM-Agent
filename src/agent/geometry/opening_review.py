@@ -17,7 +17,7 @@ from types import SimpleNamespace
 from shapely.errors import GEOSException
 from shapely.ops import unary_union
 
-from src.agent.geometry.source_bim import EPS, _on_wall
+from src.agent.geometry.source_bim import EPS, _on_wall, _wall_polygon
 
 
 _SOURCE_TO_REVIEW_KIND = {"door": "door", "window": "window", "open": "passage"}
@@ -297,9 +297,9 @@ def _wall_exposure(boundary: dict, relations: list[dict]):
     The source kernel's coplanarity check and EPS are used only for numerical
     geometry, never to enlarge a drawing opening or erase a physical contact.
     """
-    wall = SimpleNamespace(vertices=boundary.get("vertices"))
+    wall = SimpleNamespace(vertices=boundary.get("vertices"), holes=boundary.get("holes", []))
     try:
-        parent = _on_wall(wall.vertices, wall)
+        parent = _wall_polygon(wall)
         if parent is None or not parent.is_valid or parent.area <= EPS ** 2:
             raise ValueError("invalid wall area")
         patches = []

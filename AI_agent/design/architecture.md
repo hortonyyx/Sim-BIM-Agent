@@ -49,7 +49,7 @@ Methods 是可复用方法，不是固定阶段；roles 是任务分工，不与
 
 2026-10-19 mesh复用single_model入口和相同runtime，调度员自主选工具，可选开启同模型只读worker。`runtime_mesh_workers.py`只承担domain派工与证据语义；子任务复用公共Runtime/EventStore、根预算和恢复，不另建循环。任务输入按原字节复制，候选只给明确source快照；worker在自己的目录生成视图、回叠和测量，主BIM仍由调度员修改。父子结果与用量可分别核查，已完成任务复读不重复请求，变更参数/版本/证据不能冒充同一任务续跑。
 
-`source_polygon_v1`通过显式`simple_polygon`合同使用公共源BIM builder，支持简单直边/凹多边形、斜宿主开口、带可追溯弦误差的共享圆弧边界、真实空间围合的楼层孔洞，以及已有退台/跨层关系。公共模板可显式选择该合同，重复展开曲线或斜边楼层和任意直墙窗组；旧schema默认不变。单空间孔洞、连续斜墙面/变截面、跨多个曲线弦段的单开口及EnergyPlus适配仍不支持。
+`source_polygon_v1`通过显式`simple_polygon`合同使用公共源BIM builder，支持简单直边/凹多边形、斜宿主开口、可追溯弦误差的圆弧、楼层与单空间孔洞、退台及跨层关系。一个空间可在generic `build_bim`中以绝对标高`vertical_sections`表达不同高度段轮廓，保留一个源身份，移除段间内部面并合并共面宿主；不能用多个zone加通道代替同一房间。公共参数模板仍可重复展开既有曲线/斜边楼层与窗组，但暂不接受绝对标高sections复用；旧schema默认不变。连续斜墙面、跨多个曲线弦段的单开口及EnergyPlus适配仍不支持。现有棱柱分区比较器对sections明确返回未评价，不按完整投影乘高度静默评分。
 
 Mesh回叠默认按源几何朝向/遮挡显示，可按真实source boundary ID选择宿主；完整投影复用不可变报告分页。`mesh_section`从原三角面计算真实水平截线，`mesh_correspondence`以保存的可见面ID和同一相机射线从原三角面重求命中，再与源几何第一命中面计算位置差；像素缓冲坐标仅作一致性核验，保留无命中/边缘/遮挡和有效覆盖，不将窗贴图或整栋保真判为自动通过。只读worker可调用并返回绑定当前输入、源快照、创建时图像/缓冲哈希和工具事件的证据。`finish_bim`保存mesh范围声明并绑定当前源模型、原mesh和回叠证据，只有有效整栋声明允许完成；worker完成不代替该判断，图纸楼层覆盖字段保持独立。首批几何见[首批交接](../reports/2026-10-19_textured_mesh_harness_first_build.md)，worker接线见[后续交接](../reports/2026-10-19_textured_mesh_workers.md)。
 

@@ -11,7 +11,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from src.agent.correction.constants import SCHEMA_VERSION_SOURCE_POLYGON
 from src.agent.correction.schema import (
-    Cell, CorrectedGeometry, Floor, FootprintRing, Point2, RoomRoleEvidence, WallOpening,
+    Cell, CorrectedGeometry, Floor, FootprintRing, Point2, RoomRoleEvidence, WallOpening, SourceVerticalSection,
 )
 from src.agent.geometry.source_curves import (
     BoundaryCurve, CurveSegment, CurveUse, expand_source_polygon_geometry,
@@ -21,6 +21,7 @@ from src.agent.geometry.source_curves import (
 class SourcePolygonCell(Cell):
     model_config = ConfigDict(extra="forbid")
     holes: list[list[Point2]] = Field(default_factory=list, exclude_if=lambda value: not value)
+    vertical_sections: list[SourceVerticalSection] = Field(default_factory=list, exclude_if=lambda value: not value)
     source_refs: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     role_evidence: RoomRoleEvidence | None = None
@@ -38,6 +39,18 @@ class SourcePolygonFloor(Floor):
     id: str | None = None
     footprint: SourcePolygonFootprint
     cells: list[SourcePolygonCell]
+
+    @model_validator(mode="after")
+    def validate_sectioned_spaces(self):
+        from src.agent.geometry.source_volume import validate_vertical_sections
+        for cell in self.cells:
+            if cell.vertical_sections:
+                polygon = cell.polygon or [[cell.x[0], cell.y[0]], [cell.x[1], cell.y[0]],
+                                           [cell.x[1], cell.y[1]], [cell.x[0], cell.y[1]]]
+                rows = validate_vertical_sections(cell.vertical_sections, polygon, cell.holes,
+                                                  self.z_floor, self.ceiling_height)
+                cell.vertical_sections = [SourceVerticalSection.model_validate(row) for row in rows]
+        return self
 
 
 class SourceWallOpening(WallOpening):

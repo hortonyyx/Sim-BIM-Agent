@@ -76,6 +76,9 @@ def render_source_plan(source: dict, floor_id: str):
         "naming_scheme": names.get("scheme_version"),
         "space_ids": [space["id"] for space in rooms],
         "opening_ids": [opening["id"] for opening in openings],
+        **({"plan_geometry": "XY projection of volume within the requested storey; not a constant-height extrusion",
+            "vertical_section_space_ids": [space["id"] for space in rooms if space.get("vertical_sections")]}
+           if any(space.get("vertical_sections") for space in rooms) else {}),
         "world_bounds_m": {"x": [x0, x1], "y": [y0, y1]},
         "scope": "actual saved source plan; no original calibration, height verification or drawing-fidelity verdict",
     }

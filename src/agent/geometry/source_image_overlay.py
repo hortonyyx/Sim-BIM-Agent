@@ -321,6 +321,8 @@ def render_source_overlay(
             draw.line(hole + hole[:1], fill=_MAGENTA, width=3, joint='curve')
         projected_spaces.append({
             "id": space["id"],
+            **({"plan_geometry": "storey volume XY projection", "projection_z_m": space["plan_projection_z_m"]}
+               if "plan_projection_z_m" in space else {}),
             "pixel_polygon": [[round(x, 6), round(y, 6)] for x, y in pixel_polygon],
             **({'pixel_holes': [[[round(x, 6), round(y, 6)] for x, y in h] for h in pixel_holes]} if pixel_holes else {}),
             "out_of_image": any(outside(point) for point in pixel_polygon),
