@@ -26,6 +26,11 @@ from src.agent.geometry.source_model import _digest, source_primitives
 EPS = 1e-7
 
 
+def _coverage_regions(expected, actual):
+    """Numerically resolvable missing/outside regions; never alter source shapes."""
+    return expected.difference(actual.buffer(EPS)), actual.difference(expected.buffer(EPS))
+
+
 def _space_overlap_area(a, b):
     """Return original overlap area only for a numerically resolvable intrusion.
 
@@ -281,8 +286,8 @@ def build_source_bim(geom: CorrectedGeometry, *, capability_profile="rectangular
             else:
                 spanning_polygons.append(polygons[sid])
         actual = unary_union([polygons[c.id] for c in floor.cells] + spanning_polygons)
-        missing = expected.difference(actual.buffer(EPS)).area
-        outside = actual.difference(expected.buffer(EPS)).area
+        missing_region, outside_region = _coverage_regions(expected, actual)
+        missing, outside = missing_region.area, outside_region.area
         if missing > EPS ** 2 or outside > EPS ** 2:
             fail("source.floor_coverage", floor_id=fid, missing_area_m2=missing, outside_area_m2=outside)
     for boundary in boundaries.values():

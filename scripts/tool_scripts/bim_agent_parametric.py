@@ -262,6 +262,49 @@ def _feedback_parent(toolkit, state, candidate):
         return None, str(error)
 
 
+def _shared_junction_feedback(toolkit, audit):
+    """Bound actionable nodes, with an existing immutable report read for all."""
+    groups = {}
+    for row in audit.get("rejections", []):
+        if row.get("code") == "shared_junction_split":
+            groups.setdefault(row["template"], []).append(row)
+    if not groups:
+        return None
+    size = lambda value: len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+    counts = []
+    for name, rows in groups.items():
+        item = {"template": name, "junction_count": len(rows)}
+        if size([*counts, item]) <= 1500:
+            counts.append(item)
+    shown = []
+    # One representative per template before showing a second node from any.
+    for index in range(max(map(len, groups.values()))):
+        for rows in groups.values():
+            if index >= len(rows):
+                continue
+            row = rows[index]
+            item = {key: row[key] for key in ("template", "scope", "observed_point",
+                "max_adopted_separation_m", "numerical_tolerance_m", "local_source_violation", "frame")}
+            item["vertices"] = [{key: vertex[key] for key in ("ring_path", "vertex_index", "after",
+                "normalized_vertex_pointer", "declaration_pointer")} for vertex in row["vertices"][:8]]
+            item["vertex_count"] = len(row["vertices"])
+            item["omitted_vertex_count"] = len(row["vertices"]) - len(item["vertices"])
+            if size([*shown, item]) <= 7000:
+                shown.append(item)
+    count = sum(map(len, groups.values()))
+    summary = dict(junction_count=count, shown_junction_count=len(shown),
+        omitted_junction_count=count-len(shown), template_count=len(groups), templates=counts,
+        omitted_template_count=len(groups)-len(counts), junctions=shown,
+        pointer_basis="normalized source plan; declaration_pointer locates primitive/rect/path inputs",
+        action="Declare the intended common modelling.frames or boundary geometry; no automatic welding or filling. Frame changes affect every selected template support.")
+    from scripts.tool_scripts.bim_agent_replies import compact_reply
+    result = compact_reply(toolkit.run, "parametric_shared_junctions", summary, full_result=audit, force=True)
+    result["read_all"] = {"tool": "read_candidate_items", "arguments": {
+        "candidate": "", "collection": "report", "report_file": result["details_file"],
+        "json_pointer": "/rejections"}}
+    return result
+
+
 def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
            feedback_parent=None, feedback_parent_error=None):
     if getattr(toolkit, "readonly", False):
@@ -308,6 +351,9 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
             state["regularization_failure_reference"] = error.audit_reference
         details = field_feedback or None
         if isinstance(getattr(error, "audit", None), dict):
+            junctions = _shared_junction_feedback(toolkit, error.audit)
+            if junctions:
+                details = {**(details or {}), "shared_junctions": junctions}
             from scripts.tool_scripts.bim_agent_edit_route import declared_host_feedback
             try:
                 hosts = declared_host_feedback(plan, error.audit)

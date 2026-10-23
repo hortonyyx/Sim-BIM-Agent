@@ -22,7 +22,7 @@ import json
 import math
 from decimal import Decimal, ROUND_HALF_UP
 
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
 
 SEAM_M = 0.00002
@@ -164,6 +164,117 @@ def _cluster(values):
         else:
             groups[-1].append(value)
     return groups
+
+
+def _protect_shared_vertices(records, templates, originals, frames, record_rejection):
+    """Locate existing source failures at split corners, never weld any points.
+
+    Only coincident vertices in the same template and section layer are compared.
+    The numerical EPS is deliberately smaller than the line-anchor seam tolerance.
+    Projection rings and absolute-Z section rings are separate scopes. A changed
+    vertex list alone is insufficient: require a nearby source coverage/overlap
+    violation using the source kernel's own numerical predicates.
+    """
+    contexts = {}
+    for name, template in templates.items():
+        if _curved(template):
+            continue
+        base = '/templates/' + name.replace('~', '~0').replace('/', '~1')
+        footprint = template['footprint']
+        if isinstance(footprint, list):
+            contexts[id(footprint)] = (('projection',), base + '/footprint', base + '/footprint')
+        else:
+            contexts[id(footprint['vertices'])] = (('projection',), base + '/footprint/vertices', base + '/footprint')
+            for j, ring in enumerate(footprint.get('holes', [])):
+                contexts[id(ring)] = (('projection',), f'{base}/footprint/holes/{j}', base + '/footprint')
+        for i, space in enumerate(template['spaces']):
+            owner = f'{base}/spaces/{i}'
+            for ring, suffix in [(space.get('polygon'), '/polygon'),
+                                 *((ring, f'/holes/{j}') for j, ring in enumerate(space.get('holes', [])))]:
+                if ring is not None:
+                    contexts[id(ring)] = (None if space.get('vertical_sections') else ('projection',),
+                                          owner + suffix, owner)
+            for j, section in enumerate(space.get('vertical_sections', [])):
+                scope = ('section', *section['z'])
+                prefix = f'{owner}/vertical_sections/{j}'
+                for ring, suffix in [(section['polygon'], '/polygon'),
+                                     *((ring, f'/holes/{k}') for k, ring in enumerate(section.get('holes', [])))]:
+                    contexts[id(ring)] = (scope, prefix + suffix, prefix)
+
+    groups, bins = [], {}
+    for name, path, ring, points, edges in records:
+        scope, pointer, declaration = contexts[id(ring)]
+        if scope is None:
+            continue  # Sectioned-space projections need not be actual shared walls.
+        for index, local in enumerate(points):
+            a, b = edges[index-1][0]['normal'], edges[index][0]['normal']
+            # A redundant point can slide along its unchanged supporting line.
+            # Its list position is not a corner-incidence constraint.
+            if abs(a[0]*b[1]-a[1]*b[0]) <= 1e-10:
+                continue
+            before = _world(local, frames[name])
+            cell = tuple(math.floor(value / EPS) for value in before)
+            candidates = [group for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                          for group in bins.get((name, scope, cell[0] + dx, cell[1] + dy), [])]
+            # All members must be numerically coincident, not a proximity chain.
+            group = next((group for group in candidates
+                          if all(math.dist(before, row['before']) <= EPS for row in group)), None)
+            if group is None:
+                group = []
+                groups.append((name, scope, group))
+                bins.setdefault((name, scope, *cell), []).append(group)
+            group.append(dict(before=before, after=copy.deepcopy(ring[index]),
+                ring_path=f'templates.{name}.{path}', vertex_index=index,
+                normalized_vertex_pointer=f'{pointer}/{index}', declaration_pointer=declaration,
+                supports=[dict(normal=g['normal'], observed_offset_m=d,
+                               adopted_offset_m=g['mapping'][d]) for g, d in (edges[index-1], edges[index])]))
+    from src.agent.geometry.source_bim import EPS as source_eps, _coverage_regions, _space_overlap_area
+
+    def violations(template):
+        f = template['footprint']
+        expected = Polygon(f if isinstance(f, list) else f['vertices'],
+                           [] if isinstance(f, list) else f.get('holes', []))
+        shapes = [Polygon(s['polygon'], s.get('holes', [])) for s in template['spaces']]
+        if not expected.is_valid or any(not shape.is_valid for shape in shapes):
+            return None  # Leave invalid hole/containment inputs to their existing validator.
+        actual = unary_union(shapes)
+        # Section projections can overlap without a real volume overlap.
+        straight = [p for p, s in zip(shapes, template['spaces']) if not s.get('vertical_sections')]
+        overlap = unary_union([a.intersection(b) for i, a in enumerate(straight) for b in straight[i+1:]
+                               if _space_overlap_area(a, b) > 0])
+        missing, outside = _coverage_regions(expected, actual)
+        return dict(missing=missing, outside=outside, overlap=overlap)
+
+    failures = {}
+    for name, scope, group in groups:
+        if len({row['ring_path'] for row in group}) < 2:
+            continue
+        spread = max(math.dist(a['after'], b['after']) for i, a in enumerate(group) for b in group[i+1:])
+        if spread <= EPS:
+            continue
+        if name not in failures:
+            before = violations(originals[name])
+            failures[name] = (violations(templates[name]) if before is not None
+                and all(shape.area <= source_eps ** 2 for shape in before.values()) else None)
+        if failures[name] is None:
+            continue
+        xs, ys = zip(*(row['after'] for row in group))
+        neighborhood = box(min(xs)-source_eps, min(ys)-source_eps,
+                           max(xs)+source_eps, max(ys)+source_eps)
+        areas = {key + '_area_m2': shape.intersection(neighborhood).area
+                 for key, shape in failures[name].items()}
+        if not any(value > source_eps ** 2 for value in areas.values()):
+            continue
+        record_rejection('shared_junction_split', f'templates.{name}',
+            'support-line adoption splits a shared input node; declare the intended common frame or boundary geometry before retrying; no points were welded',
+            template=name, scope=list(scope), observed_point=group[0]['before'],
+            max_adopted_separation_m=spread, numerical_tolerance_m=EPS,
+            local_source_violation=dict(**areas, length_tolerance_m=source_eps,
+                area_tolerance_m2=source_eps ** 2, bounds=list(neighborhood.bounds),
+                original_planar_coverage_and_straight_overlap_passed=True),
+            vertices=group, pointer_basis='normalized source plan; use declaration_pointer for primitive/rect/path inputs',
+            frame={key: frames[name][key] for key in ('id', 'origin', 'yaw_degrees')},
+            frame_declaration='modelling.frames (templates, origin, yaw_degrees); changing it affects all selected template supports')
 
 
 def regularize_architectural_plan(plan, *, policy=None):
@@ -380,6 +491,11 @@ def regularize_architectural_plan(plan, *, policy=None):
                 continue
             ring[:] = rebuilt
         finish_stage('ring_adoption', ['apertures', 'vertical', 'contacts'])
+        from src.agent.geometry.parametric_proposal import expand_parametric_instances
+        used_templates = {row['template'] for row in expand_parametric_instances(original)}
+        _protect_shared_vertices([row for row in records if row[0] in used_templates],
+                                 adopted['templates'], original['templates'], frames, record_rejection)
+        finish_stage('shared_junctions', ['apertures', 'vertical', 'contacts'])
 
         new_polygons = {(name, s['id']): _space_edges(s) for name, t in adopted['templates'].items()
                         if not _curved(t) for s in t['spaces']}
