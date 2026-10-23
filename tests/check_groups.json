@@ -6,6 +6,10 @@
       "group": "targeted",
       "reason": "Direct mesh measurement display preserves full journaled and report snapshots, 128-point lists and explicit detail retrieval"
     },
+    "tests/test_architectural_junctions.py": {
+      "group": "targeted",
+      "reason": "Locate source-invalid corner splits before adoption while preserving numerical, collinear, section and atomic feedback boundaries"
+    },
     "tests/test_mesh_worker_receipt_projection.py": {
       "group": "targeted",
       "reason": "Worker display evidence deduplication and explicit selector receipts preserve canonical results and complete selected evidence"
