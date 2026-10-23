@@ -525,8 +525,10 @@ def inspect_parametric(toolkit, candidate: str = "", *, draft: str = "",
                     "reason": "No source was saved; inspect and patch the preserved draft instead."}
         if candidate and candidate_state is None:
             reference = _lineage(toolkit, candidate)
+            from scripts.tool_scripts.bim_agent_parametric_lineage import parametric_lineage_advisory
             result = {"status": "stale_lineage", "candidate": candidate, "exact_plan": False,
                 "nearest_parametric": reference,
+                "parametric_lineage_advisory": parametric_lineage_advisory(toolkit, candidate),
                 "patch_allowed": False,
                 "reason": "No exact bound compact plan for this source. Ancestor plans are read-only "
                           "references; do not overwrite source-only edits. Submit an explicit new plan "

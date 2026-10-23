@@ -201,6 +201,8 @@ def candidate_edit_route(toolkit, candidate, *, operations=None):
         state = _current_state(toolkit, candidate)
         if state is None:
             result["origin"] = "source_proposal"
+            from scripts.tool_scripts.bim_agent_parametric_lineage import parametric_lineage_advisory
+            result["parametric_lineage_advisory"] = parametric_lineage_advisory(toolkit, candidate)
             return result
         if state.get("source_file_sha256") is None:
             result.update(draft_edit_route(toolkit, state["draft"]))

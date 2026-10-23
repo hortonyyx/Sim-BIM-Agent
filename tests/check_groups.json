@@ -1918,6 +1918,10 @@
       "group": "targeted",
       "reason": "Exact previously returned auxiliary crops in worker first requests, receipt binding, original pixels and immutable readback"
     },
+    "tests/test_parametric_lineage.py": {
+      "group": "targeted",
+      "reason": "Hash-bound source-edit lineage advice, immutable report reads and unchanged explicit parameter edit authority"
+    },
     "tests/test_parametric_validation.py": {
       "group": "targeted",
       "reason": "Shared declaration diagnostics aggregate independent field errors without changing geometric acceptance"
