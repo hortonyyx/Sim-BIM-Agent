@@ -194,6 +194,144 @@ def test_worker_capability_is_optional_with_no_child_requests(tmp_path, local_to
         assert wrapper.repeatability("delegate_mesh_workers") == "read_only"
 
 
+@pytest.mark.parametrize("invalid_kind", ["view_id_as_png", "view_id_as_measurement"])
+def test_worker_reserves_answer_and_repairs_actual_reference_mistakes(tmp_path, local_tools, invalid_kind):
+    run, limits = _inputs(tmp_path), _limits(model_calls=3)
+    invalid = json.loads(_answer(seen=True))
+    if invalid_kind == "view_id_as_png":
+        invalid["directly_seen"][0]["evidence_id"] = "view_0001"
+    else:
+        invalid["directly_seen"][0]["measurement_call_id"] = "section_001"
+    with EventStore(tmp_path / "audit", run_id="mesh-answer-repair", task_id="coordinator",
+                    budget_limit=limits.ledger_limit()) as store:
+        _start(store)
+        wrapper, adapters = _wrapper(store, run, limits, {"inspect": [
+            response(("actual-view-call", "view_image", {"name": "sketch.png"})),
+            response(text=json.dumps(invalid)), response(text=_answer(seen=True))]})
+        result = _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [_task()]})))
+        assert result["status"] == "completed" and result["answer_delivery"]["repair_status"] == "accepted"
+        assert len(adapters[0].requests) == 3
+        bodies = [json.loads(request) for request in adapters[0].requests]
+        assert bodies[0].get("tools") and not bodies[1].get("tools") and not bodies[2].get("tools")
+        assert "worker_answer_reference" in json.dumps(bodies[1])
+        assert result["result"]["directly_seen"][0]["evidence"]["id"] == "sketch.png"
+        assert "computed_measurement" not in result["result"]["directly_seen"][0]
+        assert result["evidence_catalog"]["views"][0]["read_view_id"] == "sketch.png"
+        assert RuntimeBudget.from_events(store.budget_limit, store.all_events).ledger.committed.calls == 3
+        store.validate()
+
+
+def _late_tool_response(native=False):
+    if native:
+        return {"object": "response", "id": "late-native", "model": "test", "status": "completed",
+                "output": [{"type": "function_call", "call_id": "too-late", "name": "inputs", "arguments": "{}"}],
+                "usage": {"input_tokens": 20, "output_tokens": 10, "total_tokens": 30}}
+    return response(("too-late", "inputs", {}))
+
+
+def _assert_no_late_call(requests):
+    from src.agent_runtime.responses import build_responses_body
+    for request in requests:
+        body = json.loads(request)
+        assert not any(call["id"] == "too-late" for message in body["messages"]
+                       for call in message.get("tool_calls", []))
+        native = build_responses_body(model="gpt-6.1-sol", messages=body["messages"],
+                                     tools=[], parameters={"max_tokens": 32000})
+        calls = {row["call_id"] for row in native["input"] if row.get("type") == "function_call"}
+        results = {row["call_id"] for row in native["input"] if row.get("type") == "function_call_output"}
+        assert calls == results
+        assert "too-late" not in calls
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_worker_answer_reserve_prevents_late_tool_execution(tmp_path, local_tools, native):
+    run, limits = _inputs(tmp_path), _limits()
+    with EventStore(tmp_path / "audit", run_id="mesh-answer-only", task_id="coordinator",
+                    budget_limit=limits.ledger_limit()) as store:
+        _start(store)
+        wrapper, adapters = _wrapper(store, run, limits, {"inspect": [
+            response(("view", "view_image", {"name": "sketch.png"})),
+            _late_tool_response(native), response(text=_answer(seen=True))]})
+        result = _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [_task()]})))
+        assert result["status"] == "completed"
+        assert local_tools[0].calls == [("view_image", {"name": "sketch.png"})]
+        assert not any(e.payload.event_type == "tool_invocation" and e.payload.call_id == "too-late"
+                       for e in store.all_events)
+        assert len(adapters[0].requests) == 3
+        _assert_no_late_call(adapters[0].requests)
+        store.validate()
+
+
+def test_failed_worker_exposes_verified_views_without_promoting_invalid_answer(tmp_path, local_tools):
+    run, limits = _inputs(tmp_path), _limits()
+    invalid = json.loads(_answer(seen=True))
+    invalid["directly_seen"][0]["evidence_id"] = "view_0001"
+    with EventStore(tmp_path / "audit", run_id="mesh-failure-evidence", task_id="coordinator",
+                    budget_limit=limits.ledger_limit()) as store:
+        _start(store)
+        wrapper, adapters = _wrapper(store, run, limits, {"inspect": [
+            response(("view", "view_image", {"name": "sketch.png"})), response(text=json.dumps(invalid))]})
+        task = _task(model_calls=2)
+        result = _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [task]})))
+        assert result["status"] == "child_model_budget_exhausted" and result["result"] is None
+        assert "answer" not in result
+        assert result["answer_delivery"]["repair_status"] == "requested_but_not_completed"
+        assert "admitted PNG filename" in result["answer_delivery"]["validation_error"]
+        assert result["evidence_catalog"]["view_count"] == 1
+        recovered = asyncio.run(wrapper.call_tool("read_mesh_worker", {
+            "task_id": "inspect", "view_ids": [result["evidence_catalog"]["views"][0]["read_view_id"]]}))
+        assert not recovered["isError"] and recovered["structuredContent"]["result"] is None
+        assert any(block["type"] == "image" for block in recovered["content"])
+        assert _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", {"tasks": [task]}))) == result
+        assert len(adapters) == 1 and len(adapters[0].requests) == 2
+        assert not (run / "selected_candidate.json").exists()
+        store.validate()
+
+
+@pytest.mark.parametrize("interrupt_response", [2, 3])
+@pytest.mark.parametrize("invalid_kind", ["reference", "late_native_tool"])
+def test_reserved_answer_repair_replays_without_buying_calls(tmp_path, local_tools, monkeypatch, interrupt_response, invalid_kind):
+    interrupted = [False]
+
+    def runtime_with_fault(**kwargs):
+        engine = Runtime(**kwargs)
+
+        def fault(boundary, current):
+            if boundary == "after_response" and current.counts["model_calls"] == interrupt_response and not interrupted[0]:
+                interrupted[0] = True
+                raise RuntimeError("offline interruption around reserved final answer")
+
+        engine.fault_hook = fault
+        return engine
+
+    monkeypatch.setattr(workers, "Runtime", runtime_with_fault)
+    run, limits = _inputs(tmp_path), _limits(model_calls=3)
+    invalid = json.loads(_answer(seen=True))
+    invalid["directly_seen"][0]["evidence_id"] = "view_0001"
+    with EventStore(tmp_path / "audit", run_id="mesh-reserved-resume", task_id="coordinator",
+                    budget_limit=limits.ledger_limit()) as store:
+        _start(store)
+        wrapper, adapters = _wrapper(store, run, limits, {"inspect": [
+            response(("view", "view_image", {"name": "sketch.png"})),
+            _late_tool_response(True) if invalid_kind == "late_native_tool" else response(text=json.dumps(invalid)),
+            response(text=_answer(seen=True))]})
+        arguments = {"tasks": [_task()]}
+        assert _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", arguments)))["status"] == "failed"
+        partial = asyncio.run(wrapper.call_tool("read_mesh_worker", {"task_id": "inspect", "view_ids": ["sketch.png"]}))
+        assert not partial["isError"] and partial["structuredContent"]["status"] == "incomplete"
+        assert partial["structuredContent"]["result"] is None
+        assert any(block["type"] == "image" for block in partial["content"])
+        result = _result(asyncio.run(wrapper.call_tool("delegate_mesh_workers", arguments)))
+        assert result["status"] == "completed" and result["answer_delivery"]["repair_status"] == "accepted"
+        assert sum(len(adapter.requests) for adapter in adapters) == 3
+        _assert_no_late_call([request for adapter in adapters for request in adapter.requests])
+        assert sum(len(tool.calls) for tool in local_tools) == 1
+        assert RuntimeBudget.from_events(store.budget_limit, store.all_events).ledger.committed.calls == 3
+        child = store.for_task("inspect", parent_task_id=store.task_id)
+        assert [event.payload.phase for event in child.events if event.payload.event_type == "answer_repair"] == ["request", "result"]
+        store.validate()
+
+
 @pytest.mark.parametrize("parent_seconds,child_seconds", [(None, None), (None, 30), (60, None)])
 def test_worker_budget_context_preserves_unlimited_and_inherited_time(
         tmp_path, local_tools, parent_seconds, child_seconds):

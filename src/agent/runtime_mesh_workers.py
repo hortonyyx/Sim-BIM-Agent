@@ -55,6 +55,11 @@ enough evidence, return the useful conclusion with remaining uncertainty; do not
 spend the final request on another optional crop, measurement or fine-detail check.
 Answer the assigned discrepancy at the coordinator's architectural scale rather
 than expanding the assignment into a full building audit.
+Copy worker_answer_reference fields from tool replies. For auxiliary images,
+evidence_id is the admitted PNG filename, never a view_XXXX crop ID. Only use
+measurement_call_id when that exact field was returned for a successful query.
+Near the request limit the runtime removes tools to retain a final answer and,
+when allowance remains, one correction. Answer with uncertainty if necessary.
 """
 
 _TOKEN_BUDGET_MEANING = (
@@ -64,7 +69,10 @@ _TOKEN_BUDGET_MEANING = (
     "Null adds no child token limit beyond the shared root budget.")
 
 _BUDGET_SCHEMA = {"type": "object", "additionalProperties": False,
-    "properties": {"model_calls": {"type": "integer", "minimum": 1},
+    "properties": {"model_calls": {"type": "integer", "minimum": 1,
+        "description": "Total requests including answer/repair. With 3+ calls, the final 2 are answer-only; "
+                       "with 2 calls, the last is answer-only; 1 call can only answer supplied evidence or uncertainty. "
+                       "These slots do not increase the shared root budget."},
         "tool_calls": {"type": "integer", "minimum": 0},
         "seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
         "tokens": {"type": ["integer", "null"], "minimum": 1,
@@ -100,6 +108,7 @@ def mesh_worker_tool_specs():
 def mesh_worker_task_payload(packet, limits):
     from src.agent.runtime_mesh_evidence import MeshWorkerAnswer
     return {"packet": packet, "task_limits": limits.model_dump(mode="json"),
+            "answer_reserve_calls": min(2, max(1, limits.model_calls - 1)),
             "answer_schema": MeshWorkerAnswer.model_json_schema()}
 
 
@@ -111,8 +120,8 @@ def _envelope(value, *, error=False, blocks=()):
 class _EvidenceTools:
     """Bind verified observation bytes before the ordinary runtime journals them."""
 
-    def __init__(self, frozen, packet):
-        self.frozen, self.packet = frozen, packet
+    def __init__(self, frozen, packet, store):
+        self.frozen, self.packet, self.store = frozen, packet, store
         self.run_directory = frozen.run_directory
 
     async def list_tools(self):
@@ -127,7 +136,11 @@ class _EvidenceTools:
     async def call_tool(self, name, arguments):
         from src.agent.runtime_mesh_evidence import bind_mesh_worker_tool_result
         raw = await self.frozen.call_tool(name, arguments)
-        return bind_mesh_worker_tool_result(self.packet, self.run_directory, name, arguments, raw)
+        invocation = next((event for event in reversed(self.store.events)
+            if event.payload.event_type == "tool_invocation"
+            and event.payload.tool_name == name and event.payload.full_arguments == arguments), None)
+        return bind_mesh_worker_tool_result(self.packet, self.run_directory, name, arguments, raw,
+            call_id=invocation.payload.call_id if invocation else None)
 
     def snapshot_state(self):
         return self.frozen.snapshot_state()
@@ -338,7 +351,7 @@ class MeshWorkerTools:
         async with AsyncExitStack() as stack:
             client = await stack.enter_async_context(frozen_bim_client(
                 child_run, readonly=True, repository_root=self.root))
-            tools = _EvidenceTools(FrozenBimTools(client, role, run_directory=child_run), record["packet"])
+            tools = _EvidenceTools(FrozenBimTools(client, role, run_directory=child_run), record["packet"], child)
             catalog = await tools.list_tools()
             context_values = self.route.get("context", {})
             context_policy = ContextPolicy.model_validate_json(json.dumps({key: value for key, value in context_values.items()
@@ -372,7 +385,7 @@ class MeshWorkerTools:
                                          if self.limits.seconds is not None
                                          and self.limits.time_budget_mode == "wall_and_requests" else None),
                 answer_validator=lambda answer: hydrate_mesh_worker_answer(answer, record["packet"], child, child_run),
-                max_answer_repairs=1)
+                max_answer_repairs=1, answer_reserve_calls=min(2, max(1, limits.model_calls - 1)))
             saved = child.latest_checkpoint()
             if saved and (saved[1]["versions"] != versions.model_dump(mode="json") or
                           saved[1].get("config", engine._config()) != engine._config()):
@@ -393,7 +406,7 @@ class MeshWorkerTools:
                 {"role": "user", "content": content}], image_originals=originals, resume=saved is not None)
 
     def _save_outcome(self, child, record, receipt):
-        from src.agent.runtime_mesh_evidence import hydrate_mesh_worker_answer
+        from src.agent.runtime_mesh_evidence import hydrate_mesh_worker_answer, mesh_worker_evidence_catalog
         result = None
         if receipt["status"] == "completed":
             result = hydrate_mesh_worker_answer(receipt["answer"], record["packet"], child, child.task_directory / "bim")
@@ -401,6 +414,8 @@ class MeshWorkerTools:
             "runtime": {key: receipt.get(key) for key in ("status", "model_calls", "tool_calls", "reported_tokens",
                 "elapsed_seconds", "budget_available", "root_budget_available")},
             "answer": receipt.get("answer"), "source_basis": record["packet"].get("source_snapshot"),
+            "evidence_catalog": mesh_worker_evidence_catalog(record["packet"], child, child.task_directory / "bim"),
+            "answer_delivery": self._answer_delivery(child, receipt["status"]),
             "applicability": "frozen task inputs and optional source snapshot; coordinator judges current candidate"}
         if receipt["status"] in {"cancelled", "failed", "resume_pending_operation", "tool_presentation_failed"}:
             # These stops may have a durable response awaiting replay. Their
@@ -413,12 +428,23 @@ class MeshWorkerTools:
         return {key: value for key, value in outcome.items() if key != "answer"}
 
     def _read(self, task_id, view_ids=()):
-        from src.agent.runtime_mesh_evidence import hydrate_mesh_worker_answer, mesh_worker_view_blocks
+        from src.agent.runtime_mesh_evidence import (hydrate_mesh_worker_answer, mesh_worker_view_blocks,
+                                                   mesh_worker_evidence_catalog)
         child = self._child(task_id)
         record = self._record(child)
         outcome = self._anchored(child, "mesh-worker-outcome")
+        catalog = mesh_worker_evidence_catalog(record["packet"], child, child.task_directory / "bim")
         if outcome is None:
-            return {"task_id": task_id, "status": "incomplete", "result": None}, []
+            # Interrupted tasks remain resumable; expose their verified evidence
+            # without fabricating or freezing a completed worker outcome.
+            receipts = [source.blob for event in child.events for source in event.source_refs
+                        if source.source_id == "run-receipt" and source.blob is not None]
+            status = json.loads(child.get_bytes(receipts[-1])).get("status", "incomplete") if receipts else "incomplete"
+            outcome = {"task_id": task_id, "status": "incomplete", "result": None,
+                       "answer_delivery": self._answer_delivery(child, status),
+                       "source_basis": record["packet"].get("source_snapshot")}
+        if "evidence_catalog" in outcome and catalog != outcome["evidence_catalog"]:
+            raise ValueError("saved worker evidence catalog no longer matches its recorded evidence")
         if outcome.get("result") is not None:
             checked = hydrate_mesh_worker_answer(outcome["answer"], record["packet"], child, child.task_directory / "bim")
             if checked != outcome["result"]:
@@ -433,9 +459,24 @@ class MeshWorkerTools:
                     "view_id": "mesh-worker:" + task_id + ":" + reference["id"],
                     "returned_png_sha256": hashlib.sha256(base64.b64decode(block["data"], validate=True)).hexdigest()})
         value = {key: value for key, value in outcome.items() if key != "answer"}
+        value["evidence_catalog"] = catalog
         if previews:
             value["evidence_previews"] = previews
         return value, blocks
+
+    @staticmethod
+    def _answer_delivery(child, status):
+        repairs = [event.payload for event in child.events if event.payload.event_type == "answer_repair"]
+        requested = next((row for row in reversed(repairs) if row.phase == "request"), None)
+        result = next((row for row in reversed(repairs) if row.phase == "result"), None)
+        error = (result.repaired_validation_error if result and not result.accepted else
+                 requested.validation_error if requested else None)
+        return {"status": "validated" if status == "completed" else "not_validated",
+            "stop_reason": status,
+            "repair_status": ("accepted" if result and result.accepted else "rejected" if result else
+                              "requested_but_not_completed" if requested else "not_requested"),
+            "validation_error": error[:1000] if error else None,
+            "meaning": "Only a validated result is a worker conclusion; evidence may remain reusable after failure."}
 
     def state(self):
         tasks = {}
@@ -458,6 +499,8 @@ class MeshWorkerTools:
             for event in self.store.all_events))
         return {"model": self.model, "route_id": self.route["route_id"], "max_concurrent": self.max_concurrent,
             "token_budget": self._token_budget_contract(),
+            "answer_budget_policy": {"reserved_calls": "2 for task limits >=3, otherwise 1",
+                "scope": "within the original child/root budgets; unavailable time/tokens/root calls can still stop a task"},
             "tasks": list(tasks.values()), "shared_budget_available": available, "shared_tool_calls_available": remaining,
             "scope": "worker advice only; completion and BIM quality remain separate"}
 

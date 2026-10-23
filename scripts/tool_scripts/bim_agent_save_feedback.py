@@ -13,6 +13,7 @@ import json
 from scripts.tool_scripts.bim_agent_inference import (
     _source, audit_inference_candidate,
 )
+from scripts.tool_scripts.bim_agent_review_scope import compact_review_scope, review_scope
 
 
 _LIMIT = 4
@@ -67,6 +68,22 @@ def _bound_summary(reply):
     # Interpretations remain in the top-level scope and complete bound report.
     for section in (cores["saved_vertical_continuity_review"], reply["saved_source_check"]):
         section.pop("meaning", None)
+    if size() > 2500:
+        # Keep material-change actions ahead of exact-diff samples, which can
+        # include harmless floating-point recomputation or provenance updates.
+        reply["entity_diff"].pop("changed_id_sample", None)
+        for changes in reply["entity_diff"].get("entities", {}).values():
+            changes.pop("preserved", None)
+        for group in reply.get("review_scope", {}).get("affected", {}).values():
+            group["ids"] = group["ids"][:1]
+            group["omitted_count"] = group["count"] - len(group["ids"])
+    if size() > 2500:
+        reply["entity_diff"].pop("entities", None)
+        reply["entity_diff"]["entity_counts_location"] = "facts_file:/entity_diff/entities"
+    if size() > 2500:
+        reply["entity_diff"].pop("entity_scope", None)
+        reply["entity_diff"].pop("previous_source_model_sha256", None)
+        reply.pop("source_file", None)
     return reply
 
 
@@ -87,7 +104,7 @@ def _host_fact(opening, source, boundaries):
     }
 
 
-def _affected_openings(source, comparison):
+def _affected_openings(source, comparison, material_scope=None):
     """Include unchanged apertures whose host or adjacent source space changed."""
     openings = {row["id"]: row for row in source["openings"]}
     boundaries = {row["id"]: row for row in source["boundaries"]}
@@ -103,8 +120,12 @@ def _affected_openings(source, comparison):
             or modified["boundaries"].intersection(source.get("opening_hosts", {}).get(
                 identity, [row.get("host_boundary_id")]))
         }
+        if material_scope is not None:
+            affected = set(material_scope["affected"].get("openings", [])) | set(
+                material_scope["affected"].get("windows", []))
+            affected.intersection_update(openings)
         removed = (set(entities["openings"]["removed_ids"]) | set(entities["windows"]["removed_ids"])) - openings.keys()
-        scope = "Changed/added openings plus current openings with a changed host or adjacent space."
+        scope = "Materially changed openings and those affected by source host/space changes; provenance and numerical noise excluded."
     else:
         affected, removed = set(openings), set()
         scope = "All current openings because no valid parent comparison is available."
@@ -185,6 +206,7 @@ def attach_save_facts(toolkit, result, parent=None, feedback_parent=None, feedba
         if result.get("source_model_sha256") != source["source_model_sha256"]:
             raise ValueError("saved result and current source hash do not match")
         comparison_error = feedback_parent_error
+        previous_source = previous_path = previous_file_hash = None
         comparison_origin = "source_parent" if parent is not None else "none"
         if feedback_parent_error:
             comparison_origin = "unavailable_feedback_ancestor"
@@ -204,7 +226,7 @@ def attach_save_facts(toolkit, result, parent=None, feedback_parent=None, feedba
                 comparison_error = str(error)
         if parent is not None:
             try:
-                _source(toolkit, parent)
+                previous_source, previous_path, previous_file_hash = _source(toolkit, parent)
             except (OSError, ValueError, KeyError, TypeError) as error:
                 comparison_error = str(error)
         summary = audit_inference_candidate(toolkit, candidate, None if comparison_error else parent)
@@ -214,11 +236,20 @@ def attach_save_facts(toolkit, result, parent=None, feedback_parent=None, feedba
                 or audit["source_file_sha256"] != file_hash):
             raise ValueError("source changed while collecting saved facts")
         comparison = audit.get("comparison")
+        if comparison and (
+                previous_source is None
+                or comparison["previous_source_model_sha256"] != previous_source["source_model_sha256"]
+                or hashlib.sha256(previous_path.read_bytes()).hexdigest() != previous_file_hash):
+            comparison_error = "comparison baseline changed while collecting saved facts"
+            comparison = None
         diff = _compact_diff(comparison)
         if comparison_error:
             diff = {"status": "unavailable", "previous_candidate": parent, "reason": comparison_error}
         diff["comparison_origin"] = comparison_origin
-        affected = _affected_openings(source, comparison)
+        material_scope = review_scope(
+            previous_source if comparison else None, source,
+            previous_candidate=parent, unavailable_reason=comparison_error)
+        affected = _affected_openings(source, comparison, material_scope if comparison else None)
         cores = _core_facts(source, audit)
         validation = source.get("validation", {})
         findings = validation.get("findings", [])
@@ -235,13 +266,14 @@ def attach_save_facts(toolkit, result, parent=None, feedback_parent=None, feedba
             "source_file": path.relative_to(toolkit.run).as_posix(), "scope": _SCOPE,
             "audit_file": summary["audit_file"], "counts": summary["counts"], "entity_diff": diff,
             "continuous_space_facts": cores, "affected_opening_hosts": affected,
-            "saved_source_check": checks,
+            "saved_source_check": checks, "review_scope": material_scope,
         }
         full_path = toolkit.candidate_path(candidate) / "save_facts.json"
         if hashlib.sha256(path.read_bytes()).hexdigest() != file_hash:
             raise ValueError("source changed before saving current facts")
         full_path.write_text(json.dumps(complete, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         compact = copy.deepcopy(complete)
+        compact["review_scope"] = compact_review_scope(material_scope)
         compact["facts_file"] = full_path.relative_to(toolkit.run).as_posix()
         compact["facts_file_sha256"] = hashlib.sha256(full_path.read_bytes()).hexdigest()
         compact["continuous_space_facts"] = {

@@ -162,6 +162,9 @@ class Runtime:
     root_tool_calls: int | None = None
     answer_validator: object | None = None
     max_answer_repairs: int = 0
+    # Opt-in bounded observers stop requesting tools before their final answer
+    # allowance. These calls remain inside the original task and root budgets.
+    answer_reserve_calls: int = 0
     low_output_limit_reason: str | None = None
     # An entrypoint may start the clock before preparing its tool service.
     # Resume still restores the original persisted start; it never buys time.
@@ -341,10 +344,18 @@ class Runtime:
                     if reason is None:
                         continue
                     return self._stop(reason)
+                answer_only = self._answer_only()
+                if answer_only and not any(source.source_id == "answer-reserve" for source in self.sources):
+                    message = {"role": "user", "content": (
+                        "The remaining request allowance is for your final answer and, if budget permits, "
+                        "one format/reference correction. No further tools are available. Answer the bounded "
+                        "question from evidence already supplied or observed, using the required answer schema. "
+                        "Report uncertainty where evidence is insufficient; do not invent missing observations.")}
+                    self._append_message(message, self.store.source("answer-reserve", message))
                 # Deterministic projection always precedes any optional paid summary.
                 projection = self._project()
                 if (self.context and self.limits.summary_every
-                        and self.answer_repair_request_id is None
+                        and self.answer_repair_request_id is None and not answer_only
                         and self.counts["tool_calls"] - self.last_summary_at >= self.limits.summary_every):
                     reason = await self._summarize()
                     if reason:
@@ -356,7 +367,7 @@ class Runtime:
                 self._fault("before_request")
                 result, reason = await self._model_call(
                     projection[0], projection[1], purpose="retry" if self.retry_of else "primary_task",
-                    tools=[] if self.answer_repair_request_id else self.specs,
+                    tools=[] if self.answer_repair_request_id or answer_only else self.specs,
                     context_event_id=projection[2])
                 if reason:
                     return self._stop(reason)
@@ -465,6 +476,7 @@ class Runtime:
                if self.domain_completion else {}),
             "answer_validation_enabled": self.answer_validator is not None,
             "max_answer_repairs": self.max_answer_repairs,
+            **({"answer_reserve_calls": self.answer_reserve_calls} if self.answer_reserve_calls else {}),
             "low_output_limit_reason": self.low_output_limit_reason,
             "required_context_tags": list(self.required_context_tags),
             "required_view_ids": list(self.required_view_ids),
@@ -1368,6 +1380,21 @@ class Runtime:
             self.answer = None
             self.terminal_reason = "answer_validation_failed"
             return
+        if self.answer_reserve_calls and calls:
+            request = next(e for e in self.store.events if e.event_id == event.payload.request_event_id)
+            body = self.store.resolve(request.payload.final_request_body)
+            if not body.get("tools"):
+                # Retain the full response in its journal event, but do not
+                # replay unexecuted tool_calls/native function_call items. A
+                # repair request with dangling calls is invalid on live routes.
+                self._append_message({"role": "user", "content": (
+                    "Runtime refused the previous response's tool requests because this "
+                    "was a reserved final-answer turn. No requested tools were executed; "
+                    "the original response remains in the audit journal.")}, self._event_source(event))
+                self._reject_or_request_answer_repair(event, "\n".join(parsed.event_payload.visible_text),
+                    "The final-answer request supplied no tools. Return only the required answer JSON "
+                    "using existing evidence or uncertainty; further tool calls cannot be executed.")
+                return
         invoked = {e.payload.call_id for e in self.store.events if e.payload.event_type == "tool_invocation"}
         additional = sum(c.call_id not in invoked for c in calls)
         if self.counts["tool_calls"] + additional > self.limits.tool_calls:
@@ -2033,6 +2060,14 @@ class Runtime:
     def _wall_remaining_amount(self):
         remaining = self._wall_timeout()
         return Decimal(str(remaining)) if remaining is not None else None
+
+    def _answer_only(self):
+        if not self.answer_reserve_calls:
+            return False
+        self._load_budget()
+        remaining = min(self.limits.model_calls - self.counts["model_calls"],
+                        self.task_budget.available.calls, self.budget.available.calls)
+        return remaining <= self.answer_reserve_calls
 
     def _budget_stop(self):
         self._load_budget()

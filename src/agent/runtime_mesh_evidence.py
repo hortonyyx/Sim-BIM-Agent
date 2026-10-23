@@ -327,7 +327,7 @@ def _comparison_reference(packet, child_run, metadata):
             "file_sha256": {**original["file_sha256"], relative: _sha(path), report_file: metadata["details_sha256"]}}
 
 
-def bind_mesh_worker_tool_result(packet, child_run, tool_name, arguments, raw):
+def bind_mesh_worker_tool_result(packet, child_run, tool_name, arguments, raw, *, call_id=None):
     """Freeze file hashes in the normal tool receipt, immediately after execution."""
     _verify_child(packet, child_run)
     if raw.get("isError"):
@@ -362,6 +362,14 @@ def bind_mesh_worker_tool_result(packet, child_run, tool_name, arguments, raw):
     result["structuredContent"] = {**metadata, "mesh_worker_evidence": reference}
     if tool_name == "compare_mesh_source_pixels":
         result["structuredContent"]["mesh_worker_computed_evidence"] = _comparison_reference(packet, child_run, metadata)
+    answer_reference = {"evidence_kind": kind, "evidence_id": identity}
+    if call_id is not None and tool_name in {"measure_mesh_pixels", "compare_mesh_source_pixels", "view_mesh_section"}:
+        answer_reference["measurement_call_id"] = call_id
+    result["structuredContent"]["worker_answer_reference"] = answer_reference
+    result["content"] = [*raw.get("content", []), {"type": "text", "text": json.dumps({
+        "worker_answer_reference": answer_reference,
+        "meaning": "Copy these exact answer reference fields. A measurement call ID is not a view ID; "
+                   "auxiliary image evidence uses its admitted PNG filename, not a crop/view ID."})}]
     return result
 
 
@@ -445,6 +453,47 @@ def _verified_reference(packet, store, child_run, kind, identity, *, allow_admit
     raise ValueError("worker answer cites evidence not supplied or produced by its tools")
 
 
+def mesh_worker_evidence_catalog(packet, store, child_run, *, limit=12):
+    """Bounded recovery index of verified receipts, never a substitute answer."""
+    _verify_child(packet, child_run)
+    receipts = _receipts(store)
+    identities = {(row["kind"], identity) for identity, row in packet["observations"].items()}
+    identities.update((metadata["mesh_worker_evidence"]["kind"], metadata["mesh_worker_evidence"]["id"])
+                      for _, _, metadata in receipts.values())
+    views, measurements, unavailable = [], [], []
+    for kind, identity in sorted(identities):
+        try:
+            reference = _verified_reference(packet, store, child_run, kind, identity)
+            views.append({"evidence_kind": kind, "evidence_id": identity,
+                          "reference_sha256": _digest(reference), "origin": reference.get("origin"),
+                          "read_view_id": identity})
+        except (ValueError, OSError, KeyError) as error:
+            unavailable.append({"evidence_kind": kind, "evidence_id": identity, "reason": str(error)[:240]})
+    for call_id, (event, raw, metadata) in receipts.items():
+        name = event.payload.tool_name
+        if name not in {"measure_mesh_pixels", "compare_mesh_source_pixels", "view_mesh_section"}:
+            continue
+        bound = metadata["mesh_worker_evidence"]
+        kind, identity = bound["kind"], bound["id"]
+        try:
+            if bound != _evidence(packet, child_run, kind, identity):
+                raise ValueError("worker measurement evidence changed after its tool return")
+            if name == "compare_mesh_source_pixels" and metadata.get("mesh_worker_computed_evidence") != _comparison_reference(packet, child_run, metadata):
+                raise ValueError("worker comparison changed after its tool return")
+            measurements.append({"measurement_call_id": call_id, "tool_name": name,
+                "evidence_kind": kind, "evidence_id": identity,
+                "tool_execution_event_id": event.event_id, "tool_result_sha256": _digest(raw)})
+        except (ValueError, OSError, KeyError) as error:
+            unavailable.append({"measurement_call_id": call_id, "reason": str(error)[:240]})
+    return {"status": "partial_unavailable" if unavailable else "available",
+            "views": views[-limit:], "view_count": len(views), "omitted_view_count": max(0, len(views) - limit),
+            "measurements": measurements[-limit:], "measurement_count": len(measurements),
+            "omitted_measurement_count": max(0, len(measurements) - limit),
+            "unavailable": unavailable[:3], "unavailable_count": len(unavailable),
+            "meaning": "Verified supplied/returned evidence identities only, not an accepted worker answer "
+                       "or architectural truth. Use read_mesh_worker(view_ids) to recover these actual PNGs."}
+
+
 def hydrate_mesh_worker_answer(answer, packet, store, child_run):
     """Attach trusted references; free-text numeric statements remain model statements."""
     _verify_child(packet, child_run)
@@ -485,7 +534,8 @@ def hydrate_mesh_worker_answer(answer, packet, store, child_run):
                 raise ValueError("worker comparison changed after its tool return")
             output["computed_measurement"] = {"status": "computed", "tool_call_id": event.payload.call_id,
                 "tool_execution_event_id": event.event_id, "tool_result_sha256": hashlib.sha256(json_bytes(raw)).hexdigest(),
-                "result": {k: v for k, v in metadata.items() if k != "mesh_worker_evidence"}}
+                "result": {k: v for k, v in metadata.items()
+                           if k not in {"mesh_worker_evidence", "worker_answer_reference"}}}
         observations.append(output)
     for row in (*value.interpretations, *value.uncertain):
         related = row.based_on_observation_ids if isinstance(row, MeshInterpretation) else row.related_observation_ids

@@ -1644,10 +1644,12 @@ class _ParametricFunctionToolkit:
             raise ValueError('unknown candidate')
         return path
 
-    def build(self, proposal, *, action, parent, feedback_parent=None, architectural_regularization=None):
+    def build(self, proposal, *, action, parent, feedback_parent=None, feedback_parent_error=None,
+              architectural_regularization=None):
         from scripts.tool_scripts.bim_agent_saved_result import saved_result
         self.calls.append(dict(proposal=proposal, action=action, parent=parent,
                                feedback_parent=feedback_parent,
+                               feedback_parent_error=feedback_parent_error,
                                architectural_regularization=architectural_regularization))
         if self.reject:
             return saved_result({'error': 'synthetic source constraint',
@@ -2014,6 +2016,7 @@ def test_parametric_function_stale_feedback_ancestor_falls_back_without_blocking
     assert fixed['saved_candidate'] == 'candidate_02', fixed
     assert toolkit.calls[-1]['feedback_parent'] is None and toolkit.calls[-1]['parent'] is None
     assert 'changed' in fixed['parametric']['feedback_parent_unavailable']
+    assert toolkit.calls[-1]['feedback_parent_error'] == fixed['parametric']['feedback_parent_unavailable']
 
 
 def test_parametric_function_built_draft_uses_its_own_bound_source_not_older_ancestor(tmp_path):

@@ -188,12 +188,20 @@ def _base(toolkit, candidate, draft):
     return _load((folder / "parametric_plan.json").read_bytes()), state, candidate
 
 
-def _failure(toolkit, action, error, *, state=None, stage="parametric_input"):
+def _failure(toolkit, action, error, *, state=None, stage="parametric_input", details=None, edit_route=None):
     result = saved_result({"status": "error", "error": str(error), "error_stage": stage,
                            "remaining_seconds": toolkit.remaining_seconds()},
                           audit_written=bool(state))
     if state:
         result.update(draft=state["draft"], plan_sha256=state["plan_sha256"], parametric=state)
+        from scripts.tool_scripts.bim_agent_edit_route import draft_edit_route
+        result["edit_route"] = draft_edit_route(toolkit, state["draft"])
+    if details is None:
+        details = getattr(error, "details", None)
+    if details:
+        result["error_details"] = details
+    if edit_route is not None:
+        result["edit_route"] = edit_route
     toolkit.log(action, result)
     return result
 
@@ -286,8 +294,18 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
             state["regularization_failure"] = error.audit
         if isinstance(getattr(error, "audit_reference", None), dict):
             state["regularization_failure_reference"] = error.audit_reference
+        details = None
+        if isinstance(getattr(error, "audit", None), dict):
+            from scripts.tool_scripts.bim_agent_edit_route import declared_host_feedback
+            try:
+                hosts = declared_host_feedback(plan, error.audit)
+                if hosts:
+                    details = {"kind": "parametric_declared_hosts", "host_diagnostics": hosts}
+            except (ValueError, TypeError, KeyError, IndexError):
+                # Supplementary feedback must not mask the original refusal.
+                pass
         _write(path.with_suffix(".state.json"), state)
-        return _failure(toolkit, action, error, state=state, stage="parametric_expansion")
+        return _failure(toolkit, action, error, state=state, stage="parametric_expansion", details=details)
     try:
         options = {}
         if feedback_parent is not None:
@@ -495,52 +513,98 @@ def inspect_parametric(toolkit, candidate: str = "", *, draft: str = "",
                 "error": str(error), "exact_plan": False, "patch_allowed": False}
 
 
+class _PatchError(ValueError):
+    def __init__(self, error, details):
+        super().__init__(str(error))
+        self.details = details
+
+
+def _patch_error_context(value, operation, index, count):
+    result = {"kind": "parametric_patch_operation", "operation_index": index,
+              "index_base": 0, "operation_count": count,
+              "applied": False,
+              "context": "Parent facts reflect earlier operations in this unapplied batch; the admitted base remains unchanged."}
+    if not isinstance(operation, dict):
+        return result
+    result.update(operation=operation.get("op"), path=operation.get("path"))
+    try:
+        tokens = _tokens(operation.get("path"))
+        if not tokens or tokens[0] not in PATCH_ROOTS:
+            return result
+        parent = _select(value, tokens[:-1])
+        result["parent_pointer"] = operation["path"].rsplit("/", 1)[0]
+        if isinstance(parent, dict):
+            keys = sorted(parent)
+            result.update(parent_type="object", existing_parent_keys=keys[:64],
+                          omitted_parent_key_count=max(0, len(keys) - 64), target_exists=tokens[-1] in parent)
+            if operation.get("op") == "replace" and tokens[-1] not in parent:
+                result.update(suggested_operation="add",
+                              suggestion="If creating this absent member is intended, change this operation to add; otherwise correct its path. Nothing has been applied.")
+            elif operation.get("op") == "remove" and tokens[-1] not in parent:
+                result["suggestion"] = "This member is absent; correct the path or omit the removal. Nothing has been applied."
+        elif isinstance(parent, list):
+            result.update(parent_type="array", parent_length=len(parent),
+                          suggestion="replace/remove/test need an existing zero-based index; add inserts at 0..length or '-' to append.")
+        else:
+            result.update(parent_type="scalar", suggestion="The parent is scalar; select a containing object or array before editing its members.")
+    except (ValueError, TypeError, KeyError):
+        result["suggestion"] = "Correct the pointer or create its missing parent explicitly earlier in the same batch; no operations have been applied."
+    return result
+
+
+def _apply_operation(value, operation):
+    if not isinstance(operation, dict):
+        raise ValueError("each patch must be an object")
+    op = operation.get("op")
+    required = {"op", "path", "value"} if op in {"add", "replace", "test"} else {"op", "path"}
+    if op != "test":
+        required |= {"reason", "source_refs"}
+    if op not in {"add", "replace", "remove", "test"} or set(operation) != required:
+        raise ValueError("patch supports add/replace/remove with reason and source_refs; "
+                         "add/replace/test require value, remove forbids value")
+    if op != "test" and (not isinstance(operation["reason"], str) or not operation["reason"].strip()
+            or not isinstance(operation["source_refs"], list) or not operation["source_refs"]
+            or any(not isinstance(item, str) or not item.strip() for item in operation["source_refs"])):
+        raise ValueError("each change needs a nonblank reason and nonempty source_refs")
+    tokens = _tokens(operation["path"])
+    if not tokens or tokens[0] not in PATCH_ROOTS:
+        raise ValueError("patch path must start at an explicit parametric field; root replacement is forbidden")
+    parent = _select(value, tokens[:-1])
+    key = tokens[-1]
+    if op == "test":
+        actual = _select(value, tokens)
+        # Canonical JSON comparison distinguishes true from 1.
+        if _json(actual) != _json(operation["value"]):
+            raise ValueError(f"patch test failed: {operation['path']}")
+        return
+    if isinstance(parent, dict):
+        if op != "add" and key not in parent:
+            raise ValueError(f"patch target does not exist: {operation['path']}")
+        if op == "remove":
+            del parent[key]
+        else:
+            parent[key] = copy.deepcopy(operation["value"])
+    elif isinstance(parent, list):
+        index = _index(key, len(parent), add=op == "add")
+        if op == "add":
+            parent.insert(index, copy.deepcopy(operation["value"]))
+        elif op == "remove":
+            parent.pop(index)
+        else:
+            parent[index] = copy.deepcopy(operation["value"])
+    else:
+        raise ValueError("patch target parent is a scalar")
+
+
 def _apply(plan, operations):
     if not isinstance(operations, list) or not operations or len(operations) > 1000:
         raise ValueError("operations must be a nonempty array of at most 1000 explicit patches")
     value = copy.deepcopy(plan)
-    for operation in operations:
-        if not isinstance(operation, dict):
-            raise ValueError("each patch must be an object")
-        op = operation.get("op")
-        required = {"op", "path", "value"} if op in {"add", "replace", "test"} else {"op", "path"}
-        if op != "test":
-            required |= {"reason", "source_refs"}
-        if op not in {"add", "replace", "remove", "test"} or set(operation) != required:
-            raise ValueError("patch supports add/replace/remove with reason and source_refs; "
-                             "add/replace/test require value, remove forbids value")
-        if op != "test" and (not isinstance(operation["reason"], str) or not operation["reason"].strip()
-                or not isinstance(operation["source_refs"], list) or not operation["source_refs"]
-                or any(not isinstance(item, str) or not item.strip() for item in operation["source_refs"])):
-            raise ValueError("each change needs a nonblank reason and nonempty source_refs")
-        tokens = _tokens(operation["path"])
-        if not tokens or tokens[0] not in PATCH_ROOTS:
-            raise ValueError("patch path must start at an explicit parametric field; root replacement is forbidden")
-        parent = _select(value, tokens[:-1])
-        key = tokens[-1]
-        if op == "test":
-            actual = _select(value, tokens)
-            # Canonical JSON comparison distinguishes true from 1.
-            if _json(actual) != _json(operation["value"]):
-                raise ValueError(f"patch test failed: {operation['path']}")
-            continue
-        if isinstance(parent, dict):
-            if op != "add" and key not in parent:
-                raise ValueError(f"patch target does not exist: {operation['path']}")
-            if op == "remove":
-                del parent[key]
-            else:
-                parent[key] = copy.deepcopy(operation["value"])
-        elif isinstance(parent, list):
-            index = _index(key, len(parent), add=op == "add")
-            if op == "add":
-                parent.insert(index, copy.deepcopy(operation["value"]))
-            elif op == "remove":
-                parent.pop(index)
-            else:
-                parent[index] = copy.deepcopy(operation["value"])
-        else:
-            raise ValueError("patch target parent is a scalar")
+    for index, operation in enumerate(operations):
+        try:
+            _apply_operation(value, operation)
+        except (ValueError, TypeError, KeyError) as error:
+            raise _PatchError(error, _patch_error_context(value, operation, index, len(operations))) from error
     return value
 
 
@@ -548,18 +612,24 @@ def patch_parametric(toolkit, operations_json: str, *, candidate: str = "", draf
                      expected_sha: str, action="patch_parametric_bim") -> dict:
     if getattr(toolkit, "readonly", False):
         return _failure(toolkit, action, "parametric writes are unavailable in readonly mode")
+    admitted = False
     try:
         plan, state, parent = _base(toolkit, candidate, draft)
         if not isinstance(expected_sha, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_sha):
             raise ValueError("expected_sha must be the exact inspected plan_sha256")
         if expected_sha != state["plan_sha256"]:
             raise ValueError("stale expected_sha; inspect the intended base before patching")
+        admitted = True
         operations = _load(operations_json)
         updated = _apply(plan, operations)
         encoded = _json(updated)
         feedback_parent, feedback_error = _feedback_parent(toolkit, state, parent)
     except (ValueError, TypeError, KeyError, OSError) as error:
-        return _failure(toolkit, action, error)
+        route = None
+        if admitted:
+            from scripts.tool_scripts.bim_agent_edit_route import candidate_edit_route, draft_edit_route
+            route = candidate_edit_route(toolkit, candidate) if candidate else draft_edit_route(toolkit, draft)
+        return _failure(toolkit, action, error, edit_route=route)
     base = {"candidate": candidate or None, "draft": state["draft"],
             "plan_sha256": expected_sha,
             "source_file_sha256": state.get("source_file_sha256"),

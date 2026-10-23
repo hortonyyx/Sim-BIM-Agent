@@ -286,7 +286,7 @@ def compact_reply(run: Path, tool: str, result: dict, *, full_result: dict | Non
 
         document = result if full_result is None else full_result
         for key, value in list(reply.items()):
-            if key not in {'closeout', 'edit_route', 'mesh_feedback', 'save_facts'} and key in document and _reply_bytes(value) > 3000:
+            if key not in {'closeout', 'error_details', 'edit_route', 'mesh_feedback', 'save_facts'} and key in document and _reply_bytes(value) > 3000:
                 pointer = '/' + key.replace('~', '~0').replace('/', '~1')
                 reply[key] = bounded_json_view(document, pointer=pointer,
                     reference_for=lambda at, item: report_reference(relative, sha, at, item))
@@ -300,7 +300,10 @@ def compact_reply(run: Path, tool: str, result: dict, *, full_result: dict | Non
             # Closeout is already a bounded domain projection. Keep its current
             # blockers/unknowns/actions visible even when inventories are huge.
             bounded['closeout'] = reply['closeout']
-        for key in ('edit_route', 'save_facts', 'mesh_feedback'):
+        # Domain diagnostics and save facts are already bounded projections. A
+        # large inventory must not hide the location/host needed for a repair or
+        # the scope of a just-saved change behind another report-reading call.
+        for key in ('error_details', 'edit_route', 'save_facts', 'mesh_feedback'):
             if key in reply and _reply_bytes({**bounded, key: reply[key]}) <= 18000:
                 bounded[key] = reply[key]
         bounded['report_view'] = bounded_json_view(document,
@@ -311,7 +314,7 @@ def compact_reply(run: Path, tool: str, result: dict, *, full_result: dict | Non
         # every other field is available in the bound report, including its keys.
         for key in ('status', 'source_geometry_ready', 'candidate', 'saved_candidate', 'save_effects',
                     'source_model_sha256', 'source_file_sha256', 'source_validation',
-                    'edit_route', 'save_facts', 'mesh_feedback', 'inference_batch',
+                    'error_details', 'edit_route', 'save_facts', 'mesh_feedback', 'inference_batch',
                     'result_candidate', 'failure_summary', 'height_conflicts',
                     'reading_id', 'image', 'facade', 'artifact_sha256',
                     'matched_openings', 'all_readings_consistent', 'comparison_summary',

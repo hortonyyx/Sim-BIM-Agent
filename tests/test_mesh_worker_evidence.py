@@ -12,7 +12,7 @@ import pytest
 
 from src.agent.runtime_mesh_evidence import (
     bind_mesh_worker_tool_result, hydrate_mesh_worker_answer, mesh_worker_view_blocks,
-    prepare_mesh_worker_packet, verify_mesh_worker_packet,
+    mesh_worker_evidence_catalog, prepare_mesh_worker_packet, verify_mesh_worker_packet,
 )
 from src.agent.geometry.mesh_bim_frame import render_mesh_bim_overlay
 from src.agent.geometry.mesh_observation import MeshObservation
@@ -282,6 +282,7 @@ def test_unregistered_generated_view_and_other_worker_store_are_rejected(prepare
     with _store(child) as store:
         with pytest.raises(ValueError, match="not supplied or produced"):
             hydrate_mesh_worker_answer(_answer(), packet, store, child)
+        assert mesh_worker_evidence_catalog(packet, store, child)["views"] == []
     with _store(child, task_id="worker-a") as store:
         store.task_id = "another-worker"
         with pytest.raises(ValueError, match="different worker"):
@@ -323,6 +324,16 @@ def test_readonly_section_and_comparison_bind_actual_tools_and_support_packet_co
                 section, call_id="section-call")
         _record(store, packet, child, "compare_mesh_source_pixels", {
             "candidate": "candidate_01", "observation": "mesh_001", "grid": [3, 3]}, comparison, call_id="compare-call")
+        catalog = mesh_worker_evidence_catalog(packet, store, child)
+        assert {row["read_view_id"] for row in catalog["views"]} == {"mesh_001", "section_001"}
+        assert {(row["measurement_call_id"], row["evidence_id"]) for row in catalog["measurements"]} == {
+            ("section-call", "section_001"), ("compare-call", "mesh_001")}
+        clipped = mesh_worker_evidence_catalog(packet, store, child, limit=1)
+        assert len(clipped["views"]) == len(clipped["measurements"]) == 1
+        assert clipped["omitted_view_count"] == clipped["omitted_measurement_count"] == 1
+        hint = bind_mesh_worker_tool_result(packet, child, "view_mesh_section", {}, section, call_id="section-call")
+        assert hint["structuredContent"]["worker_answer_reference"] == {
+            "evidence_kind": "mesh_section", "evidence_id": "section_001", "measurement_call_id": "section-call"}
         section_answer = _answer(kind="mesh_section", identity="section_001", measurement_call_id="section-call")
         result = hydrate_mesh_worker_answer(section_answer, packet, store, child)
         assert result["directly_seen"][0]["computed_measurement"]["status"] == "computed"

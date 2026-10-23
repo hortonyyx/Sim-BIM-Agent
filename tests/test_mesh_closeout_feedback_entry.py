@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+import pytest
 
 from scripts.tool_scripts.run_bim_agent import Toolkit
 from tests.test_bim_agent_mesh import _prepare
@@ -171,6 +172,41 @@ def test_large_save_reply_keeps_actionable_routes_and_selected_overlay_ids(tmp_p
     assert reply["source_validation"]["status"] == "pass"
     full = read_report(tmp_path, reply["details_file"], 0, 12000, json_pointer="/edit_route")
     assert full
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+def test_large_reply_keeps_repair_location_and_changed_scope(tmp_path, fallback):
+    from scripts.tool_scripts.bim_agent_replies import compact_reply, read_report
+
+    diagnostics = {
+        "kind": "parametric_declared_hosts", "applied": False,
+        "host_diagnostics": [{
+            "path": "/templates/tower/windows/7", "host": "office",
+            "coordinate_contract": "Use the declared host coordinates before compilation.",
+            "nearest_declared_edges": [{"edge_index": i, "endpoints": [[0, i], [20, i]],
+                "expanded_ring_pointer": "/templates/tower/spaces/0/polygon"} for i in range(4)],
+        } for _ in range(4)],
+    }
+    scope = {"status": "changes_detected", "affected": {"floors": {"ids": ["G", "R1"], "count": 2}},
+             "actions": [{"topic": "plan_relations", "action": "Review changed plan relationships."}],
+             "meaning": "Advisory delta, not quality acceptance."}
+    result = {"error": "Host mismatch", "error_details": diagnostics,
+              "edit_route": {"patch_arguments": {"draft": "parametric_drafts/failed.json",
+                                                   "expected_plan_sha256": "a" * 64}},
+              "save_facts": {"review_scope": scope},
+              "large_inventory": {"notes": "x" * 40000}}
+    if fallback:
+        # Many individually small fields bypass first-stage field compaction.
+        result.update({f"extra_{i}": "x" * 2000 for i in range(30)})
+    reply = compact_reply(tmp_path, "patch_parametric_bim", result)
+    assert len(json.dumps(reply, ensure_ascii=False).encode()) <= 24000
+    assert reply["error_details"] == diagnostics
+    assert reply["edit_route"] == result["edit_route"]
+    assert reply["save_facts"]["review_scope"] == scope
+    assert ("report_view" in reply) is fallback
+    full = read_report(tmp_path, reply["details_file"], 0, 12000,
+                       json_pointer="/error_details")
+    assert full["sha256"] == reply["details_sha256"]
 
 
 def test_repaired_draft_facts_compare_bound_ancestor_without_faking_lineage(tmp_path, monkeypatch):

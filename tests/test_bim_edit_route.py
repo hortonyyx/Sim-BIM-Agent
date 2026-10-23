@@ -28,6 +28,9 @@ def test_saved_and_inspected_candidate_expose_exact_route_without_mutation(tmp_p
     assert "kind" not in route["generic_contract"]["update_opening_fields"]
     assert first["edit_route"]["patch_arguments"] == route["patch_arguments"]
     assert inspect_parametric(toolkit, first["candidate"])["edit_route"]["patch_arguments"] == route["patch_arguments"]
+    assert route["patch_contract"]["present_roots"] == sorted(plan())
+    assert "connections" in route["patch_contract"]["allowed_roots"]
+    assert "connections" not in route["patch_contract"]["present_roots"]
     assert before == _parametric_file_hashes(toolkit.run)
 
 
@@ -123,6 +126,15 @@ def test_mcp_accepts_returned_route_arguments_and_partial_semantic_patch(tmp_pat
         async with _server_session(run, readonly=False) as session:
             first = _json_result(await session.call_tool("build_parametric_bim", {"plan_json": json.dumps(plan())}))
             route = first["edit_route"]
+            refused = _json_result(await session.call_tool("patch_parametric_bim", {
+                **route["patch_arguments"],
+                "operations_json": json.dumps([{
+                    "op": "replace", "path": "/connections", "value": [],
+                    "reason": "explicit connection declaration", "source_refs": ["test"]}])}))
+            assert refused["error_details"]["operation_index"] == 0
+            assert refused["error_details"]["suggested_operation"] == "add"
+            assert refused["edit_route"]["patch_arguments"] == route["patch_arguments"]
+            route = refused["edit_route"]
             reply = await session.call_tool("patch_parametric_bim", {
                 **route["patch_arguments"],
                 "operations_json": json.dumps([{
@@ -171,3 +183,94 @@ def test_generic_revision_preserves_derived_continuous_core_frame(tmp_path, monk
     assert source["validation"]["status"] == "pass"
     assert len(source["connections"]) == 3
     assert _parametric_file_hashes(run / first["candidate"]) == protected
+
+
+def test_large_rejected_patch_locates_absent_root_and_preserves_atomicity(tmp_path):
+    from tests.test_bim_agent_tools import _parametric_function_op
+    toolkit = _ParametricFunctionToolkit(tmp_path / "run")
+    first = build_parametric(toolkit, json.dumps(plan()))
+    operations = [_parametric_function_op("add", "/assumptions/-", f"hypothesis {i}") for i in range(42)]
+    operations.append(_parametric_function_op("replace", "/connections", []))
+    before = _parametric_file_hashes(toolkit.run)
+    refused = patch_parametric(toolkit, json.dumps(operations), candidate=first["candidate"],
+                               expected_sha=first["parametric"]["plan_sha256"])
+    assert _parametric_file_hashes(toolkit.run) == before
+    assert len(toolkit.calls) == 1 and refused["save_effects"]["geometry_applied"] is False
+    details = refused["error_details"]
+    assert details["operation_index"] == 42 and details["index_base"] == 0
+    assert details["operation_count"] == 43 and details["path"] == "/connections"
+    assert details["existing_parent_keys"] == sorted(plan())
+    assert details["target_exists"] is False and details["suggested_operation"] == "add"
+    route = refused["edit_route"]
+    assert route["patch_arguments"] == first["edit_route"]["patch_arguments"]
+    operations[details["operation_index"]]["op"] = details["suggested_operation"]
+    fixed = patch_parametric(toolkit, json.dumps(operations),
+                             candidate=route["patch_arguments"]["candidate"],
+                             expected_sha=route["patch_arguments"]["expected_plan_sha256"])
+    assert fixed["source_geometry_ready"]
+    saved = inspect_parametric(toolkit, fixed["candidate"], full=True)["value"]
+    assert saved["connections"] == []
+    assert saved["assumptions"] == plan()["assumptions"] + [f"hypothesis {i}" for i in range(42)]
+    assert all(_parametric_file_hashes(toolkit.run)[path] == digest for path, digest in before.items())
+
+
+@pytest.mark.parametrize("path, field, expected", [
+    ("/templates/typical/absent", "existing_parent_keys", sorted(plan()["templates"]["typical"])),
+    ("/instances/9", "parent_length", 2),
+    ("/instances/0/height/value", "parent_type", "scalar"),
+])
+def test_patch_context_identifies_actual_parent_without_a_new_write(tmp_path, path, field, expected):
+    from tests.test_bim_agent_tools import _parametric_function_op
+    toolkit = _ParametricFunctionToolkit(tmp_path / "run")
+    first = build_parametric(toolkit, json.dumps(plan()))
+    before = _parametric_file_hashes(toolkit.run)
+    result = patch_parametric(toolkit, json.dumps([_parametric_function_op("replace", path, 1)]),
+                              candidate=first["candidate"], expected_sha=first["parametric"]["plan_sha256"])
+    assert result["error_details"][field] == expected
+    assert result["error_details"]["path"] == path
+    assert result["error_details"]["operation_index"] == 0
+    assert _parametric_file_hashes(toolkit.run) == before
+
+
+def test_stale_patch_hash_does_not_issue_a_replacement_write_authority(tmp_path):
+    from tests.test_bim_agent_tools import _parametric_function_op
+    toolkit = _ParametricFunctionToolkit(tmp_path / "run")
+    first = build_parametric(toolkit, json.dumps(plan()))
+    before = _parametric_file_hashes(toolkit.run)
+    refused = patch_parametric(toolkit, json.dumps([_parametric_function_op("add", "/connections", [])]),
+                               candidate=first["candidate"], expected_sha="0" * 64)
+    assert refused["saved_candidate"] is None and "edit_route" not in refused
+    assert _parametric_file_hashes(toolkit.run) == before
+
+
+def test_adopted_aperture_coordinates_return_declared_hosts_and_repairable_draft(tmp_path):
+    from tests.test_architectural_regularization import single, POLICY
+    from tests.test_bim_agent_tools import _parametric_function_op
+    toolkit = _ParametricFunctionToolkit(tmp_path / "run")
+    toolkit.manifest = {"architectural_modelling_policy": POLICY}
+    original = single()
+    first = build_parametric(toolkit, json.dumps(original))
+    before = _parametric_file_hashes(toolkit.run)
+    connection = {"id": "front_window", "kind": "window", "space_id": "F1:room", "other_space_id": None,
+                  "p1": [1, 0], "p2": [2, 0], "z": [1, 2], "state": "unknown", "source_refs": ["facade"]}
+    rejected = patch_parametric(toolkit, json.dumps([_parametric_function_op("add", "/connections", [connection])]),
+                                candidate=first["candidate"], expected_sha=first["parametric"]["plan_sha256"])
+    assert rejected["saved_candidate"] is None and rejected["error_stage"] == "parametric_expansion"
+    assert len(toolkit.calls) == 1
+    diagnostic, = rejected["error_details"]["host_diagnostics"]
+    assert diagnostic["host"] == {"template": "main", "space": "room"}
+    edge = diagnostic["nearest_declared_edges"][0]
+    assert edge["endpoints"] == [[.024, .024], [6.024, .024]]
+    assert edge["max_endpoint_distance_m"] == pytest.approx(.024)
+    assert len(diagnostic["nearest_declared_edges"]) <= 4
+    route = rejected["edit_route"]
+    assert route["patch_arguments"]["draft"] == rejected["draft"]
+    assert route["patch_arguments"]["expected_plan_sha256"] == rejected["plan_sha256"]
+    draft = json.loads((toolkit.run / rejected["draft"]).read_bytes())
+    assert draft["connections"][0]["p1"] == [1, 0]  # No silent projection.
+    fixed = patch_parametric(toolkit, json.dumps([
+        _parametric_function_op("replace", "/connections/0/p1/1", .024),
+        _parametric_function_op("replace", "/connections/0/p2/1", .024)]),
+        draft=route["patch_arguments"]["draft"], expected_sha=route["patch_arguments"]["expected_plan_sha256"])
+    assert fixed["source_geometry_ready"] and len(toolkit.calls) == 2
+    assert all(_parametric_file_hashes(toolkit.run)[path] == digest for path, digest in before.items())
