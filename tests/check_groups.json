@@ -2,6 +2,10 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_mesh_section_replies.py": {
+      "group": "targeted",
+      "reason": "Small section previews preserve complete exact segments within wire byte budgets and retain immutable report/PNG bindings"
+    },
     "tests/test_mesh_measurement_replies.py": {
       "group": "targeted",
       "reason": "Direct mesh measurement display preserves full journaled and report snapshots, 128-point lists and explicit detail retrieval"

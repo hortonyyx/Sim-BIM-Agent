@@ -12,6 +12,20 @@ from src.agent.geometry.mesh_section import render_section, section_mesh
 from src.agent.geometry.source_model import _digest
 
 
+def _complete_small_section_preview(summary, segments, *, remaining_seconds):
+    """Expand only small exact lists within the actual JSON text byte budget."""
+    if len(segments) <= 8 or 'segment_preview' not in summary:
+        return summary
+    # Match the tool's json.dumps wire encoding, including escaped Unicode.
+    if len(json.dumps(segments).encode('utf-8')) > 8000:
+        return summary
+    complete = {**summary, 'segment_preview': segments, 'omitted_segment_count': 0,
+        'segment_index_note': 'Complete segments in original /segments order; zero-based indices are unchanged.'}
+    if len(json.dumps({**complete, 'remaining_seconds': remaining_seconds}).encode('utf-8')) > 12000:
+        return summary
+    return complete
+
+
 def register_mesh_query_tools(server, toolkit, mesh, observation_path, next_record_name):
     def source_snapshot(candidate):
         path = toolkit.candidate_path(candidate) / 'source_model.json'
@@ -34,7 +48,9 @@ def register_mesh_query_tools(server, toolkit, mesh, observation_path, next_reco
         because the frame supplies rotation. Choose any floor or offset height.
         XY bounds clip intersection segments, unlike view_mesh centroid bounds.
         Returns a mapped section PNG, supporting face IDs and a complete hash-bound
-        segment report. Coplanar faces and point touches are explicit diagnostics;
+        segment report. Small segment lists are returned completely in the preview;
+        larger lists keep a bounded preview and an explicit omitted count.
+        Coplanar faces and point touches are explicit diagnostics;
         no room/footprint inference, gap closing or automatic alignment is performed.
         """
         binding = {}
@@ -64,10 +80,13 @@ def register_mesh_query_tools(server, toolkit, mesh, observation_path, next_reco
         summary.update(evidence_file=record_path.relative_to(toolkit.run).as_posix(), evidence_sha256=file_sha256(record_path))
         from scripts.tool_scripts.bim_agent_replies import compact_reply
         summary = compact_reply(toolkit.run, 'view_mesh_section', summary, full_result=record, force=True)
+        remaining_seconds = toolkit.remaining_seconds()
+        summary = _complete_small_section_preview(summary, record['segments'],
+                                                  remaining_seconds=remaining_seconds)
         toolkit.log('view_mesh_section', summary)
         data = io.BytesIO()
         picture.save(data, 'PNG')
-        return [Image(data=data.getvalue(), format='png'), json.dumps({**summary, 'remaining_seconds': toolkit.remaining_seconds()})]
+        return [Image(data=data.getvalue(), format='png'), json.dumps({**summary, 'remaining_seconds': remaining_seconds})]
 
     @server.tool()
     def compare_mesh_source_pixels(candidate: str, observation: str, pixels: list[list[int]] | None = None,
