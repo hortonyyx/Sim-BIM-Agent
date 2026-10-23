@@ -11,7 +11,7 @@ from shapely.ops import unary_union
 
 from src.agent.geometry.architectural_regularization import (
     ArchitecturalRegularizationError, DEFAULT_ARCHITECTURAL_POLICY as POLICY,
-    regularize_architectural_plan,
+    regularize_architectural_plan, regularize_architectural_proposal,
 )
 from src.agent.geometry.parametric_proposal import expand_parametric_proposal
 from src.agent.execution.source_proposal import export_source_proposal
@@ -172,10 +172,62 @@ def test_different_height_sections_do_not_bind_same_xy_corners():
     raw['templates']['main'] = dict(footprint=copy.deepcopy(rectangle), spaces=[dict(
         id='stepped', role='office', polygon=copy.deepcopy(rectangle), vertical_sections=[
             dict(z=[0, 3], polygon=rectangle), dict(z=[3, 6], polygon=triangle)])])
-    adopted, _ = regularize_architectural_plan(raw, policy=POLICY)
+    adopted, audit = regularize_architectural_plan(raw, policy=POLICY)
     lower, upper = adopted['templates']['main']['spaces'][0]['vertical_sections']
     assert lower['polygon'][0] != upper['polygon'][0]
     assert lower['z'] == [0, 3] and upper['z'] == [3, 6]
+    skipped, = [row for row in audit['not_assessed'] if row.get('scope') == 'shared junction locator']
+    assert skipped['reasons'] == ['vertical_sections']
+    assert 'source kernel' in skipped['reason']
+
+
+@pytest.mark.parametrize('membership', ['explicit', 'repeat'])
+def test_spanning_membership_defers_to_full_source_validation(membership, tmp_path):
+    from tests.test_architectural_regularization import single
+    raw = single()
+    if membership == 'explicit':
+        raw['instances'].append(dict(id='F2', template='main', z=3, height=3,
+                                     spanning_space_ids=['external']))
+    else:
+        raw['repeats'] = [dict(id='upper', template='main', id_prefix='F', start=2, count=1,
+            z=3, height=3, source_refs=['declared floor'], spanning_space_ids=['external'])]
+    before = copy.deepcopy(raw)
+    adopted, audit = regularize_architectural_plan(raw, policy=POLICY)
+    assert raw == before
+    skipped, = [row for row in audit['not_assessed'] if row.get('scope') == 'shared junction locator']
+    assert skipped['path'] == 'templates.main' and skipped['reasons'] == ['spanning_space_ids']
+    assert 'source kernel' in skipped['reason']
+    # Not assessed is not an acceptance: the original source gate still owns
+    # composition, including references not present in this local template.
+    result = export_source_proposal(expand_parametric_proposal(adopted), tmp_path / 'source')
+    assert not result['source_geometry_ready']
+    assert 'unknown spanning space external' in result['error']
+
+
+def test_excluded_repeat_spanning_does_not_disable_local_failure_locator():
+    raw = junction_plan()
+    raw['repeats'] = [dict(id='replaced', template='main', id_prefix='F', start=1, count=1,
+        z=0, height=3, source_refs=['replaced declaration'], exclude_ids=['F1'],
+        spanning_space_ids=['external'])]
+    with pytest.raises(ArchitecturalRegularizationError) as caught:
+        regularize_architectural_plan(raw, policy=POLICY)
+    assert {row['code'] for row in caught.value.audit['rejections']} == {'shared_junction_split'}
+    assert not any(row.get('scope') == 'shared junction locator' for row in caught.value.audit['not_assessed'])
+
+
+def test_generic_adapter_preserves_spanning_context_and_original_source_ids(tmp_path):
+    from tests.test_parametric_continuity import continuity, storeys
+    plan = storeys()
+    plan['continuous_spaces'] = [continuity()]
+    raw = expand_parametric_proposal(plan)
+    before = copy.deepcopy(raw)
+    adopted, audit = regularize_architectural_proposal(raw, policy=POLICY)
+    assert raw == before
+    skipped = [row for row in audit['not_assessed'] if row.get('scope') == 'shared junction locator']
+    assert len(skipped) == 3 and all(row['reasons'] == ['spanning_space_ids'] for row in skipped)
+    assert [floor.get('spanning_space_ids', []) for floor in adopted['geometry']['floors']] == [
+        floor.get('spanning_space_ids', []) for floor in raw['geometry']['floors']]
+    assert export_source_proposal(adopted, tmp_path / 'source')['source_geometry_ready']
 
 
 def test_same_frame_different_templates_keep_independent_corners():

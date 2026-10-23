@@ -169,10 +169,11 @@ def _cluster(values):
 def _protect_shared_vertices(records, templates, originals, frames, record_rejection):
     """Locate existing source failures at split corners, never weld any points.
 
-    Only coincident vertices in the same template and section layer are compared.
+    Only coincident vertices in one prismatic template are compared. Callers
+    exclude templates with sections or external spanning-space membership:
+    their planar projection alone cannot prove the composed source will fail.
     The numerical EPS is deliberately smaller than the line-anchor seam tolerance.
-    Projection rings and absolute-Z section rings are separate scopes. A changed
-    vertex list alone is insufficient: require a nearby source coverage/overlap
+    A changed vertex list alone is insufficient: require a nearby source coverage/overlap
     violation using the source kernel's own numerical predicates.
     """
     contexts = {}
@@ -192,20 +193,11 @@ def _protect_shared_vertices(records, templates, originals, frames, record_rejec
             for ring, suffix in [(space.get('polygon'), '/polygon'),
                                  *((ring, f'/holes/{j}') for j, ring in enumerate(space.get('holes', [])))]:
                 if ring is not None:
-                    contexts[id(ring)] = (None if space.get('vertical_sections') else ('projection',),
-                                          owner + suffix, owner)
-            for j, section in enumerate(space.get('vertical_sections', [])):
-                scope = ('section', *section['z'])
-                prefix = f'{owner}/vertical_sections/{j}'
-                for ring, suffix in [(section['polygon'], '/polygon'),
-                                     *((ring, f'/holes/{k}') for k, ring in enumerate(section.get('holes', [])))]:
-                    contexts[id(ring)] = (scope, prefix + suffix, prefix)
+                    contexts[id(ring)] = (('projection',), owner + suffix, owner)
 
     groups, bins = [], {}
     for name, path, ring, points, edges in records:
         scope, pointer, declaration = contexts[id(ring)]
-        if scope is None:
-            continue  # Sectioned-space projections need not be actual shared walls.
         for index, local in enumerate(points):
             a, b = edges[index-1][0]['normal'], edges[index][0]['normal']
             # A redundant point can slide along its unchanged supporting line.
@@ -238,9 +230,7 @@ def _protect_shared_vertices(records, templates, originals, frames, record_rejec
         if not expected.is_valid or any(not shape.is_valid for shape in shapes):
             return None  # Leave invalid hole/containment inputs to their existing validator.
         actual = unary_union(shapes)
-        # Section projections can overlap without a real volume overlap.
-        straight = [p for p, s in zip(shapes, template['spaces']) if not s.get('vertical_sections')]
-        overlap = unary_union([a.intersection(b) for i, a in enumerate(straight) for b in straight[i+1:]
+        overlap = unary_union([a.intersection(b) for i, a in enumerate(shapes) for b in shapes[i+1:]
                                if _space_overlap_area(a, b) > 0])
         missing, outside = _coverage_regions(expected, actual)
         return dict(missing=missing, outside=outside, overlap=overlap)
@@ -492,8 +482,25 @@ def regularize_architectural_plan(plan, *, policy=None):
             ring[:] = rebuilt
         finish_stage('ring_adoption', ['apertures', 'vertical', 'contacts'])
         from src.agent.geometry.parametric_proposal import expand_parametric_instances
-        used_templates = {row['template'] for row in expand_parametric_instances(original)}
-        _protect_shared_vertices([row for row in records if row[0] in used_templates],
+        instances = expand_parametric_instances(original)
+        used_templates = {row['template'] for row in instances}
+        spanning_templates = {row['template'] for row in instances if row.get('spanning_space_ids')}
+        eligible_templates = set()
+        for name, template in adopted['templates'].items():
+            if name not in used_templates:
+                continue
+            reasons = []
+            if any(space.get('vertical_sections') for space in template['spaces']):
+                reasons.append('vertical_sections')
+            if name in spanning_templates:
+                reasons.append('spanning_space_ids')
+            if reasons:
+                audit['not_assessed'].append(dict(path=f'templates.{name}', scope='shared junction locator',
+                    reasons=reasons, reason='template projection does not prove composed source validity; '
+                    'existing full source kernel and topology save gate remain required'))
+            else:
+                eligible_templates.add(name)
+        _protect_shared_vertices([row for row in records if row[0] in eligible_templates],
                                  adopted['templates'], original['templates'], frames, record_rejection)
         finish_stage('shared_junctions', ['apertures', 'vertical', 'contacts'])
 
@@ -955,7 +962,12 @@ def regularize_architectural_proposal(proposal, *, policy=None):
                     space['rect'] = [cell['x'][0], cell['y'][0], cell['x'][1], cell['y'][1]]
                 template['spaces'].append(space)
             plan['templates'][fid] = template
-            plan['instances'].append(dict(id=fid, template=fid, z=floor['z_floor'], height=floor['ceiling_height']))
+            instance = dict(id=fid, template=fid, z=floor['z_floor'], height=floor['ceiling_height'])
+            # Preserve existing composition context for the internal locator;
+            # the returned proposal retains the original source-space IDs.
+            if 'spanning_space_ids' in floor:
+                instance['spanning_space_ids'] = copy.deepcopy(floor['spanning_space_ids'])
+            plan['instances'].append(instance)
 
         for row in geometry.get('openings', []):
             item = copy.deepcopy(row)
