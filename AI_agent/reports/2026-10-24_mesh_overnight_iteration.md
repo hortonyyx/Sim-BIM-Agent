@@ -4,11 +4,11 @@
 
 ## 最新结论与当前恢复点
 
-本夜已完成两轮利园和七腿窄测试，实际版本分别列于下文；当前主库为runtime42/domain145。所有77次新增真实请求均为 GPT-6.1 Sol/high，实报全树 tokens 合计7,732,192，另有18次脚本父请求。此总账仅含本报告六组已结束实验，不含尚未启动的source_refs窄验收、此前10案、旧ROI探针或Codex开发/评审推理；订阅货币成本未知。worker回执去重、主控量测摘要与共享角点定位已合入，真实窄协议可用；**整案没有稳定提速证据**。
+本夜已完成两轮利园和八腿窄测试，实际版本分别列于下文；当前主库为runtime42/domain145。所有81次新增真实请求均为 GPT-6.1 Sol/high，实报全树 tokens 合计7,754,134，另有18次脚本父请求。此总账仅含本报告七组已结束实验，不含此前10案、旧ROI探针或Codex开发/评审推理；订阅货币成本未知。worker回执去重、主控量测摘要、共享角点定位和原声明字段反馈已合入，真实窄协议可用；**整案没有稳定提速证据**。
 
 最新Lee002显式交付C06，24:48.55，较本夜001慢2:29.30；主控等待worker增加90.04秒是最大的分项增量。首有效稿后有实际外形改善，也有从旧参数基线恢复窗改的重复工作。最终紧容差外壳指标弱于001，已知23F前室/H.R.分隔损失仍在，不称全面提质。原run4669文件、输入及封印复核保持。
 
-当前所有实际模型运行已终态，上一批主库封印已解除。C04 `/connections/2/source_refs` 未在独立字段预检中定位、展开后报成 `/openings/234/source_refs` 的反馈缺口已独审并合入 `1922c9d9`，登记domain145。原失败回执现在并列给准确原声明路径；不是新增早期拒绝门，也不改变失败稿保留协议。外部 `source-ref-acceptance/` 窄验收待登记后正式smoke/封印，尚未调用模型。参数与源级修订衔接只做有界提示方案，不自动合并几何。档位与生产异构调度仍待讨论，09:00早报约定保持。
+当前所有实际模型运行和独立复核已终态，主库封印已解除。C04 `/connections/2/source_refs` 未在独立字段预检中定位、展开后报成 `/openings/234/source_refs` 的反馈缺口已独审并合入 `1922c9d9`，登记domain145。原失败回执现在并列给准确原声明路径；不是新增早期拒绝门，也不改变失败稿保留协议。新增窄Sol用时43.38秒/4请求，按三个原声明路径正确修复并完整读回；原审计30/31因嵌套读回范围过窄而失败，追加独立语义42项通过，原判定保留。参数与源级修订衔接只做有界提示方案，不自动合并几何。档位与生产异构调度仍待讨论，09:00早报约定保持。
 
 ## 利园001完整验收与独立质量复核已结束
 
@@ -133,14 +133,26 @@ C01之后：C02缩屋顶PH并修底商窗；C03修最高三层窗区和6个内�
 
 此小题证明既定ROI上的一次Sol回答能保留unknown，不证明普遍校准、弱模型能力或自主裁图/采纳。分工优先候选仍是固定ROI短文字/清晰图标，再考虑无遮挡完整窗带计数；数值搬运/校验优先程序处理。ROI选择、空间关系、同墙/跨层推断与最终几何采用留主控。后续比较弱模型要同PNG/同合同，并计主控核验与失败成本；本夜没有新增任何弱模型测试。
 
-## domain145：原声明source_refs反馈已合入，窄验收待封印
+## domain145：原声明source_refs反馈已合入，真实窄验收完成
 
 实现 `1922c9d9`（隔离 `0099cc85`）仅改既有字段诊断器及其测试，已登记runtime42/domain145。global connections使用正式Source/WallOpening的字段类型、非空与coercion规则；实际使用模板的compact spaces/doors/opening_rows/window_rows和core_connections复用编译器自身strings合同，实例/patch来源不代填本行缺失。未使用/被完整替代模板跳过；合法空window_rows.spans不误诊未被求值的source_refs值。正式失败时才并列附field_diagnostics，原几何/源判据及失败目录保留方式不变。
 
 96项定向检查通过/12.52秒；独审复用该结果、另核实际C04/C05声明与正式source parser：C04精确定位原 `/connections/2/source_refs`，原展开错误仍在；C05诊断空且通过，原文件hash保持。实际Toolkit C04离线重放1.68秒，原失败加新pointer，未生成有效source。没有默认填值、自动改源或声称消灭第一次无效保存。证据在外部 `analysis/SOURCE-REF-PREFLIGHT-IMPLEMENTATION.md`、`SOURCE-REF-INDEPENDENT-REVIEW.md`。
 
-`source-ref-acceptance/` 用合成单房间声明的3个缺失refs验证聚合定位→只补对应来源→正式全量回读，最多6次Sol请求/8工具/300秒，无worker/重试/格式修补。来源是实际保留的合成声明文件+pointer，不是建筑GT。开发树正式MCP四场景及native脚本闭环已离线通过、0provider；登记后的main无waiver smoke和独立root脚本审阅完成后才封印。此时尚未启动真实调用，不把脚本成功说成模型验收。
+`source-ref-acceptance/` 用合成单房间声明的3个缺失refs验证聚合定位→只补对应来源→正式全量回读，最多6次Sol请求/8工具/300秒，无worker/重试/格式修补。来源是实际保留的合成声明文件+pointer，不是建筑GT。开发树正式MCP四场景及native脚本闭环已离线通过、0provider；登记后的main无waiver smoke为5通过/9.61秒、36检查全真。root独立审脚本后冻结HEAD `64a303e5`，seal `429f4eef7871841cd095aa258745d4187b75d02aa1ccf35d4e5eb40ddbc665cc`。
+
+真实输出 `D:/Sim-BIM-Agent/runs/mesh-source-ref-sol-acceptance-20261024-001`：controller43.381295秒，内含启动8.066113秒；receipt42.175900秒，另准备0.012764秒。4次Sol/high请求/3正式工具，21,942 tokens=20,992 input+950 output。模型使用实际failure的3个原pointer，只add对应来源，然后完整读回；原bad draft、所有其他计划字段、保存/读取hash和实际native回执匹配。不是自主发现来源或整楼提速验收。
+
+原外部审计30/31、all_protocol_checks_pass=false保持：最终readback_source_refs还列出一个原有且正确的空间引用，原审计却要求该字典恰好等于3个新增目标。独审核对实际每轮GUIDE：exactly仅约束7个顶层字段，没有禁止嵌套对象列出其他真实读回值；实际patch与diagnostic_pointers仍严格3项。追加42项独立语义检查及反例全真，不与原31相加。四项引用均与原输入/保存plan/实际source declaration一致，无模型违约、无重跑、无改写得分。265原run文件及旧脚本/封印/审计字节保持，末次seal校验通过。证据在 `source-ref-acceptance/REAL-SEMANTIC-REVIEW.md` 及同名JSON。
 
 参数基线与通用修订的有界衔接提示仅设计，见外部 `analysis/parameter-lineage-advisory-design.md`：基于明确父链与hash展示历史操作摘要，不能称净差分或必须恢复清单；保留用户主动回滚/分支选择，不自动合并几何、不按最大候选猜当前目标。档位/停止政策、生产异构/异步调度未实施；未更新桌面，`.playwright-cli/`原有资料保留。下一恢复先核外部handoff及实际状态，不重跑旧目录或把未完成项写成验收通过。
 
-两棵已集成的measurement/regularization短期工作树已核对全部源/测试与main字节一致、工作区干净，仅含160/145个缓存文件后移除；原分支和提交保留，正式证据/run未删，新的source-ref树及其他会话树保持。清理审计见外部 `analysis/completed-worktree-cleanup-*.json`。本检查点C余37.23GiB、D余101.73GiB。
+先回收两棵已集成的measurement/regularization短期工作树：核对全部源/测试与main字节一致、工作区干净，仅含160/145个缓存文件后移除；原分支和提交保留，正式证据/run未删，其他会话树保持。清理审计见外部 `analysis/completed-worktree-cleanup-*.json`。该检查点C余37.23GiB、D余101.73GiB。
+
+其后source-ref树也已独审、集成、完成真实验收；确认与main两文件hash相同、工作区干净、仅145缓存文件、无活动运行进程后移除，分支0099cc85保留。其他会话树未动。最终清理审计 `analysis/source-ref-worktree-cleanup-*.json`；C余37.22GiB、D余101.74GiB。
+
+## 测评合同补强与晨报恢复
+
+针对本夜两项外部审计误判，新增独立 `delegation-audit-next/` 供未来实验复用：按ID比较解码后的statement，避免JSON引号转义子串误判；refs默认严格键集合，仅预先显式allow_verified_extras时允许逐pointer核实的真实额外项。RFC6901指针、重复ID/JSON键、错值/缺项/伪造pointer等33个定向反例通过/0.13秒，root源码审阅无阻断、0provider。这只是未来可选helper，未接入产品或旧auditor，未回写历史判定。调用方仍负责来源hash、非空要求和语义质量，需在看到未来答案前冻结合同。
+
+本批已完成实现、独审、实际调用、终态只读核验与所用短期树清理；没有后台工作模型或待集成产品改动。09:00早报由本线程automation继续，恢复先读外部handoff，不因两个已解释的原审计false状态重复测试。后续候选为参数/源修订衔接提示、剖面信息的按需获取、开放调查与固定ROI的任务合同；生产分工及档位留待讨论。没有新证据缺口时不为耗满夜间窗口扩测。
