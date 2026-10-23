@@ -102,6 +102,10 @@
       "group": "targeted",
       "reason": "Optional native mesh delegation, shared budgets, durable task identity and recovery"
     },
+    "tests/test_mesh_worker_projection.py": {
+      "group": "targeted",
+      "reason": "Compact model-visible worker receipts preserve canonical evidence, selected full measurement reads, continuation, recovery and budgets"
+    },
     "tests/test_mesh_worker_evidence.py": {
       "group": "targeted",
       "reason": "Frozen mesh worker scope and real image, measurement and source evidence bindings"

@@ -494,6 +494,44 @@ def mesh_worker_evidence_catalog(packet, store, child_run, *, limit=12):
                        "or architectural truth. Use read_mesh_worker(view_ids) to recover these actual PNGs."}
 
 
+def mesh_worker_measurements(call_ids, packet, store, child_run):
+    """Read selected full, successful measurements from this worker's journal."""
+    from scripts.tool_scripts.bim_agent_saved_result import full_result_metadata
+    _verify_child(packet, child_run)
+    if store.task_id != packet["request"]["task_id"]:
+        raise ValueError("mesh measurement belongs to a different worker task")
+    if (not isinstance(call_ids, (list, tuple)) or len(call_ids) > 3
+            or any(not isinstance(value, str) or not value for value in call_ids)
+            or len(set(call_ids)) != len(call_ids)):
+        raise ValueError("measurement_call_ids must contain at most 3 unique nonempty call IDs")
+    receipts = _receipts(store)
+    results = []
+    for call_id in call_ids:
+        if call_id not in receipts:
+            raise ValueError("worker has no successful measurement call: " + call_id)
+        event, raw, metadata = receipts[call_id]
+        name = event.payload.tool_name
+        bound = metadata["mesh_worker_evidence"]
+        kind, identity = bound["kind"], bound["id"]
+        matching = ((name in {"measure_mesh_pixels", "compare_mesh_source_pixels"}
+                     and kind == "mesh_observation"
+                     and event.payload.full_arguments.get("observation") == identity)
+                    or (name == "view_mesh_section" and kind == "mesh_section"
+                        and metadata.get("section_id") == identity))
+        if not matching or bound != _evidence(packet, child_run, kind, identity):
+            raise ValueError("worker computed evidence must cite the actual matching mesh measurement")
+        if name == "compare_mesh_source_pixels" and metadata.get("mesh_worker_computed_evidence") != _comparison_reference(packet, child_run, metadata):
+            raise ValueError("worker comparison changed after its tool return")
+        detail = full_result_metadata(raw, child_run)
+        results.append({"status": "computed", "tool_call_id": call_id, "tool_name": name,
+            "evidence_kind": kind, "evidence_id": identity,
+            "tool_execution_event_id": event.event_id, "tool_result_sha256": _digest(raw),
+            "result_detail": "hash_verified_full_report" if metadata.get("details_file") else "journal_tool_result",
+            "result": {k: v for k, v in detail.items()
+                       if k not in {"mesh_worker_evidence", "worker_answer_reference"}}})
+    return results
+
+
 def hydrate_mesh_worker_answer(answer, packet, store, child_run):
     """Attach trusted references; free-text numeric statements remain model statements."""
     _verify_child(packet, child_run)

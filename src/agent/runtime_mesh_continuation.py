@@ -154,9 +154,10 @@ class ContinuedMeshWorkers(MeshWorkerTools):
                         "imported_from_run": str(reader.store.directory)})
         return self
 
-    def _read(self, task_id, view_ids=()):
+    def _read(self, task_id, view_ids=(), measurement_call_ids=()):
         reader = self.imported_readers.get(task_id)
-        return reader._read(task_id, view_ids) if reader else super()._read(task_id, view_ids)
+        return (reader._read(task_id, view_ids, measurement_call_ids) if reader
+                else super()._read(task_id, view_ids, measurement_call_ids))
 
     async def _dispatch(self, task):
         reader = self.imported_readers.get(task["task_id"])

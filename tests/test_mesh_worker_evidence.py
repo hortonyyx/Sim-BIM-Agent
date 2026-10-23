@@ -12,7 +12,7 @@ import pytest
 
 from src.agent.runtime_mesh_evidence import (
     bind_mesh_worker_tool_result, hydrate_mesh_worker_answer, mesh_worker_view_blocks,
-    mesh_worker_evidence_catalog, prepare_mesh_worker_packet, verify_mesh_worker_packet,
+    mesh_worker_evidence_catalog, mesh_worker_measurements, prepare_mesh_worker_packet, verify_mesh_worker_packet,
 )
 from src.agent.geometry.mesh_bim_frame import render_mesh_bim_overlay
 from src.agent.geometry.mesh_observation import MeshObservation
@@ -342,6 +342,16 @@ def test_readonly_section_and_comparison_bind_actual_tools_and_support_packet_co
         measured = hydrate_mesh_worker_answer(_answer(measurement_call_id="compare-call"), packet, store, child)
         actual = measured["directly_seen"][0]["computed_measurement"]["result"]
         assert actual["sample_count"] == 9 and actual["fidelity"] == "not_evaluated"
+        full_section, full_comparison = mesh_worker_measurements(["section-call", "compare-call"], packet, store, child)
+        assert full_section["result"]["segments"] and full_section["result_detail"] == "hash_verified_full_report"
+        assert len(full_comparison["result"]["samples"]) == 9
+        assert full_comparison["result_detail"] == "hash_verified_full_report"
+        detail_path = child / full_section["result"]["details_file"]
+        original_detail = detail_path.read_bytes()
+        detail_path.write_bytes(original_detail + b" ")
+        with pytest.raises(ValueError, match="full tool result hash mismatch"):
+            mesh_worker_measurements(["section-call"], packet, store, child)
+        detail_path.write_bytes(original_detail)
         copied = child.parent / "copy-section"
         copy_packet = prepare_mesh_worker_packet(child, copied, task_id="worker-b", question="Inspect saved cut.",
             candidate="candidate_01", observation_ids=["section_001", "mesh_001"])
@@ -352,6 +362,8 @@ def test_readonly_section_and_comparison_bind_actual_tools_and_support_packet_co
         report.write_bytes(report.read_bytes() + b" ")
         with pytest.raises(ValueError, match="result bytes"):
             hydrate_mesh_worker_answer(_answer(measurement_call_id="compare-call"), packet, store, child)
+        with pytest.raises(ValueError, match="result bytes"):
+            mesh_worker_measurements(["compare-call"], packet, store, child)
         record = child / "mesh_sections/section_001.json"
         record.write_bytes(record.read_bytes() + b" ")
         with pytest.raises(ValueError, match="changed after"):

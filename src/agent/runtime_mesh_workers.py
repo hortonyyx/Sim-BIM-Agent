@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 from contextlib import AsyncExitStack
 import hashlib
 import inspect
@@ -91,10 +92,12 @@ EXTRA_TOOLS = [
     {"name": "delegate_mesh_workers", "description": "Ask any needed read-only mesh questions concurrently and wait for this batch. All workers use the coordinator's configured model and shared root budget. Only supplied tasks run; using workers is optional. Each task needs a unique stable ID and explicit model/tool allowance. Optional candidate is a frozen read-only source snapshot; observation_ids reuse parent mesh views. All admitted auxiliary inputs and declarations remain available. Reusing identical completed IDs reads their saved results; changed arguments/configuration/evidence are rejected. Null seconds/tokens add no child limit beyond root constraints. budget.tokens is a total input-plus-output allowance across requests, not an output cap. Inspect mesh_worker_state for the inherited output allowance; infeasible new tasks are rejected before input freezing and produce no observation evidence. Workers cannot modify or finish the parent BIM.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
          "tasks": {"type": "array", "minItems": 1, "items": _TASK_SCHEMA}}, "required": ["tasks"]}},
-    {"name": "read_mesh_worker", "description": "Read a saved worker result and its frozen input/source basis. Optional view_ids return actual verified PNGs cited or observed by that worker (mesh_NNN, section_NNN, overlay_NNN or admitted image names). The coordinator judges whether snapshot advice applies to its current candidate; nothing is applied automatically.",
+    {"name": "read_mesh_worker", "description": "Read a saved worker result and its frozen input/source basis. Default results contain compact measurement summaries. Optional measurement_call_ids return up to 3 selected full verified measurements, including from incomplete workers; IDs come from computed_measurement.tool_call_id or evidence_catalog.measurements. Optional view_ids return actual verified PNGs cited or observed by that worker (mesh_NNN, section_NNN, overlay_NNN or admitted image names). The coordinator judges whether snapshot advice applies to its current candidate; nothing is applied automatically.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
          "task_id": {"type": "string", "minLength": 1},
-         "view_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": True}}, "required": ["task_id"]}},
+         "view_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": True},
+         "measurement_call_ids": {"type": "array", "maxItems": 3,
+             "items": {"type": "string", "minLength": 1}, "uniqueItems": True}}, "required": ["task_id"]}},
     {"name": "mesh_worker_state", "description": "Inspect mesh worker status, configured model, concurrency, inherited output allowance, minimum necessary task token budget and shared remaining allowance. The token minimum excludes actual input estimates and is not a guarantee that a request can start. Counts distinguish parent and child tasks; saved advice is not a BIM quality verdict.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {}}},
 ]
@@ -115,6 +118,52 @@ def mesh_worker_task_payload(packet, limits):
 def _envelope(value, *, error=False, blocks=()):
     return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}, *blocks],
             "structuredContent": value, "isError": error}
+
+
+def _measurement_summary(result):
+    """Presentation only; validity, numeric conclusions and caveats stay visible."""
+    summary = copy.deepcopy(result)
+    omitted = []
+    for key in ("pixel_buffer_npz", "samples", "segments", "coplanar_triangles", "point_touches"):
+        if key in summary:
+            value = summary.pop(key)
+            omitted.append({"field": key, **({"count": len(value)} if isinstance(value, list) else {})})
+    for query in summary.get("queries", ()):
+        triangle = query.pop("triangle_surface_evidence", None)
+        if triangle is not None:
+            query["surface_summary"] = {key: triangle[key] for key in (
+                "global_face_id", "triangle_normal_xyz", "plane_tilt_from_vertical_degrees",
+                "horizontal_surface_trace_direction_degrees", "material_alpha_mode",
+                "material_geometry_caveat") if key in triangle}
+    if any("triangle_surface_evidence" in row for row in result.get("queries", ())):
+        omitted.append({"field": "queries[].triangle_surface_evidence"})
+    if omitted:
+        summary["omitted_detail_fields"] = omitted
+    return summary
+
+
+def _project_worker_outcome(value):
+    """Keep claim bindings; show each compact measurement only once per outcome."""
+    value = copy.deepcopy(value)
+    result = value.get("result")
+    if isinstance(result, dict):
+        measurements = {}
+        for observation in result.get("directly_seen", ()):
+            computed = observation.get("computed_measurement")
+            if not isinstance(computed, dict) or "result" not in computed:
+                continue
+            detail = computed.pop("result")
+            call_id = computed["tool_call_id"]
+            measurements.setdefault(call_id, {**computed, "result": _measurement_summary(detail),
+                "full_result_read": {"tool": "read_mesh_worker", "arguments": {
+                    "task_id": value["task_id"], "measurement_call_ids": [call_id]}}})
+        if measurements:
+            result["measurement_summaries"] = list(measurements.values())
+    value["presentation"] = {"measurement_detail": "compact; full canonical result remains journaled",
+        "meaning": "Claims retain their measurement call/event/hash bindings. Summaries do not add fidelity approval.",
+        "full_measurement_read": {"tool": "read_mesh_worker", "task_id": value.get("task_id"),
+            "selector": "measurement_call_ids", "maximum_ids": 3}}
+    return value
 
 
 class _EvidenceTools:
@@ -202,11 +251,26 @@ class MeshWorkerTools:
                 return _envelope({"status": "completed", "results": results,
                                   "meaning": "batch ended; individual task statuses and evidence determine usefulness"})
             if name == "read_mesh_worker":
-                value, blocks = self._read(arguments["task_id"], arguments.get("view_ids", ()))
+                value, blocks = self._read(arguments["task_id"], arguments.get("view_ids", ()),
+                                           arguments.get("measurement_call_ids", ()))
                 return _envelope(value, blocks=blocks)
             return _envelope(self.state())
         except (ValueError, FileNotFoundError) as exc:
             return _envelope({"status": "rejected", "reason": str(exc)}, error=True)
+
+    def project_tool_result(self, name, raw):
+        """Project model-visible copies only; canonical hydration/storage is unchanged."""
+        if name not in {"delegate_mesh_workers", "read_mesh_worker"} or raw.get("isError"):
+            return raw
+        value = raw["structuredContent"]
+        if name == "delegate_mesh_workers":
+            value = {**value, "results": [_project_worker_outcome(row) for row in value["results"]]}
+        else:
+            value = _project_worker_outcome(value)
+        # The envelope's first text block mirrors structuredContent. Preserve
+        # subsequent PNG/reference blocks exactly, including their image origins.
+        return {**raw, "structuredContent": value, "content": [
+            {"type": "text", "text": json.dumps(value, ensure_ascii=False)}, *raw["content"][1:]]}
 
     def _configuration(self):
         return {"model": self.model, "parameters": self.parameters, "route": self.route,
@@ -427,9 +491,9 @@ class MeshWorkerTools:
         child.write_json("mesh_worker_outcome.json", outcome)
         return {key: value for key, value in outcome.items() if key != "answer"}
 
-    def _read(self, task_id, view_ids=()):
+    def _read(self, task_id, view_ids=(), measurement_call_ids=()):
         from src.agent.runtime_mesh_evidence import (hydrate_mesh_worker_answer, mesh_worker_view_blocks,
-                                                   mesh_worker_evidence_catalog)
+                                                   mesh_worker_evidence_catalog, mesh_worker_measurements)
         child = self._child(task_id)
         record = self._record(child)
         outcome = self._anchored(child, "mesh-worker-outcome")
@@ -462,6 +526,9 @@ class MeshWorkerTools:
         value["evidence_catalog"] = catalog
         if previews:
             value["evidence_previews"] = previews
+        if measurement_call_ids:
+            value["full_measurements"] = mesh_worker_measurements(
+                measurement_call_ids, record["packet"], child, child.task_directory / "bim")
         return value, blocks
 
     @staticmethod
@@ -567,7 +634,7 @@ class MeshWorkerTools:
                     operation_key=call.operation_key, state_before=self.store.put_json(self.snapshot_state())),
                     source_refs=(self.store.source("tool-recovery-attempt", {"retry_event_id": retry_id}),))
             raw = await self.call_tool(call.tool_name, call.full_arguments)
-            _, _, shown, _ = convert_tool_result(call_id, raw, self.store)
+            _, _, shown, _ = convert_tool_result(call_id, self.project_tool_result(call.tool_name, raw), self.store)
             self.store.append(ToolExecutionPayload(call_id=call_id, tool_name=call.tool_name,
                 full_arguments=call.full_arguments, repeatability=call.repeatability,
                 operation_key=call.operation_key, invocation_event_id=event.event_id, retry_event_id=retry_id,

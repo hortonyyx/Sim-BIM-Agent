@@ -1567,7 +1567,9 @@ class Runtime:
                 # so a display-hint projection cannot look like a missing image.
                 image_detail_supported = not (self.versions.remote_model.route_id == "opencode-go"
                     and self.model == "mimo-v2.6-flash")
-                _, _, shown, _ = convert_tool_result(call.call_id, raw, self.store,
+                projector = getattr(self.tools, "project_tool_result", None)
+                visible = projector(call.tool_name, copy.deepcopy(raw)) if projector else raw
+                _, _, shown, _ = convert_tool_result(call.call_id, visible, self.store,
                     image_detail_supported=image_detail_supported,
                     original_image_detail=("high" if self.versions.remote_model.route_id == "paratera"
                                            else "original"))
