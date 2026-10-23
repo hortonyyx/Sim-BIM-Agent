@@ -145,6 +145,39 @@ def test_cumulative_history_and_inverse_edit_are_events_not_missing_edits(saved)
     assert 'missing_edits' not in full and 'replay_operations' not in full
 
 
+def frame():
+    return {'mesh_sha256': '0' * 64, 'yaw_degrees': 15, 'translation_m': [1, 2, 0],
+            'reason': 'explicit registration fixture', 'source_refs': ['frame observation']}
+
+
+def test_frame_change_outside_corrections_is_explicit_partial_history(saved):
+    toolkit, first, second = saved
+    proposal = json.loads((toolkit.run / first['candidate'] / 'proposal.json').read_bytes())
+    proposal['mesh_frame'] = frame()
+    changed = toolkit.build(proposal, action='set_candidate_mesh_frame', parent=first['candidate'])
+    result = history(toolkit, changed['candidate'])
+    assert result['status'] == 'partial' and 'mesh_frame' in result['reason']
+    assert not result['intervening_changes']['history_complete']
+    assert result['intervening_changes']['operation_count'] == 0
+    full = report(toolkit, result)
+    limitation = full['steps'][0]['history_limitations'][0]
+    assert limitation['proposal_pointer'] == '/mesh_frame'
+    assert limitation['before'] is None and limitation['after'] == frame()
+    assert candidate_edit_route(toolkit, changed['candidate'])['recommended_tool'] == 'revise_bim'
+
+
+def test_unchanged_declared_frame_does_not_hide_verified_generic_history(tmp_path):
+    toolkit = SourceToolkit(tmp_path / 'run')
+    value = plan()
+    value['mesh_frame'] = frame()
+    first = build_parametric(toolkit, json.dumps(value))
+    second = revise(toolkit, first['candidate'], [change()])
+    result = history(toolkit, second['candidate'])
+    assert result['status'] == 'verified_lineage'
+    assert result['intervening_changes']['history_complete']
+    assert result['intervening_changes']['operation_count'] == 1
+
+
 @pytest.mark.parametrize('fault', ['parent_hash', 'missing_parent', 'missing_report', 'source_hash',
     'report_hash', 'provenance', 'ancestor_plan', 'missing_corrections', 'cross_run'])
 def test_broken_binding_is_unavailable_without_changing_generic_edit_permission(saved, fault):

@@ -62,7 +62,7 @@ def _read_node(toolkit, candidate, bindings):
     return {'candidate': candidate, 'source_sha256': hashes['source_model.json'],
             'source_model_sha256': source_hash, 'proposal_sha256': hashes['proposal.json'],
             'report_sha256': hashes['report.json'], 'provenance': provenance,
-            'corrections': corrections}
+            'corrections': corrections, 'mesh_frame': proposal.get('mesh_frame')}
 
 
 def _operation(row, index):
@@ -118,6 +118,14 @@ def _collect(toolkit, candidate):
             operations = [_operation(row, index) for index, row in enumerate(new) if index >= len(old)]
             result['steps'].append({'candidate': cursor, 'parent_candidate': parent,
                 'parent_proposal_sha256': previous['proposal_sha256'], 'operations': operations})
+            # The formal frame tool records its edit outside geometry.corrections.
+            # Detect this known coverage gap without promoting its unbound
+            # operations.json sidecar or inferring a net geometric edit history.
+            if node['mesh_frame'] != previous['mesh_frame']:
+                result['steps'][-1]['history_limitations'] = [{
+                    'proposal_pointer': '/mesh_frame', 'before': previous['mesh_frame'],
+                    'after': node['mesh_frame'], 'reason': 'Changed outside correction history'}]
+                raise ValueError('proposal.mesh_frame changed outside correction history; frame edits are not covered')
             node = previous
         else:
             raise ValueError(f'parent chain exceeds {MAX_CHAIN_LENGTH} candidates')
