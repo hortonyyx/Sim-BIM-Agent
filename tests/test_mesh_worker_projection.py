@@ -93,7 +93,7 @@ def test_worker_projection_and_selected_full_read_survive_replay(
         child = wrapper._child("inspect")
         saved = json.loads((child.task_directory / "mesh_worker_outcome.json").read_bytes())
         assert saved["result"] == canonical
-        for call_id in ("delegate", "read", "view"):
+        for call_id in ("delegate", "read"):
             shown = store.resolve(executions[call_id].payload.shown_result)
             text = shown["tool_message"]["content"]
             assert "triangle_vertices_xyz" not in text
@@ -101,7 +101,11 @@ def test_worker_projection_and_selected_full_read_survive_replay(
             result = visible["results"][0]["result"] if call_id == "delegate" else visible["result"]
             assert len(result["measurement_summaries"]) == 1
             assert len(result["directly_seen"]) == 2
+            assert len(result["evidence_sources"]) == 1
+            assert result["evidence_sources"][0]["evidence"] == canonical["directly_seen"][0]["evidence"]
             for obs in result["directly_seen"]:
+                assert obs["evidence_ref"] == result["evidence_sources"][0]["id"]
+                assert "evidence" not in obs
                 assert "result" not in obs["computed_measurement"]
                 assert obs["computed_measurement"]["tool_call_id"] == "measure-call"
             summary = result["measurement_summaries"][0]
@@ -113,11 +117,20 @@ def test_worker_projection_and_selected_full_read_survive_replay(
             for key, value in surface.items():
                 assert value == full["queries"][0]["triangle_surface_evidence"][key]
         detail = json.loads(store.resolve(executions["detail"].payload.shown_result)["tool_message"]["content"])
+        assert "result" not in detail and "evidence_catalog" not in detail
         assert detail["full_measurements"][0]["result"] == full
         assert detail["full_measurements"][0]["tool_result_sha256"] == canonical["directly_seen"][0]["computed_measurement"]["tool_result_sha256"]
         preview = store.resolve(executions["view"].payload.shown_result)
         raw_preview = store.resolve(executions["view"].payload.raw_result)
+        visible_preview, _ = json.JSONDecoder().raw_decode(preview["tool_message"]["content"])
+        assert "result" not in visible_preview and "evidence_catalog" not in visible_preview
+        assert visible_preview["result_reference"] == detail["result_reference"]
+        assert visible_preview["requested_selection"] == {"view_ids": ["mesh_001"], "measurement_call_ids": []}
+        assert raw_preview["structuredContent"]["result"] == canonical
+        projected_preview = wrapper.project_tool_result("read_mesh_worker", raw_preview)
+        assert projected_preview["content"][1:] == raw_preview["content"][1:]
         assert preview["images"] and wrapper.image_origins(raw_preview)
+        assert wrapper.image_origins(projected_preview) == wrapper.image_origins(raw_preview)
         before = copy.deepcopy(delegate)
         wrapper.project_tool_result("delegate_mesh_workers", delegate)
         assert delegate == before
@@ -142,9 +155,16 @@ def test_worker_projection_and_selected_full_read_survive_replay(
                     "task_id": "inspect", "measurement_call_ids": selection}))
                 assert not raw.get("isError"), raw
                 projected = continued.project_tool_result("read_mesh_worker", raw)["structuredContent"]
-                assert len(projected["result"]["measurement_summaries"]) == 1
                 if selection:
+                    assert "result" not in projected
                     assert projected["full_measurements"][0]["result"] == full
+                    reference = projected["result_reference"]
+                    complete = asyncio.run(continued.call_tool(reference["read"]["tool"], reference["read"]["arguments"]))
+                    complete = continued.project_tool_result("read_mesh_worker", complete)["structuredContent"]
+                    assert complete["result_reference"] == reference
+                    assert len(complete["result"]["measurement_summaries"]) == 1
+                else:
+                    assert len(projected["result"]["measurement_summaries"]) == 1
         # A worker whose final outcome was interrupted still exposes its
         # journaled measurements through this exact API, without an answer.
         anchored = wrapper._anchored
@@ -154,6 +174,11 @@ def test_worker_projection_and_selected_full_read_survive_replay(
             "task_id": "inspect", "measurement_call_ids": ["measure-call"]}))["structuredContent"]
         assert recovered["status"] == "incomplete" and recovered["result"] is None
         assert recovered["full_measurements"][0]["result"] == full
+        projected = wrapper.project_tool_result("read_mesh_worker", {"structuredContent": recovered,
+            "content": [{"type": "text", "text": json.dumps(recovered)}]})["structuredContent"]
+        assert "result" not in projected and not projected["result_reference"]["available"]
+        assert projected["result_reference"]["canonical_result_sha256"] is None
+        assert projected["full_measurements"][0]["result"] == full
         assert len(adapters) == 1
         store.validate()
 

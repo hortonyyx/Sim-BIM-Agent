@@ -51,8 +51,10 @@ Before directly describing auxiliary PNG evidence, use an actual image supplied
 in this request (packet.input_views) or call view_image (optionally with box).
 Admission alone does not establish that you have viewed an image. Prefetched
 view_NNNN crops are already supplied; do not reread solely to establish delivery.
-For these crops cite the admitted PNG filename and box_pixels in ORIGINAL image
-coordinates within the supplied crop, never coordinates local to the crop.
+For these crops cite the admitted PNG filename. box_pixels is optional: omit it
+or use null when the task does not request coordinates or forbids them.
+If you provide box_pixels, use ORIGINAL image coordinates within
+the supplied crop, never coordinates local to the crop.
 You may return only uncertainty when the question cannot be established.
 Respect task_limits and remaining root allowance; your task creates no budget.
 Reserve a model response for the structured answer. Once the bounded question has
@@ -92,14 +94,14 @@ _TASK_SCHEMA = {"type": "object", "additionalProperties": False,
         "observation_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": True},
         "image_view_ids": {"type": "array", "maxItems": 3, "uniqueItems": True,
             "items": {"type": "string", "pattern": "^view_[0-9]+$"},
-            "description": "Existing parent view_image view IDs. Their exact returned crops are supplied in the first worker request; cite the admitted PNG filename and ORIGINAL pixels. This avoids another worker read round."},
+            "description": "Existing parent view_image view IDs. Their exact returned crops are supplied in the first worker request; cite the admitted PNG filename. box_pixels may be omitted/null when coordinates are not requested or are forbidden; if supplied, use ORIGINAL pixels within the crop. This avoids another worker read round."},
         "budget": _BUDGET_SCHEMA}, "required": ["task_id", "question", "budget"]}
 
 EXTRA_TOOLS = [
     {"name": "delegate_mesh_workers", "description": "Ask any needed read-only mesh questions concurrently and wait for this batch. All workers use the coordinator's configured model and shared root budget. Only supplied tasks run; using workers is optional. Each task needs a unique stable ID and explicit model/tool allowance. Optional candidate is a frozen read-only source snapshot; observation_ids reuse parent mesh views; image_view_ids prefetch exact parent view_image crops into the first request. This tool waits for the batch, so only delegate when the expected saved work justifies that wait. All admitted auxiliary inputs and declarations remain available. Reusing identical completed IDs reads their saved results; changed arguments/configuration/evidence are rejected. Null seconds/tokens add no child limit beyond root constraints. budget.tokens is a total input-plus-output allowance across requests, not an output cap. Inspect mesh_worker_state for the inherited output allowance; infeasible new tasks are rejected before input freezing and produce no observation evidence. Workers cannot modify or finish the parent BIM.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
          "tasks": {"type": "array", "minItems": 1, "items": _TASK_SCHEMA}}, "required": ["tasks"]}},
-    {"name": "read_mesh_worker", "description": "Read a saved worker result and its frozen input/source basis. Default results contain compact measurement summaries. Optional measurement_call_ids return up to 3 selected full verified measurements, including from incomplete workers; IDs come from computed_measurement.tool_call_id or evidence_catalog.measurements. Optional view_ids return actual verified PNGs cited or observed by that worker (mesh_NNN, section_NNN, overlay_NNN, prefetched view_NNNN or admitted image names). The coordinator judges whether snapshot advice applies to its current candidate; nothing is applied automatically.",
+    {"name": "read_mesh_worker", "description": "Read a saved worker result and its frozen input/source basis. Without selectors, return the full answer with unique evidence records and compact measurement summaries. With view_ids or measurement_call_ids, show only selected evidence and a hash-bound default read entry for the full answer. Optional measurement_call_ids return up to 3 selected full verified measurements, including from incomplete workers; IDs come from computed_measurement.tool_call_id or evidence_catalog.measurements. Optional view_ids return actual verified PNGs cited or observed by that worker (mesh_NNN, section_NNN, overlay_NNN, prefetched view_NNNN or admitted image names). The coordinator judges whether snapshot advice applies to its current candidate; nothing is applied automatically.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
          "task_id": {"type": "string", "minLength": 1},
          "view_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": True},
@@ -149,13 +151,44 @@ def _measurement_summary(result):
     return summary
 
 
+def _canonical_digest(value):
+    raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 def _project_worker_outcome(value):
-    """Keep claim bindings; show each compact measurement only once per outcome."""
+    """Project exact source records once; explicit selections need no answer replay."""
     value = copy.deepcopy(value)
     result = value.get("result")
+    value["result_reference"] = {"available": isinstance(result, dict),
+        "canonical_result_sha256": _canonical_digest(result) if isinstance(result, dict) else None,
+        "read": {"tool": "read_mesh_worker", "arguments": {"task_id": value.get("task_id")}}}
     if isinstance(result, dict):
-        measurements = {}
+        value["result_reference"]["basis"] = {key: result[key] for key in (
+            "packet_sha256", "run_id", "input_manifest_sha256", "mesh_sha256", "source_snapshot",
+            "fidelity", "candidate_mutation") if key in result}
+    selection = value.get("requested_selection", {})
+    if selection.get("view_ids") or selection.get("measurement_call_ids"):
+        # The canonical read still verifies and journals its complete outcome.
+        # Images and full_measurements remain untouched in this shown copy.
+        value.pop("result", None)
+        value.pop("evidence_catalog", None)
+        value["presentation"] = {"scope": "selected_evidence",
+            "meaning": "Only explicitly selected evidence is shown; result_reference.read returns the complete worker answer. "
+                       "Completed means the worker ended, not fidelity approval or applicability to the current candidate. "
+                       "Check the frozen source basis; full measurements are not summarized."}
+        return value
+    if isinstance(result, dict):
+        measurements, sources, source_ids = {}, [], {}
         for observation in result.get("directly_seen", ()):
+            evidence = observation.get("evidence")
+            if isinstance(evidence, dict):
+                identity = _canonical_digest(evidence)
+                if identity not in source_ids:
+                    source_ids[identity] = "E" + str(len(sources) + 1)
+                    sources.append({"id": source_ids[identity], "sha256": identity, "evidence": evidence})
+                observation["evidence_ref"] = source_ids[identity]
+                del observation["evidence"]
             computed = observation.get("computed_measurement")
             if not isinstance(computed, dict) or "result" not in computed:
                 continue
@@ -166,8 +199,12 @@ def _project_worker_outcome(value):
                     "task_id": value["task_id"], "measurement_call_ids": [call_id]}}})
         if measurements:
             result["measurement_summaries"] = list(measurements.values())
+        if sources:
+            result["evidence_sources"] = sources
     value["presentation"] = {"measurement_detail": "compact; full canonical result remains journaled",
-        "meaning": "Claims retain their measurement call/event/hash bindings. Summaries do not add fidelity approval.",
+        "meaning": "Each claim evidence_ref selects one complete evidence_sources record in this answer. "
+            "Hashes bind the full source objects, including crop/view provenance; box_pixels stays on its claim. "
+            "Measurement call/event/hash bindings remain. Summaries do not add fidelity approval.",
         "full_measurement_read": {"tool": "read_mesh_worker", "task_id": value.get("task_id"),
             "selector": "measurement_call_ids", "maximum_ids": 3}}
     return value
@@ -544,6 +581,9 @@ class MeshWorkerTools:
         if measurement_call_ids:
             value["full_measurements"] = mesh_worker_measurements(
                 measurement_call_ids, record["packet"], child, child.task_directory / "bim")
+        if view_ids or measurement_call_ids:
+            value["requested_selection"] = {"view_ids": list(view_ids),
+                                            "measurement_call_ids": list(measurement_call_ids)}
         return value, blocks
 
     @staticmethod

@@ -2,6 +2,10 @@
   "schema": 1,
   "default": "fast",
   "modules": {
+    "tests/test_mesh_worker_receipt_projection.py": {
+      "group": "targeted",
+      "reason": "Worker display evidence deduplication and explicit selector receipts preserve canonical results and complete selected evidence"
+    },
     "tests/test_paratera_flagship.py": {
       "group": "targeted",
       "reason": "Original-vendor Paratera Kimi/Qwen effort, output fields and captured reasoning/image/tool continuation"
