@@ -4,7 +4,9 @@
 
 ## 最新结论与当前恢复点
 
-03:19用户再次明确持续推进。当前已进一步合入小剖面完整预览和参数祖先/源修订历史提示，登记 **runtime42/domain146**；两项均完成独立代码审阅。接下来准备真实Sol父子与单体的固定ROI对照、参数谱系提示的合成局修窄验收；此检查点尚未新增真实请求，实际启动与终态见外部各目录。
+03:19用户再次明确持续推进后，已进一步合入小剖面完整预览和参数祖先/源修订历史提示，登记 **runtime42/domain146**；两项均完成独立代码审阅，源码897d7610已推送。真实Sol父子/单体固定ROI对照与两版谱系窄协议均已终态、完成独立复核；v1修改失败保留，修正文档可达性后的v2完成当前稿局修并保留旧改。所有终态封印已核验，当前可解除源码冻结；没有活动工作模型或本轮待合入源改动。
+
+续作新增 **18次真实Sol/high请求、72,930实报tokens**；连同前批共 **99次、7,827,064 tokens**，涵盖2轮利园和12腿窄测试，不是此前十案横评的请求总数。旧18次脚本父请求另列，离线ScriptedAdapter不计真实调用；货币及Codex开发/评审用量未知。09:00早报继续，后续若有新探索必须重新冻结合同并更新总账，不能将本检查点数字当未来最终量。
 
 前批已完成两轮利园和八腿窄测试，实际版本分别列于下文。前批81次新增真实请求均为 GPT-6.1 Sol/high，实报全树 tokens 合计7,754,134，另有18次脚本父请求。此小计仅含本报告七组已结束实验，不含后续、此前10案、旧ROI探针或Codex开发/评审推理；订阅货币成本未知。worker回执去重、主控量测摘要、共享角点定位和原声明字段反馈已合入，真实窄协议可用；**整案没有稳定提速证据**。
 
@@ -26,7 +28,42 @@
 
 参数谱系源码 `de62458f`+`b7da2ee4`（隔离原提交e62b8fd1+222210ee）沿明确父链核source/report/proposal与精确参数绑定，不按最大候选猜当前目标。generic保存默认route和显式inspect各返回一份≤2048 UTF-8字节摘要；全历史含原before/after/reason/source_refs，按内容hash放独立tool_reports，可通过已有reader的/steps及后续引用读取。历史计数不是净差分或必须恢复清单。父子mesh_frame变化未被correction审计覆盖时标partial/history_complete=false并保留限制，不将未知sidecar当可信操作记录。任何提示错误不阻断原保存，也不授权patch旧稿或自动合并。
 
-外部独审：`analysis/SECTION-PREVIEW-INDEPENDENT-REVIEW.md`、`LINEAGE-INDEPENDENT-REVIEW.md`；完整实施与旧轨迹重放见`LINEAGE-IMPLEMENTATION.md`。登记前副本及`domain146-registration-verification.json`确认42条runtime、145条旧domain、aliases及metadata不变，仅新增domain146。准备中的`delegation-parent-experiment/`与`lineage-acceptance/`分别记录新合同和测试范围，当前不将未启动的真实验收写成通过。
+外部独审：`analysis/SECTION-PREVIEW-INDEPENDENT-REVIEW.md`、`LINEAGE-INDEPENDENT-REVIEW.md`；完整实施与旧轨迹重放见`LINEAGE-IMPLEMENTATION.md`。登记前副本及`domain146-registration-verification.json`确认42条runtime、145条旧domain、aliases及metadata不变，仅新增domain146。新真实结果如下，不将指导性协议成功等同整案质量或提速。
+
+## domain146真实窄验收与分工全链开销
+
+所有新运行冻结897d7610/runtime42/domain146，既有订阅GPT-6.1 Sol/high，0供应商重试/0格式修补，原run保持。各组显式限制是实验协议，不是产品档位。
+
+| 新协议/腿 | 真实请求/工具 | controller秒 | 全树reported tokens | 结果 |
+|---|---:|---:|---:|---|
+| 固定ROI父＋子＋强制完整回读 | 5/3，父4子1 | 62.8534 | 21,037（父16,721＋子4,316） | 33协议项及独立视觉/账务通过 |
+| 同ROI单体 | 2/1 | 21.7293 | 2,330 | 21协议项及独立视觉/账务通过 |
+| 谱系v1，格式文档被窄工具集屏蔽 | 6/5 | 43.9726 | 19,422 | 历史理解正确，唯一局修失败；仅部分证据，不是验收通过 |
+| 谱系v2，正式格式文档可达 | 5/6 | 33.8716 | 30,141 | 50协议项与独立源/语义/账务核对通过 |
+
+父子对照先B后A，队列89.1693秒包含各腿和臂外审计；另预制seed2.547915秒，不重复计入每腿。实际parent/child都收到同258×245历史固定ROI，来源hash/native交接、逐ID采纳及原文均核验。两臂都正确识别Bicycle、只引用BRICK片段并对完整文字保留unknown。没有错误子答，因此**没有证明父级纠错能力**，也没测自主选ROI或决定是否派工。原435文件前后不变，终态seal749a57ee…再次通过。证据：`analysis/DELEGATION-PARENT-INDEPENDENT-REVIEW.md`、`delegation-parent-experiment/results/RESULTS.md`。
+
+本题委派约单体2.89倍端到端/9.03倍tokens，不能外推最优分工成本。逐值核对发现delegate默认shown.results[0]已完整包含后续read_mesh_worker返回的全部claim、uncertainty、evidence_sources和canonical hash；该协议**强制的完整回读是重复工作**。父级自身16,721tokens已超过直接作答2,330，单换便宜worker不能消除现有父级开销。机械删旧read call/output仅少5704字节，未实际执行新策略，不能当节省tokens/秒。delegate16.5007秒内已包含child8.6770秒，不再相加。
+
+后续分工探索优先：已有完整delegate结果直接核对；若缺项或要量测/图片再按selector读；若干独立ROI一批处理以分摊派工；另做预冻结的错误子答注入评父级拒错。最后再在同合同下比较弱模型。当前只是外部探索方案，不改生产异构/异步调度；没有新Qwen调用。见`analysis/DELEGATION-NEXT-EXPERIMENTS.md`及`REDUNDANT-READ-ADDENDUM.json`，不是新的模型排名或费用报价。
+
+### 谱系窄协议：失败归因、文档可达性与源保留
+
+v1正式工具先准备C01参数稿、C02南窗局修，2工具/4.545095秒，来源是明确合成声明。真实模型正确读出祖先C01、1条历史操作与南窗对象，但唯一revise把z放顶层，工具拒绝`unknown fields ['z']`；北门未改、没有C03，模型如实报告saved=null并正式回读未改值。冻结外部audit又因将`Tool error (isError=true):`前缀当纯JSON而崩溃，原错误和脚本保留，追加独审仅判partial_evidence_not_acceptance_pass。332原文件不变，seal db60a0…终态通过。
+
+独审证实该窄runner替换system并只开放3个域工具，revise说明指向的get_bim_reference被移除；operations_json仅string类型，历史before/after记录也不是请求格式。正式产品通过get_bim_reference('edits')提供正确changes示例，因此**不能把这个外部合同缺口当生产harness或Sol泛化失败**，没有因此修改产品。见`analysis/LINEAGE-REAL-INDEPENDENT-REVIEW.md`与`lineage-acceptance/ORIGINAL-AUDIT-FAILURE.txt`。
+
+v2另建目录/新封印90aef420…，恢复正式get_bim_reference且只允许edits，写前必须读取实际文档，8请求/10工具/300秒、一次修改，无重试。只复制最初39份PRE-model seed文件、逐项核hash，无v1模型答案；新复制核验0.069291秒，旧2setup/4.545095秒作为共享历史准备，未再次发生。独审还修正了外部seed路径和新增未登记文件漏验；20项纯检查成功覆盖、唯一正式MCP/native smoke1通过/10.08秒、55检查真、0provider；重复守卫复验不相加为唯一覆盖数。
+
+真实v2第二响应合批读取历史、正式edits和当前开口；文档完整原文进入产生唯一revise的native请求，随后正确使用changes.z保存C03。最终北门0..2.3m，南窗1.2..2.2m及东门0..2.1m保持；除所需北门Z/来源、追加correction及派生hash外，源逐值不变。独立核5请求/6工具/30,141tokens，384原run文件不变，38不可变seed文件相同，仅运行日志正常追加且旧前缀完整。50项冻结协议审计与另38项独审通过（不相加为唯一覆盖数），末次seal验证后才解除源码冻结。见`analysis/LINEAGE-V2-REAL-INDEPENDENT-REVIEW.md`（SHA256 46d98de4436e2a11994aedff8fc78ccf2c71285aa0801e03f54eac89bb2755bf）。两版合同/预算不同，33.87与43.97秒不能作同条件速度收益，也不证明模型会自主选择正确编辑路线。
+
+### 已知平面简化与后续边界
+
+只读追查Lee002的23F前室/H.R./hall：原全图、2倍局部图、无网格放大图及C01回叠均进入native；左梯前室在首稿已明确主动整合，H.R.遗漏原因无法从轨迹确定，hall抽象也自首稿存在。三轮关系检查重复同3组样本，未覆盖这些对象；工具已明示caller_selected_point_pairs_only与drawing_fidelity=not_evaluated，不能把局部通过当整层正确，也未发现反馈隐藏。
+
+当前partial_inference已保护真实隔墙/空间/柜位，不能据单案直接叠加新门或加长guidance。此问题与用户认可C01、明日讨论的可接受简化范围有关，今晚不替用户确定档位。仅保留针对拟简化分隔选关系样本的后续窄探索；原644份证据hash不变，0新工作模型。见`analysis/KNOWN-PLAN-SEMANTIC-SCOPE-DIAGNOSIS.md`。
+
+本次lineage隔离树已核4个源/测试文件与main相同、tracked/untracked干净、仅缓存且无活动进程后移除，branch222210ee及外部证据保持；清理记录`analysis/lineage-worktree-cleanup.json`。其他会话树和`.playwright-cli/`不动、桌面未更新。09:00早报前如继续探索，先核外部handoff和实际活动进程，禁止复跑旧目录或把已解释的失败当待自动修复。
 
 ## 利园001完整验收与独立质量复核已结束
 
@@ -173,4 +210,4 @@ C01之后：C02缩屋顶PH并修底商窗；C03修最高三层窗区和6个内�
 
 针对本夜两项外部审计误判，新增独立 `delegation-audit-next/` 供未来实验复用：按ID比较解码后的statement，避免JSON引号转义子串误判；refs默认严格键集合，仅预先显式allow_verified_extras时允许逐pointer核实的真实额外项。RFC6901指针、重复ID/JSON键、错值/缺项/伪造pointer等33个定向反例通过/0.13秒，root源码审阅无阻断、0provider。这只是未来可选helper，未接入产品或旧auditor，未回写历史判定。调用方仍负责来源hash、非空要求和语义质量，需在看到未来答案前冻结合同。
 
-本批已完成实现、独审、实际调用、终态只读核验与所用短期树清理；没有后台工作模型或待集成产品改动。09:00早报由本线程automation继续，恢复先读外部handoff，不因两个已解释的原审计false状态重复测试。后续候选为参数/源修订衔接提示、剖面信息的按需获取、开放调查与固定ROI的任务合同；生产分工及档位留待讨论。没有新证据缺口时不为耗满夜间窗口扩测。
+以上段落是domain145前批检查点；参数/源修订衔接与小剖面已在后续domain146实施，最新真实结果和下一步以本文开头及外部handoff为准。09:00早报由本线程automation继续，不因已解释的原审计false状态重复测试；生产分工及档位留待讨论，没有新证据缺口时不为耗满窗口扩测。
