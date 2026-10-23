@@ -18,6 +18,7 @@ import time
 
 from jsonschema import Draft202012Validator
 
+from scripts.tool_scripts.bim_agent_replies import measurement_summary as _measurement_summary
 from src.agent.runtime_delegation import update_observer_budget
 from src.agent.runtime_tools import FrozenBimTools, frozen_bim_client, local_observer_role
 from src.agent_runtime.adapter import convert_tool_result
@@ -129,28 +130,6 @@ def _envelope(value, *, error=False, blocks=()):
             "structuredContent": value, "isError": error}
 
 
-def _measurement_summary(result):
-    """Presentation only; validity, numeric conclusions and caveats stay visible."""
-    summary = copy.deepcopy(result)
-    omitted = []
-    for key in ("pixel_buffer_npz", "samples", "segments", "coplanar_triangles", "point_touches"):
-        if key in summary:
-            value = summary.pop(key)
-            omitted.append({"field": key, **({"count": len(value)} if isinstance(value, list) else {})})
-    for query in summary.get("queries", ()):
-        triangle = query.pop("triangle_surface_evidence", None)
-        if triangle is not None:
-            query["surface_summary"] = {key: triangle[key] for key in (
-                "global_face_id", "triangle_normal_xyz", "plane_tilt_from_vertical_degrees",
-                "horizontal_surface_trace_direction_degrees", "material_alpha_mode",
-                "material_geometry_caveat") if key in triangle}
-    if any("triangle_surface_evidence" in row for row in result.get("queries", ())):
-        omitted.append({"field": "queries[].triangle_surface_evidence"})
-    if omitted:
-        summary["omitted_detail_fields"] = omitted
-    return summary
-
-
 def _canonical_digest(value):
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -225,6 +204,10 @@ class _EvidenceTools:
 
     def recovery_policy(self, name):
         return self.frozen.recovery_policy(name)
+
+    def project_tool_result(self, name, raw):
+        projector = getattr(self.frozen, "project_tool_result", None)
+        return projector(name, raw) if projector else raw
 
     async def call_tool(self, name, arguments):
         from src.agent.runtime_mesh_evidence import bind_mesh_worker_tool_result
@@ -304,7 +287,10 @@ class MeshWorkerTools:
 
     def project_tool_result(self, name, raw):
         """Project model-visible copies only; canonical hydration/storage is unchanged."""
-        if name not in {"delegate_mesh_workers", "read_mesh_worker"} or raw.get("isError"):
+        if name not in {"delegate_mesh_workers", "read_mesh_worker"}:
+            projector = getattr(self.frozen, "project_tool_result", None)
+            return projector(name, raw) if projector else raw
+        if raw.get("isError"):
             return raw
         value = raw["structuredContent"]
         if name == "delegate_mesh_workers":

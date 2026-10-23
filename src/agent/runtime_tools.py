@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 import base64
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -347,6 +348,30 @@ class FrozenBimTools:
             "view_pixel_profile", "view_pixel_region_overview", "view_pixel_region",
             "map_pixels", "read_candidate_items"}
         return "retry_read" if name in repeatable_observations else "manual"
+
+    def project_tool_result(self, name: str, raw: dict) -> dict:
+        """Show measurement numbers once while journaling the complete raw reply."""
+        if name != "measure_mesh_pixels" or raw.get("isError"):
+            return raw
+        metadata = _result_metadata(raw)
+        if (metadata.get("error") or not isinstance(metadata.get("queries"), list)
+                or not metadata.get("details_file") or not metadata.get("details_sha256")):
+            # Old replies without a readable full-report reference stay whole.
+            return raw
+        from scripts.tool_scripts.bim_agent_replies import measurement_summary
+        shown = copy.deepcopy(raw)
+        if isinstance(shown.get("structuredContent"), dict):
+            shown["structuredContent"] = measurement_summary(shown["structuredContent"])
+        for block in shown.get("content", ()):
+            if block.get("type") != "text":
+                continue
+            try:
+                value = json.loads(block["text"])
+            except (ValueError, TypeError, KeyError):
+                continue
+            if isinstance(value, dict) and isinstance(value.get("queries"), list):
+                block["text"] = json.dumps(measurement_summary(value), ensure_ascii=False)
+        return shown
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if not self._catalog_checked:

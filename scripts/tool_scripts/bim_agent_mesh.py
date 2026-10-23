@@ -227,7 +227,8 @@ def register_mesh_tools(server, toolkit):
         With a candidate, also convert hits to its explicitly saved mesh_frame;
         no implicit alignment or translation is guessed.
         """
-        result = mesh().pixel_query(observation_path(observation), pixels)
+        prefix = observation_path(observation)
+        result = mesh().pixel_query(prefix, pixels)
         if candidate is not None:
             from src.agent.geometry.mesh_bim_frame import observation_to_source, validate_mesh_frame
             from src.agent.geometry.source_model import _digest
@@ -256,6 +257,22 @@ def register_mesh_tools(server, toolkit):
                 'horizontal_heading_degrees': math.degrees(math.atan2(delta[1], delta[0]))
                     if math.hypot(delta[0], delta[1]) > 1e-7 else None,
                 'note': 'Heading of your two selected surface points, not an inferred building axis.'}
+        observed_files = [prefix.with_suffix(suffix) for suffix in ('.json', '.npz')]
+        image_path = prefix.with_suffix('.png')
+        if image_path.is_file():
+            observed_files.append(image_path)
+        result.update(observation=observation, observation_snapshot={
+            'file_sha256': {path.relative_to(toolkit.run).as_posix():
+                hashlib.sha256(path.read_bytes()).hexdigest() for path in observed_files},
+            'missing_files': [] if image_path.is_file() else [image_path.relative_to(toolkit.run).as_posix()],
+            'meaning': 'Query-time numeric buffer and optional candidate frame. Missing PNG means no image snapshot is available; not current-candidate fidelity approval.'})
+        from scripts.tool_scripts.bim_agent_replies import compact_reply
+        # Archive independently of presentation: a large query list must never
+        # pass through compact_reply's generic bounded-object transformation.
+        reference = compact_reply(toolkit.run, 'measure_mesh_pixels', {}, full_result=result, force=True)
+        if hashlib.sha256((toolkit.run / reference['details_file']).read_bytes()).hexdigest() != reference['details_sha256']:
+            raise ValueError('saved measurement report hash mismatch')
+        result.update(reference)
         toolkit.log('measure_mesh_pixels', {'observation': observation, 'pixels': pixels,
                                           'candidate': candidate, 'result': result})
         return result

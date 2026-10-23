@@ -22,6 +22,28 @@ def pick(value, keys):
     return {key: value[key] for key in keys if key in value}
 
 
+def measurement_summary(result):
+    """Presentation only; keep every query, numeric conclusion and caveat."""
+    summary = copy.deepcopy(result)
+    omitted = []
+    for key in ("pixel_buffer_npz", "samples", "segments", "coplanar_triangles", "point_touches"):
+        if key in summary:
+            value = summary.pop(key)
+            omitted.append({"field": key, **({"count": len(value)} if isinstance(value, list) else {})})
+    for query in summary.get("queries", ()):
+        triangle = query.pop("triangle_surface_evidence", None)
+        if triangle is not None:
+            query["surface_summary"] = {key: triangle[key] for key in (
+                "global_face_id", "triangle_normal_xyz", "plane_tilt_from_vertical_degrees",
+                "horizontal_surface_trace_direction_degrees", "material_alpha_mode",
+                "material_geometry_caveat") if key in triangle}
+    if any("triangle_surface_evidence" in row for row in result.get("queries", ())):
+        omitted.append({"field": "queries[].triangle_surface_evidence"})
+    if omitted:
+        summary["omitted_detail_fields"] = omitted
+    return summary
+
+
 def table(rows):
     """Keep every selected value and its column while writing repeated keys once."""
     if not rows:

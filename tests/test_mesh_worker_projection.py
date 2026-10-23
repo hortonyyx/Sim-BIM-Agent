@@ -39,11 +39,16 @@ def test_worker_projection_and_selected_full_read_survive_replay(
     async def call_tool(self, name, arguments):
         if name == "measure_mesh_pixels":
             self.calls.append((name, arguments))
-            return {"structuredContent": _measure(self.run_directory)}
+            from scripts.tool_scripts.bim_agent_replies import compact_reply
+            full = _measure(self.run_directory)
+            full.update(compact_reply(self.run_directory, name, {}, full_result=full, force=True))
+            return {"structuredContent": full, "content": [{"type": "text", "text": json.dumps(full)}]}
         return await original_call(self, name, arguments)
 
     monkeypatch.setattr(_Frozen, "list_tools", list_tools)
     monkeypatch.setattr(_Frozen, "call_tool", call_tool)
+    from src.agent.runtime_tools import FrozenBimTools
+    monkeypatch.setattr(_Frozen, "project_tool_result", FrozenBimTools.project_tool_result, raising=False)
 
     def reply(call_id, name, arguments):
         if not native:
@@ -91,6 +96,10 @@ def test_worker_projection_and_selected_full_read_survive_replay(
         full = canonical["directly_seen"][0]["computed_measurement"]["result"]
         assert "triangle_vertices_xyz" in json.dumps(full)
         child = wrapper._child("inspect")
+        measured = next(e for e in child.events if e.payload.event_type == "tool_execution"
+                        and e.payload.tool_name == "measure_mesh_pixels")
+        assert "triangle_vertices_xyz" in json.dumps(child.resolve(measured.payload.raw_result))
+        assert "triangle_vertices_xyz" not in json.dumps(child.resolve(measured.payload.shown_result))
         saved = json.loads((child.task_directory / "mesh_worker_outcome.json").read_bytes())
         assert saved["result"] == canonical
         for call_id in ("delegate", "read"):
@@ -183,15 +192,22 @@ def test_worker_projection_and_selected_full_read_survive_replay(
         store.validate()
 
 
-@pytest.mark.parametrize("failure", ["unknown", "non_measurement", "failed", "cross_worker", "argument", "tamper"])
+@pytest.mark.parametrize("failure", ["unknown", "non_measurement", "failed", "cross_worker", "argument", "tamper",
+                                     "report_missing", "report_tamper"])
 def test_full_measurement_read_rejects_unverified_evidence(prepared, failure):
-    _, child, packet = _packet(prepared)
+    parent, child, packet = _packet(prepared)
     _, _, view = _render(child)
     with _store(child) as store:
         _record(store, packet, child, "view_mesh", {}, view, call_id="view-call")
         measurement = _measure(child)
+        if failure.startswith('report_'):
+            from scripts.tool_scripts.bim_agent_replies import compact_reply
+            measurement.update(compact_reply(child, 'measure_mesh_pixels', {}, full_result=measurement, force=True))
         raw = _record(store, packet, child, "measure_mesh_pixels", {"observation": "mesh_001"},
                       {"structuredContent": measurement}, call_id="measure-call")
+        captured = next(e.payload.raw_result for e in store.events if e.payload.event_type == 'tool_execution'
+                        and e.payload.call_id == 'measure-call')
+        before = copy.deepcopy(store.resolve(captured))
         call_id = "measure-call"
         if failure == "unknown":
             call_id = "other-worker-call"
@@ -208,11 +224,22 @@ def test_full_measurement_read_rejects_unverified_evidence(prepared, failure):
                 full_arguments=arguments, repeatability="read_only", outcome="failed" if failure == "failed" else "succeeded",
                 raw_result=store.capture(raw, force_blob=True), shown_result=store.capture(raw, force_blob=True),
                 invocation_event_id=intent.event_id))
+        elif failure.startswith('report_'):
+            report = child / measurement['details_file']
+            # A valid same-name parent report must not hide child corruption.
+            parent_report = parent / measurement['details_file']
+            parent_report.parent.mkdir(exist_ok=True)
+            parent_report.write_bytes(report.read_bytes())
+            if failure == 'report_missing':
+                report.unlink()
+            else:
+                report.write_bytes(report.read_bytes() + b' ')
         else:
             path = child / "mesh_observations/mesh_001.json"
             path.write_bytes(path.read_bytes() + b" ")
         with pytest.raises(ValueError):
             mesh_worker_measurements([call_id], packet, store, child)
+        assert store.resolve(captured) == before
 
 
 def test_full_read_does_not_require_completed_answer_and_is_bounded(prepared):
@@ -222,7 +249,9 @@ def test_full_read_does_not_require_completed_answer_and_is_bounded(prepared):
         full = _measure(child)
         _record(store, packet, child, "measure_mesh_pixels", {"observation": "mesh_001"},
                 {"structuredContent": full}, call_id="measure-call")
-        assert mesh_worker_measurements(["measure-call"], packet, store, child)[0]["result"] == full
+        complete = mesh_worker_measurements(["measure-call"], packet, store, child)[0]
+        assert complete['result'] == full
+        assert complete['result_detail'] == 'journal_tool_result'
         for selection in (["measure-call"] * 2, ["a", "b", "c", "d"], [""], "measure-call"):
             with pytest.raises(ValueError):
                 mesh_worker_measurements(selection, packet, store, child)
