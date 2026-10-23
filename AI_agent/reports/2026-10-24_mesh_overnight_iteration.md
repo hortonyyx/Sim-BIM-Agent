@@ -57,6 +57,16 @@
 
 `delegation-design`早期方案写“人工参考/人工核验”不准确，实际由独立Codex子agent建立视觉参考，主控另看图核对，没有用户人工标注。原盲参考数值和封印保持；`reference-provenance-correction.json`（v1，SHA256 `d2f32042d01d1d9ae049090719732851c055c09baac8daba571370673c6fc7a8`）追加更正，新run seal必须纳入。Codex开发/审阅/协调推理开销未测，记unknown，不能填0或声称已计完整主控/人工成本。真实worker、脚本parent、准备和独立核验的费用边界分别说明。
 
+## 直接量测回执已集成，窄验收待启动
+
+量测源码 `af7186e6`（隔离原提交 `e0db9299`）已合入，登记 **runtime42/domain143**。完整数字和三角面证据仍留在 raw/journal 与内容寻址报告，模型默认收到保留全部数值、方向、有效性及 caveat 的摘要；需要细部时使用已有 report JSON pointer。缺少历史 PNG 不妨碍已有数值读取，缺图明确标注；子任务完整报告仍限定自身目录。没有修改量测算法、候选、worker canonical 或停止条件。
+
+86项唯一实现定向检查通过；独立 actual-MCP/native smoke 5通过/6.14秒、32检查全真，另报告目录写失败反例1通过/6.16秒，无阻断。不是真实模型结果。独审与源码hash见外部 `direct-measurement-acceptance/INDEPENDENT-PRODUCT-REVIEW.md`。
+
+六条旧回执用正式 hook 反事实重放：shown字符125,103→49,082，其中也包含JSON紧凑排版收益；统一排版后净减少41.21%，按原请求出现次数加权少335,238字符。六条完整报告/分页/pointer均等值，原证据不变；补的snapshot从终态原文件重建，不能倒称历史调用时已验真。不是token/费用/耗时实测。见外部 `analysis/FORMAL-HISTORY-MEASUREMENT-PROJECTION.md`。
+
+接下来仅该版本运行 `direct-measurement-acceptance/` 的普通单parent Sol/high窄验收，6请求/8工具/300秒上限，一次量测后局部triangle pointer读回。最终源码/HEAD封印后才启动；终态与独立语义以外部controller/audit为准。规整定位器继续隔离审阅，通过后另登记，不阻塞这一独立验收。
+
 ## 当前未完成
 
 四腿独立语义已复核通过：两次识别Miele/BRICK LANE/Bicycle，两次均为6条完整可见窗带，无越界推断；6个真实native developer提示均已消歧、图像字节一致，原1223文件hash不变。见 `evaluation/facade/INDEPENDENT-VISUAL-AND-PROMPT-REVIEW.md`。
