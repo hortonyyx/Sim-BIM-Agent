@@ -84,8 +84,43 @@ def _rows(owner, field):
     return enumerate(value) if isinstance(value, list) else ()
 
 
+def _source_ref_diagnostics(row, path, *, model=None, validate_value=True):
+    """Check the declaration's own refs, before instance refs are appended.
+
+    Compact declarations use the compiler's strict list contract. Direct
+    connections use the selected source field, including its coercion rules.
+    Neither contract inherits missing refs from a floor or patch operation.
+    """
+    if not isinstance(row, dict):
+        return []
+    path = (*path, 'source_refs')
+    if 'source_refs' not in row:
+        return [dict(code='missing_field', pointer=_pointer(path),
+                     message='Field required', required_fields=['source_refs'])]
+    if not validate_value:
+        return []
+    if model is None:
+        from src.agent.geometry.parametric_proposal import strings
+        try:
+            strings(row['source_refs'], True)
+        except ValueError as error:
+            return [dict(code='invalid_field', pointer=_pointer(path), message=str(error))]
+    else:
+        try:
+            refs = _field_adapter(model, 'source_refs').validate_python(row['source_refs'])
+        except ValidationError as error:
+            return [dict(code='invalid_field', pointer=_pointer((*path, *item['loc'])),
+                         message=item['msg'])
+                    for item in error.errors(include_input=False, include_url=False)]
+        # Both formal opening models apply this after their field validation.
+        if not all(ref.strip() for ref in refs):
+            return [dict(code='invalid_field', pointer=_pointer(path),
+                         message='opening source references must not be blank')]
+    return []
+
+
 def parametric_field_diagnostics(plan) -> list[dict]:
-    """Collect independent kind/state and role-evidence errors without mutation.
+    """Collect independent opening, source-ref and role-evidence field errors.
 
     An empty list is not a validity or fidelity verdict. This function can run
     before geometry regularization, including when primitive expansion or ring
@@ -127,6 +162,7 @@ def parametric_field_diagnostics(plan) -> list[dict]:
             continue
         base = ('templates', name)
         for index, space in _rows(template, 'spaces'):
+            diagnostics.extend(_source_ref_diagnostics(space, (*base, 'spaces', index)))
             if not isinstance(space, dict) or 'role_evidence' not in space:
                 continue
             path = (*base, 'spaces', index, 'role_evidence')
@@ -149,13 +185,19 @@ def parametric_field_diagnostics(plan) -> list[dict]:
                     diagnostics.append(dict(code='role_evidence_mismatch',
                         pointer=_pointer((*path, 'role')), message=str(error),
                         related_pointers=[_pointer((*base, 'spaces', index, 'role'))]))
-        for field in ('opening_rows', 'doors'):
+        for field in ('opening_rows', 'doors', 'window_rows'):
             # opening_rows is unsupported in schema 2; retain that compiler error.
             if field == 'opening_rows' and opening_model is WallOpening:
                 continue
             for index, row in _rows(template, field):
-                opening_fields(row, (*base, field, index), required_kind=(
-                    field == 'opening_rows' and 'kind' in OPENING_ROW_REQUIRED_FIELDS))
+                path = (*base, field, index)
+                if field != 'window_rows':
+                    opening_fields(row, path, required_kind=(
+                        field == 'opening_rows' and 'kind' in OPENING_ROW_REQUIRED_FIELDS))
+                # A window row with no spans emits nothing. The compiler still
+                # requires the key, but does not evaluate its value in that case.
+                emits = field != 'window_rows' or not isinstance(row, dict) or bool(row.get('spans'))
+                diagnostics.extend(_source_ref_diagnostics(row, path, validate_value=emits))
     for field in ('connections', 'core_connections'):
         for index, row in _rows(plan, field):
             if field == 'core_connections' and isinstance(row, dict):
@@ -167,4 +209,6 @@ def parametric_field_diagnostics(plan) -> list[dict]:
                         allowed_values=list(allowed)))
             else:
                 opening_fields(row, (field, index), required_kind=opening_model.model_fields['kind'].is_required())
+            diagnostics.extend(_source_ref_diagnostics(row, (field, index),
+                model=opening_model if field == 'connections' else None))
     return diagnostics
