@@ -57,7 +57,7 @@
 
 `delegation-design`早期方案写“人工参考/人工核验”不准确，实际由独立Codex子agent建立视觉参考，主控另看图核对，没有用户人工标注。原盲参考数值和封印保持；`reference-provenance-correction.json`（v1，SHA256 `d2f32042d01d1d9ae049090719732851c055c09baac8daba571370673c6fc7a8`）追加更正，新run seal必须纳入。Codex开发/审阅/协调推理开销未测，记unknown，不能填0或声称已计完整主控/人工成本。真实worker、脚本parent、准备和独立核验的费用边界分别说明。
 
-## 直接量测回执已集成，窄验收待启动
+## 直接量测回执已集成并通过真实窄验收
 
 量测源码 `af7186e6`（隔离原提交 `e0db9299`）已合入，登记 **runtime42/domain143**。完整数字和三角面证据仍留在 raw/journal 与内容寻址报告，模型默认收到保留全部数值、方向、有效性及 caveat 的摘要；需要细部时使用已有 report JSON pointer。缺少历史 PNG 不妨碍已有数值读取，缺图明确标注；子任务完整报告仍限定自身目录。没有修改量测算法、候选、worker canonical 或停止条件。
 
@@ -65,10 +65,22 @@
 
 六条旧回执用正式 hook 反事实重放：shown字符125,103→49,082，其中也包含JSON紧凑排版收益；统一排版后净减少41.21%，按原请求出现次数加权少335,238字符。六条完整报告/分页/pointer均等值，原证据不变；补的snapshot从终态原文件重建，不能倒称历史调用时已验真。不是token/费用/耗时实测。见外部 `analysis/FORMAL-HISTORY-MEASUREMENT-PROJECTION.md`。
 
-接下来仅该版本运行 `direct-measurement-acceptance/` 的普通单parent Sol/high窄验收，6请求/8工具/300秒上限，一次量测后局部triangle pointer读回。最终源码/HEAD封印后才启动；终态与独立语义以外部controller/audit为准。规整定位器继续隔离审阅，通过后另登记，不阻塞这一独立验收。
+冻结 `c543c7a7`/domain143 的普通单parent Sol/high窄验收已完成：37.555865秒（含启动8.723814秒，另准备1.162072秒），3真实请求/2工具/6,563实报tokens。6请求/8工具/300秒上限内，一次量测后按实际报告入口读取 `/queries/0/triangle_surface_evidence`，没有worker、重试或格式修补。27协议项与17独审项全真；最终3.1899948120124404m等于两个实际XYZ的距离，三角面13字段逐值一致，报告/子树hash区分正确，161原run文件hash未变。原seal `7dfebca269e77243de3cd7d6ec1720997d1457d5ee3e7381c04a1e2974771584`及输入完整性已通过，源码冻结解除。证据在外部 `direct-measurement-acceptance/REAL-SEMANTIC-REVIEW.md`；这证明指导性数值协议可用，不是整楼质量、自主调度或用时降幅。规整定位器继续隔离审阅，通过后另登记。
+
+## 规整共享角点诊断已集成，原输入整案待验收
+
+最终源码 `1cc8ce00`（隔离受审 `1e6c14d3`）登记 **runtime42/domain144**。原支持线独立量化仍保持；新增定位在写 adopted/candidate 之前，检查同模板实质共享角点附近是否出现 source 原数值谓词同样拒绝的缺失/越界/重叠，聚合坐标、frame、声明路径与完整报告入口。共线冗余点和现有数值容差内的薄楔不因此拒绝。已有原模板平面谓词需先通过，避免把原始输入缺口归因规整。
+
+该定位限于可由局部模板证明的直棱柱情形：含vertical_sections或任何实际实例显式spanning_space_ids的模板记not_assessed，仍走原完整source/topology门；未用模板不触发。通用source入口保留原跨层身份并向内部定位器传递组成上下文。没有新公开规整策略、自动焊接/填缝、放宽阈值或默认移动锚点。
+
+最终实现150项通过/13.05秒；独立新增17项及3反例共20通过/3.12秒（有重叠，不相加）。旧C01定位4处、C02定位1处，C03完整adopted与历史逐值一致；正式MCP失败前无candidate/adopted副作用，原seed/draft保持，完整audit可通过已有report读回。默认摘要C01为6446B、C02为2445B。独审无阻断，证据在外部 `analysis/REGULARIZATION-INDEPENDENT-REVIEW.md` 和 `regularization-junction-cause.md`。尚未证明模型据此修复更快。
+
+集成只在test_groups新增条目处发生内容冲突，已同时保留两个新模块。期间误对尚未完成的cherry-pick做了一次未发布登记；未用其启动任何模型、未提交/推送，原registry已按登记前副本逐字恢复，再以最终受审源码重新登记。错误尝试仅保留外部审计副本；最终42条runtime、143条历史domain及aliases均逐值不变，新domain144核验通过。
+
+原输入Lee002在 `lee-acceptance-next/` 已离线prepare，单次Sol/high、48模型/240工具、无额外墙钟/token上限、worker8和原scope；将基于最终HEAD新封印后启动。评价在 `evaluation/lee-next/`：原9×16×16射线/四方口径不变，上一轮001另作逐对比较。新run未产任何质量结论。三空间合成修复仅保留备用设计，不为增加次数自动启动。
 
 ## 当前未完成
 
 四腿独立语义已复核通过：两次识别Miele/BRICK LANE/Bicycle，两次均为6条完整可见窗带，无越界推断；6个真实native developer提示均已消歧、图像字节一致，原1223文件hash不变。见 `evaluation/facade/INDEPENDENT-VISUAL-AND-PROMPT-REVIEW.md`。
 
-新增两项隔离实现：`D:/Sim-BIM-Agent/worktrees/mesh-measurement-replies-20261024`用于直接量测纯shown投影及完整报告读取；`D:/Sim-BIM-Agent/worktrees/mesh-regularization-20261024`用于规整后共享角点分裂的原子拒绝与可行动反馈，不自动改变方向/锚点或填缝。主库仍54d1255e的产品源码。量测方案见外部analysis/direct-measurement-design.md，完整raw、数字query列表和workercanonical不变，不新增API、不要求例行重读。下一组单parent Sol窄验收在独立direct-measurement-acceptance准备，6请求/8工具/300秒上限、一次量测后局部报告pointer读回，未发新调用。生产异构/异步调度和交付档位仍未实施。未更新桌面；`.playwright-cli/`原有资料保留。
+两项隔离实现均已独审并合入；domain143量测真实窄验收通过，domain144下一轮Lee002待最终封印。另在独立 `delegation-boundary/` 离线准备一题自然遮挡的立面裁图，检验可见图标与不完整文字的unknown边界，拟最多一次Sol回答、0子工具、0修格式/重试；截至本记录未启动。参考是独立Codex判断，未由用户人工标注。生产异构/异步调度和交付档位仍未实施。未更新桌面；`.playwright-cli/`原有资料保留。

@@ -1,5 +1,12 @@
 # 当前任务
 
+## 2026-10-24 domain144 原输入复验
+
+- runtime42/domain144包含已独审的量测shown摘要/完整报告与共享角点原子定位；150项规整实现和20项独审检查通过（有重叠）。source判据不变，sections/spanning不由新增局部定位推断。
+- domain143真实量测Sol窄验收已完：37.56秒/3请求/2工具/6563tokens，27协议+17独审全真。
+- 下一步新封印原输入Lee002一次完整验收，外部`lee-acceptance-next/`与`evaluation/lee-next/`已准备；自然遮挡ROI小探索仅离线准备。无档位/生产异构调度/桌面更新。
+- 唯一当前交接：[夜间迭代与验收](../reports/2026-10-24_mesh_overnight_iteration.md)。09:00汇报，实际状态见外部handoff/controller。以下为历史。
+
 ## 2026-10-24 直接量测回执验收
 
 - 已集成`af7186e6`并登记runtime42/domain143；86项唯一实现检查与独立实际MCP离线验证通过。默认摘要保留数值/来源/限制，完整raw和报告可读回，不改量测算法或档位。
