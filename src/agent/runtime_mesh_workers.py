@@ -47,8 +47,12 @@ view_mesh_section call ID for mesh_section evidence (section_NNN). Section cuts
 are original surface intersections, not room plans. Comparison bands are sampled
 same-ray depth residuals, not texture-window recognition or fidelity approval.
 Never present freely written coordinates as tool measurements.
-Before directly describing auxiliary PNG evidence, call view_image (optionally
-with box). Admission alone does not establish that you have viewed an image.
+Before directly describing auxiliary PNG evidence, use an actual image supplied
+in this request (packet.input_views) or call view_image (optionally with box).
+Admission alone does not establish that you have viewed an image. Prefetched
+view_NNNN crops are already supplied; do not reread solely to establish delivery.
+For these crops cite the admitted PNG filename and box_pixels in ORIGINAL image
+coordinates within the supplied crop, never coordinates local to the crop.
 You may return only uncertainty when the question cannot be established.
 Respect task_limits and remaining root allowance; your task creates no budget.
 Reserve a model response for the structured answer. Once the bounded question has
@@ -86,13 +90,16 @@ _TASK_SCHEMA = {"type": "object", "additionalProperties": False,
         "notes": {"type": "array", "items": {"type": "string"}},
         "candidate": {"type": ["string", "null"]},
         "observation_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": True},
+        "image_view_ids": {"type": "array", "maxItems": 3, "uniqueItems": True,
+            "items": {"type": "string", "pattern": "^view_[0-9]+$"},
+            "description": "Existing parent view_image view IDs. Their exact returned crops are supplied in the first worker request; cite the admitted PNG filename and ORIGINAL pixels. This avoids another worker read round."},
         "budget": _BUDGET_SCHEMA}, "required": ["task_id", "question", "budget"]}
 
 EXTRA_TOOLS = [
-    {"name": "delegate_mesh_workers", "description": "Ask any needed read-only mesh questions concurrently and wait for this batch. All workers use the coordinator's configured model and shared root budget. Only supplied tasks run; using workers is optional. Each task needs a unique stable ID and explicit model/tool allowance. Optional candidate is a frozen read-only source snapshot; observation_ids reuse parent mesh views. All admitted auxiliary inputs and declarations remain available. Reusing identical completed IDs reads their saved results; changed arguments/configuration/evidence are rejected. Null seconds/tokens add no child limit beyond root constraints. budget.tokens is a total input-plus-output allowance across requests, not an output cap. Inspect mesh_worker_state for the inherited output allowance; infeasible new tasks are rejected before input freezing and produce no observation evidence. Workers cannot modify or finish the parent BIM.",
+    {"name": "delegate_mesh_workers", "description": "Ask any needed read-only mesh questions concurrently and wait for this batch. All workers use the coordinator's configured model and shared root budget. Only supplied tasks run; using workers is optional. Each task needs a unique stable ID and explicit model/tool allowance. Optional candidate is a frozen read-only source snapshot; observation_ids reuse parent mesh views; image_view_ids prefetch exact parent view_image crops into the first request. This tool waits for the batch, so only delegate when the expected saved work justifies that wait. All admitted auxiliary inputs and declarations remain available. Reusing identical completed IDs reads their saved results; changed arguments/configuration/evidence are rejected. Null seconds/tokens add no child limit beyond root constraints. budget.tokens is a total input-plus-output allowance across requests, not an output cap. Inspect mesh_worker_state for the inherited output allowance; infeasible new tasks are rejected before input freezing and produce no observation evidence. Workers cannot modify or finish the parent BIM.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
          "tasks": {"type": "array", "minItems": 1, "items": _TASK_SCHEMA}}, "required": ["tasks"]}},
-    {"name": "read_mesh_worker", "description": "Read a saved worker result and its frozen input/source basis. Default results contain compact measurement summaries. Optional measurement_call_ids return up to 3 selected full verified measurements, including from incomplete workers; IDs come from computed_measurement.tool_call_id or evidence_catalog.measurements. Optional view_ids return actual verified PNGs cited or observed by that worker (mesh_NNN, section_NNN, overlay_NNN or admitted image names). The coordinator judges whether snapshot advice applies to its current candidate; nothing is applied automatically.",
+    {"name": "read_mesh_worker", "description": "Read a saved worker result and its frozen input/source basis. Default results contain compact measurement summaries. Optional measurement_call_ids return up to 3 selected full verified measurements, including from incomplete workers; IDs come from computed_measurement.tool_call_id or evidence_catalog.measurements. Optional view_ids return actual verified PNGs cited or observed by that worker (mesh_NNN, section_NNN, overlay_NNN, prefetched view_NNNN or admitted image names). The coordinator judges whether snapshot advice applies to its current candidate; nothing is applied automatically.",
      "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
          "task_id": {"type": "string", "minLength": 1},
          "view_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": True},
@@ -335,7 +342,8 @@ class MeshWorkerTools:
         if record["configuration"] != self._configuration():
             raise ValueError("worker configuration changed; use the original configuration or a new run")
         from src.agent.runtime_mesh_evidence import verify_mesh_worker_packet
-        verify_mesh_worker_packet(record["packet"], self.run_directory, child.task_directory / "bim")
+        verify_mesh_worker_packet(record["packet"], self.run_directory, child.task_directory / "bim",
+                                  parent_store=self.store)
         return record
 
     async def _dispatch(self, task):
@@ -378,7 +386,8 @@ class MeshWorkerTools:
                       "time_budget_seconds": deadline - now if deadline is not None else None}
             packet = prepare_mesh_worker_packet(self.run_directory, child.task_directory / "bim",
                 task_id=task["task_id"], question=task["question"], notes=task.get("notes", ()),
-                candidate=task.get("candidate"), observation_ids=task.get("observation_ids", ()), timing=timing)
+                candidate=task.get("candidate"), observation_ids=task.get("observation_ids", ()), timing=timing,
+                image_view_ids=task.get("image_view_ids", ()), parent_store=self.store)
             record = {"task": task, "configuration": self._configuration(), "packet": packet, "timing": timing}
             # Admission belongs to the coordinator's in-flight operation. The
             # child journal stays empty until its own Runtime starts normally.
@@ -432,6 +441,7 @@ class MeshWorkerTools:
             versions = make_versions(child, root=self.root, prompt=WORKER_GUIDANCE, tools=specs,
                 parameters=self.parameters, route=self.route,
                 code_paths=("src/agent/runtime_mesh_workers.py", "src/agent/runtime_mesh_evidence.py",
+                            "src/agent/input_image_view.py", "src/agent/runtime_mesh_image_views.py",
                             "src/agent/runtime_tools.py", "src/agent/bim_inputs.py", "src/agent/geometry", "scripts/tool_scripts"))
             adapter = self.adapter_factory(child.task_id, child)
             if inspect.isawaitable(adapter):
@@ -457,11 +467,16 @@ class MeshWorkerTools:
             payload = mesh_worker_task_payload(record["packet"], limits)
             content = [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]
             originals = {}
-            for block in mesh_worker_view_blocks(record["task"].get("observation_ids", ()),
+            crop_sources = {view["view"]["returned_png_sha256"]: view["source_image_file"]
+                            for view in record["packet"].get("input_views", {}).values()}
+            initial_views = [*record["task"].get("observation_ids", ()), *record["task"].get("image_view_ids", ())]
+            for block in mesh_worker_view_blocks(initial_views,
                     record["packet"], child, child_run):
                 if block["type"] == "image":
                     raw = base64.b64decode(block["data"], validate=True)
-                    originals[hashlib.sha256(raw).hexdigest()] = child.put_bytes(raw, block["mimeType"])
+                    digest = hashlib.sha256(raw).hexdigest()
+                    original = (child_run / crop_sources[digest]).read_bytes() if digest in crop_sources else raw
+                    originals[digest] = child.put_bytes(original, block["mimeType"])
                     content.append({"type": "image_url", "image_url": {
                         "url": "data:" + block["mimeType"] + ";base64," + block["data"]}})
                 else:
@@ -593,6 +608,17 @@ class MeshWorkerTools:
             if digest != preview["returned_png_sha256"] or digest != preview["file_sha256"][preview["image_file"]]:
                 raise ValueError("worker view bytes changed after read")
             size = preview["resolution_px"]
+            if preview.get("origin") == "prefetched_auxiliary_view":
+                source = (child_run / preview["source_image_file"]).resolve()
+                if (not source.is_relative_to(child_run.resolve())
+                        or hashlib.sha256(source.read_bytes()).hexdigest() != preview["source_image_sha256"]):
+                    raise ValueError("prefetched worker image source changed")
+                origins[digest] = {"view_id": preview["view_id"], "original_path": str(source),
+                    "original_sha256": preview["source_image_sha256"], "sent_sha256": digest,
+                    "mime_type": "image/png", "box_original_pixels": preview["view"]["box_original_pixels"],
+                    "original_pixels_per_returned_pixel": preview["view"]["original_pixels_per_returned_pixel"],
+                    "raw_metadata": preview, "origin_status": "verified_worker_input_crop_not_quality_acceptance"}
+                continue
             origins[digest] = {"view_id": preview["view_id"], "original_path": str(path),
                 "original_sha256": digest, "sent_sha256": digest, "mime_type": "image/png",
                 "box_original_pixels": [0, 0, size["width"], size["height"]],

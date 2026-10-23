@@ -14,6 +14,7 @@ import math
 from pathlib import Path
 import re
 import shutil
+import time
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -167,7 +168,7 @@ def _parent_inputs(parent_run, candidate, observations):
     return manifest, snapshot, evidence, {name: _sha(_path(parent_run, name)) for name in paths}
 
 
-def _request(task_id, question, notes, candidate, observation_ids, timing):
+def _request(task_id, question, notes, candidate, observation_ids, timing, image_view_ids=()):
     _id(task_id, r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", "worker task ID")
     if not isinstance(question, str) or not question.strip():
         raise ValueError("worker question must be nonempty")
@@ -180,6 +181,12 @@ def _request(task_id, question, notes, candidate, observation_ids, timing):
         _id(observation, r"(?:mesh|section)_\d+", "mesh observation or section ID")
     if len(set(observations)) != len(observations):
         raise ValueError("worker observations must be distinct")
+    if not isinstance(image_view_ids, (tuple, list)) or len(image_view_ids) > 3:
+        raise ValueError("supply at most 3 auxiliary image view IDs")
+    for identity in image_view_ids:
+        _id(identity, r"view_\d+", "auxiliary image view ID")
+    if len(set(image_view_ids)) != len(image_view_ids):
+        raise ValueError("auxiliary image views must be distinct")
     if candidate is not None:
         _id(candidate, r"candidate_\d+|seed", "candidate ID")
     timing = {} if timing is None else dict(timing)
@@ -190,26 +197,39 @@ def _request(task_id, question, notes, candidate, observation_ids, timing):
            or not math.isfinite(value) or value < 0)) for key, value in timing.items()):
         raise ValueError("mesh worker timing must contain finite nonnegative numbers")
     return {"task_id": task_id, "question": question, "notes": list(notes), "candidate": candidate,
-            "observation_ids": observations, "timing": timing}
+            "observation_ids": observations, "timing": timing,
+            **({"image_view_ids": list(image_view_ids)} if image_view_ids else {})}
 
 
 def prepare_mesh_worker_packet(parent_run, child_run, *, task_id, question, notes=(),
-                               candidate=None, observation_ids=(), timing=None):
+                               candidate=None, observation_ids=(), timing=None, image_view_ids=(), parent_store=None):
     """Copy only admitted assets and one optional source snapshot; resume is immutable."""
     parent_run, child_run = Path(parent_run).resolve(), Path(child_run).resolve()
     if child_run == parent_run or parent_run.is_relative_to(child_run):
         raise ValueError("worker workspace must be separate from its parent")
-    request = _request(task_id, question, notes, candidate, observation_ids, timing)
+    request = _request(task_id, question, notes, candidate, observation_ids, timing, image_view_ids)
     packet_path = _path(child_run, "mesh_worker_packet.json")
     if packet_path.exists():
         packet = _json(packet_path)
         if packet.get("request") != request:
             raise ValueError("worker task input or timing changed on resume")
-        verify_mesh_worker_packet(packet, parent_run, child_run)
+        verify_mesh_worker_packet(packet, parent_run, child_run, parent_store=parent_store)
         return packet
     if child_run.exists() and any(child_run.iterdir()):
         raise ValueError("new mesh worker workspace must be empty")
     manifest, snapshot, observations, files = _parent_inputs(parent_run, candidate, request["observation_ids"])
+    from src.agent.runtime_mesh_image_views import prepare_image_views, bind_parent_receipts
+    view_started = time.perf_counter()
+    input_views, view_files, pictures = prepare_image_views(parent_run, image_view_ids, manifest)
+    # The runtime's original-image map is keyed by sent PNG hash. Do not let a
+    # visually identical mesh view silently inherit an auxiliary image origin.
+    for view in input_views.values():
+        sent_sha = view["view"]["returned_png_sha256"]
+        if sent_sha != view["source_image_sha256"] and any(
+                row["file_sha256"][row["image_file"]] == sent_sha for row in observations.values()):
+            raise ValueError("identical mesh and auxiliary crop bytes need separate worker tasks")
+    bind_parent_receipts(parent_store, input_views)
+    files.update(view_files)
     parent_manifest_sha = _sha(_path(parent_run, "inputs.json"))
     child_run.mkdir(parents=True, exist_ok=True)
     for relative, digest in files.items():
@@ -218,6 +238,10 @@ def prepare_mesh_worker_packet(parent_run, child_run, *, task_id, question, note
         shutil.copyfile(_path(parent_run, relative), target)
         if _sha(target) != digest:
             raise ValueError("worker input changed while copying")
+    for relative, png in pictures.items():
+        target = _path(child_run, relative)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(png)
     child_manifest = {key: copy.deepcopy(manifest[key]) for key in
         ("images", "image_kind", "mesh_input", "building_input", "plan_recovery",
          "architectural_modelling_policy", "vertical_continuity_policy") if key in manifest}
@@ -231,9 +255,14 @@ def prepare_mesh_worker_packet(parent_run, child_run, *, task_id, question, note
                   "inputs.json": _sha(_path(child_run, "inputs.json"))},
               "observations": observations, "image_names": sorted(manifest.get("images", {})),
               "fidelity": "not_evaluated"}
+    if input_views:
+        packet["input_views"] = input_views
+        packet["input_view_preparation_seconds"] = time.perf_counter() - view_started
+        packet["child_file_sha256"].update({name: hashlib.sha256(png).hexdigest()
+                                           for name, png in pictures.items()})
     packet["packet_sha256"] = _digest(packet)
     packet_path.write_bytes(json_bytes(packet))
-    verify_mesh_worker_packet(packet, parent_run, child_run)
+    verify_mesh_worker_packet(packet, parent_run, child_run, parent_store=parent_store)
     return packet
 
 
@@ -248,14 +277,21 @@ def _verify_child(packet, child_run):
             raise ValueError("frozen mesh worker input changed: " + relative)
 
 
-def verify_mesh_worker_packet(packet, parent_run, child_run):
+def verify_mesh_worker_packet(packet, parent_run, child_run, *, parent_store=None):
     """Verify current admitted inputs and the selected candidate, not other candidates."""
     _verify_child(packet, child_run)
     if (packet["parent_run"] != str(Path(parent_run).resolve())
             or _sha(_path(parent_run, "inputs.json")) != packet["input_manifest_sha256"]):
         raise ValueError("parent mesh input manifest changed")
     request = packet["request"]
-    _, snapshot, observations, files = _parent_inputs(parent_run, request["candidate"], request["observation_ids"])
+    manifest, snapshot, observations, files = _parent_inputs(parent_run, request["candidate"], request["observation_ids"])
+    if request.get("image_view_ids"):
+        from src.agent.runtime_mesh_image_views import prepare_image_views, bind_parent_receipts
+        views, view_files, _ = prepare_image_views(parent_run, request["image_view_ids"], manifest)
+        bind_parent_receipts(parent_store, views)
+        files.update(view_files)
+        if views != packet.get("input_views"):
+            raise ValueError("prefetched auxiliary views changed")
     if files != packet["parent_file_sha256"] or snapshot != packet["source_snapshot"] or observations != packet["observations"]:
         raise ValueError("parent mesh worker evidence changed")
 
@@ -425,6 +461,8 @@ def _verified_reference(packet, store, child_run, kind, identity, *, allow_admit
     if store.task_id != packet["request"]["task_id"]:
         raise ValueError("mesh evidence belongs to a different worker task")
     actual = _evidence(packet, child_run, kind, identity)
+    from src.agent.runtime_mesh_image_views import prefetched_image_reference
+    prefetched = prefetched_image_reference(packet, identity) if kind == "image" else []
     image_views = []
     for event, raw, metadata in _receipts(store).values():
         bound = metadata["mesh_worker_evidence"]
@@ -445,8 +483,9 @@ def _verified_reference(packet, store, child_run, kind, identity, *, allow_admit
                     "original_pixels_per_returned_pixel") if key in metadata}})
             else:
                 return {**actual, **receipt}
-    if image_views:
-        return {**actual, "view_receipts": image_views}
+    if image_views or prefetched:
+        return {**actual, **({"view_receipts": image_views} if image_views else {}),
+                **({"prefetched_views": prefetched} if prefetched else {})}
     if ((kind == "image" and allow_admitted_image)
             or (kind in {"mesh_observation", "mesh_section"} and identity in packet["observations"])):
         return actual
@@ -458,6 +497,7 @@ def mesh_worker_evidence_catalog(packet, store, child_run, *, limit=12):
     _verify_child(packet, child_run)
     receipts = _receipts(store)
     identities = {(row["kind"], identity) for identity, row in packet["observations"].items()}
+    identities.update(("image", row["evidence_id"]) for row in packet.get("input_views", {}).values())
     identities.update((metadata["mesh_worker_evidence"]["kind"], metadata["mesh_worker_evidence"]["id"])
                       for _, _, metadata in receipts.values())
     views, measurements, unavailable = [], [], []
@@ -466,7 +506,9 @@ def mesh_worker_evidence_catalog(packet, store, child_run, *, limit=12):
             reference = _verified_reference(packet, store, child_run, kind, identity)
             views.append({"evidence_kind": kind, "evidence_id": identity,
                           "reference_sha256": _digest(reference), "origin": reference.get("origin"),
-                          "read_view_id": identity})
+                          "read_view_id": identity,
+                          **({"prefetched_view_ids": [row["read_view_id"] for row in reference["prefetched_views"]]}
+                             if reference.get("prefetched_views") else {})})
         except (ValueError, OSError, KeyError) as error:
             unavailable.append({"evidence_kind": kind, "evidence_id": identity, "reason": str(error)[:240]})
     for call_id, (event, raw, metadata) in receipts.items():
@@ -553,6 +595,11 @@ def hydrate_mesh_worker_answer(answer, packet, store, child_run):
             resolution = reference["resolution_px"]
             if not (0 <= x0 < x1 <= resolution["width"] and 0 <= y0 < y1 <= resolution["height"]):
                 raise ValueError("worker observation box exceeds its evidence image")
+            if reference.get("prefetched_views"):
+                regions = [view["view"]["box_original_pixels"] for view in
+                           (*reference["prefetched_views"], *reference.get("view_receipts", []))]
+                if not any(a <= x0 < x1 <= c and b <= y0 < y1 <= d for a, b, c, d in regions):
+                    raise ValueError("worker box must use ORIGINAL pixels inside a supplied image view")
         output = {"observation_id": row.observation_id, "statement": row.statement,
                   "statement_status": "model_reported_observation", "evidence": reference,
                   "box_pixels": list(row.box_pixels) if row.box_pixels is not None else None}
@@ -591,6 +638,10 @@ def mesh_worker_view_blocks(view_ids, packet, store, child_run):
     """Return exact admitted or tool-bound PNGs without resolving caller paths."""
     blocks = []
     for identity in view_ids:
+        if re.fullmatch(r"view_\d+", identity):
+            from src.agent.runtime_mesh_image_views import input_view_blocks
+            blocks.extend(input_view_blocks(identity, packet, child_run))
+            continue
         kind = ("mesh_observation" if re.fullmatch(r"mesh_\d+", identity) else
                 "mesh_section" if re.fullmatch(r"section_\d+", identity) else
                 "mesh_overlay" if re.fullmatch(r"overlay_\d+", identity) else "image")

@@ -1446,6 +1446,20 @@ preserve reliable IDs/geometry/evidence and explain each change.
 For every add/replace/remove, include reason and nonempty source_refs, for example
 {"op":"replace","path":"/templates/typical/spaces/0/rect/2","value":6.2,
  "reason":"Correct measured exterior extent","source_refs":["mesh_004 span"]}.
+If an unapplied patch fails before saving a draft, failed_batch gives its id/hash
+and original base arguments. Reuse them with operations_json as
+{"retry_failed_batch":{"id":"failed_patch_001","sha256":"RETURNED_HASH"},
+ "edits":[{"op":"replace","index":18,"operation":{"op":"add","path":"/connections",
+ "value":[],"reason":"Explicitly create the absent field","source_refs":["declared plan"]}}]}.
+Indices are zero-based ORIGINAL batch positions, with at most one edit per index.
+replace supplies one complete operation; remove has only op/index; insert supplies
+one operation before index (the original length appends). No unchanged operations
+need repeating. The whole corrected batch is rerun atomically against the bound base.
+An identical completed retry reads its saved result; an interrupted write is not
+repeated blindly. If expansion already saved a failed draft, patch that draft using
+its returned hash instead; do not confuse that draft with the original batch base.
+Retry mode cannot combine mesh_observations/inferences_json; after saving, use the
+existing overlay_mesh_candidate/record_inference tools for those separate actions.
 Use inspect to find exact JSON Pointer array indices; never guess them. Never resend an
 entire unchanged plan just to move one coordinate. A generic revise_bim candidate
 can diverge from its ancestor's parametric plan: stale_lineage is reference only,

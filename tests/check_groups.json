@@ -1897,6 +1897,18 @@
     "tests/test_vertical_sections_edit_guards.py": {
       "group": "targeted",
       "reason": "Legacy edits and template expansion cannot flatten or leave stale stepped volume declarations"
+    },
+    "tests/test_mesh_worker_input_views.py": {
+      "group": "targeted",
+      "reason": "Exact previously returned auxiliary crops in worker first requests, receipt binding, original pixels and immutable readback"
+    },
+    "tests/test_parametric_validation.py": {
+      "group": "targeted",
+      "reason": "Shared declaration diagnostics aggregate independent field errors without changing geometric acceptance"
+    },
+    "tests/test_parametric_patch_retry.py": {
+      "group": "targeted",
+      "reason": "Failed atomic patch batches preserve intent and allow explicit bounded edits with replay and crash protection"
     }
   }
 }

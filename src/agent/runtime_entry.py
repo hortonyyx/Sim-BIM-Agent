@@ -299,6 +299,7 @@ async def execute(args) -> dict:
                         "src/agent/runtime_tools.py", "scripts/tool_scripts", "src/agent/geometry",
                         "src/agent/runtime_context.py", "src/agent/runtime_behaviour.py",
                         "src/agent/runtime_mesh_workers.py", "src/agent/runtime_mesh_evidence.py",
+                        "src/agent/input_image_view.py", "src/agent/runtime_mesh_image_views.py",
                         "src/agent/runtime_mesh_continuation.py",
                         "src/agent/correction", "src/agent/execution"))
                 # A refused resume must not replace the original run's evidence.

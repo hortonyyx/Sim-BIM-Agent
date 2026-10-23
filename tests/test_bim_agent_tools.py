@@ -1767,7 +1767,10 @@ def test_parametric_function_rejected_patch_is_atomic(tmp_path, failure):
         candidate=first['candidate'], expected_sha=sha)
     assert result['saved_candidate'] is None and result['error']
     assert len(toolkit.calls) == 1
-    assert _parametric_file_hashes(toolkit.run) == before
+    after = _parametric_file_hashes(toolkit.run)
+    assert all(after[name] == digest for name, digest in before.items())
+    assert all(name.startswith('parametric_patch_failures/') for name in after.keys() - before.keys())
+    assert bool(after.keys() - before.keys()) == (failure != 'stale_sha')
 
 
 def test_parametric_function_generic_revision_reports_stale_without_overwriting(tmp_path):

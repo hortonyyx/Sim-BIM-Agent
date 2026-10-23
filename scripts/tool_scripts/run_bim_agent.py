@@ -2146,57 +2146,10 @@ class Toolkit:
 
     def view(self, name, box=None, coordinate_grid=True, display_scale=1.0):
         from mcp.server.fastmcp import Image
-        if (not isinstance(display_scale, (int, float)) or isinstance(display_scale, bool)
-                or not math.isfinite(display_scale)):
-            raise ValueError("display_scale must be a finite number; allowed range is 1 through 8")
-        # GLM sm24 requested 0.7x. Preserve intent within the display-only limits.
-        requested_scale = display_scale
-        display_scale = max(1, min(8, display_scale))
+        from src.agent.input_image_view import render_input_view
         name = self.image_path(name).name
-        with PILImage.open(self.image_path(name)) as raw:
-            pic = raw.convert("RGB")
-            original_size = list(pic.size)
-            region = box or [0, 0, pic.width, pic.height]
-            if box is not None:
-                x0,y0,x1,y1 = box
-                if not (0 <= x0 < x1 <= pic.width and 0 <= y0 < y1 <= pic.height):
-                    raise ValueError("crop outside original image bounds")
-                pic = pic.crop(box)
-            crop_size = pic.size
-            if display_scale == 1:
-                # Preserve the existing default presentation, including its
-                # downsampling behaviour for large full-image views.
-                pic.thumbnail((1600,1600))
-            else:
-                # Calculate the capped target before resizing so a high requested
-                # scale never creates a large temporary bitmap.
-                actual_scale = min(float(display_scale), 1600 / max(crop_size))
-                target_size = tuple(max(1, round(length * actual_scale)) for length in crop_size)
-                pic = pic.resize(target_size, PILImage.Resampling.NEAREST)
-            grid = {"shown": False}
-            if coordinate_grid:
-                pic, grid = coordinate_grid_view(pic, region)
-            data = io.BytesIO(); pic.save(data, "PNG")
-        actual_scale = [pic.width / crop_size[0], pic.height / crop_size[1]]
-        metadata = {"name": name, "image_sha256": digest(self.image_path(name)),
-                    "original_size": original_size, "coordinate_grid": grid,
-                    "box_original_pixels": region, "returned_size": list(pic.size),
-                    "display_scale_requested": requested_scale,
-                    "display_scale_used": display_scale,
-                    "display_scale_actual": actual_scale,
-                    "original_pixels_per_returned_pixel": [
-                        (region[2] - region[0]) / pic.width,
-                        (region[3] - region[1]) / pic.height],
-                    "coordinate_note": ("Grid labels show ORIGINAL pixels. Original pixel = crop origin + returned "
-                                        "pixel * original_pixels_per_returned_pixel. Use ORIGINAL pixels for the next "
-                                        "crop or measurement.")}
-        if requested_scale != display_scale:
-            metadata["display_scale_note"] = f"Requested {requested_scale}x; clamped to allowed [1, 8]: {display_scale}x."
-        if display_scale > 1 and min(actual_scale) < display_scale - 0.05:
-            # run94 asked 1.5-2x for 1100-1500 px strips and got 1.08-1.43x without noticing.
-            metadata["magnification_note"] = (
-                f"Returned images are at most 1600 px on their long side, so this {crop_size[0]}x{crop_size[1]} px "
-                f"box was enlarged only {min(actual_scale):.2f}x; choose a smaller box to magnify more.")
+        png, metadata = render_input_view(self.image_path(name), name=name, box=box,
+                                          coordinate_grid=coordinate_grid, display_scale=display_scale)
         metadata["remaining_seconds"] = self.remaining_seconds()
         # Small immutable view records let callers reuse the actual returned region.
         # Exclusive creation also keeps simultaneous readers from overwriting it.
@@ -2206,7 +2159,7 @@ class Toolkit:
         while True:
             metadata["view_id"] = f"view_{index:04d}"
             metadata["source_reference"] = {"view_id": metadata["view_id"]}
-            metadata["returned_png_sha256"] = hashlib.sha256(data.getvalue()).hexdigest()
+            metadata["returned_png_sha256"] = hashlib.sha256(png).hexdigest()
             path = folder / f"{metadata['view_id']}.json"
             raw = (json.dumps(metadata, ensure_ascii=False, sort_keys=True) + "\n").encode()
             try:
@@ -2217,7 +2170,7 @@ class Toolkit:
                 index += 1
         metadata["view_record_sha256"] = hashlib.sha256(raw).hexdigest()
         self.log("view_image", metadata)
-        return [Image(data=data.getvalue(), format="png"), json.dumps(metadata)]
+        return [Image(data=png, format="png"), json.dumps(metadata)]
 
     def plan_wall_support(self, draft_id, rgb, tolerance=70, radius_pixels=6, minimum_ink_pixels=1):
         """Review exactly one saved declaration; never mutate or approve it."""
@@ -3443,11 +3396,25 @@ def build_tool_server(run: Path, readonly=False, *, enabled_only=False):
             Supply one candidate OR draft and its current plan hash. Operations use
             add/replace/remove/test with JSON Pointer paths, reason and source_refs;
             read get_bim_reference('parametric'). Never silently overwrite source edits.
+            A rejected unapplied batch may return failed_batch. Retry operations_json
+            as {retry_failed_batch:{id,sha256},edits:[{op,index,operation}]} using its
+            original base/hash. Edit op is replace/remove/insert; remove omits operation.
+            Indices are unique original batch positions; insert precedes index.
+            Unchanged operations are retained and the whole corrected batch is checked.
             mesh_observations selects existing cameras for current-source overlays
             returned with this save. inferences_json batches record_inference
             declarations on the new result, not on the base candidate.
             """
-            from scripts.tool_scripts.bim_agent_parametric import patch_parametric
+            from scripts.tool_scripts.bim_agent_parametric import patch_parametric, _failure
+            if mesh_observations or inferences_json:
+                try:
+                    retry_mode = isinstance(json.loads(operations_json), dict)
+                except (ValueError, TypeError):
+                    retry_mode = False
+                if retry_mode:
+                    return candidate_result(_failure(toolkit, "patch_parametric_bim",
+                        "Failed-batch retry cannot combine mesh_observations or inferences_json. "
+                        "Save the retry first; then use overlay_mesh_candidate or record_inference separately."))
             return candidate_result(patch_parametric(toolkit, operations_json, candidate=candidate,
                 draft=draft, expected_sha=expected_plan_sha256),
                 mesh_observations=mesh_observations, inferences_json=inferences_json)

@@ -194,7 +194,9 @@ def test_large_rejected_patch_locates_absent_root_and_preserves_atomicity(tmp_pa
     before = _parametric_file_hashes(toolkit.run)
     refused = patch_parametric(toolkit, json.dumps(operations), candidate=first["candidate"],
                                expected_sha=first["parametric"]["plan_sha256"])
-    assert _parametric_file_hashes(toolkit.run) == before
+    after = _parametric_file_hashes(toolkit.run)
+    assert all(after[name] == digest for name, digest in before.items())
+    assert set(after) - set(before) == {'parametric_patch_failures/failed_patch_001.json'}
     assert len(toolkit.calls) == 1 and refused["save_effects"]["geometry_applied"] is False
     details = refused["error_details"]
     assert details["operation_index"] == 42 and details["index_base"] == 0
@@ -219,7 +221,7 @@ def test_large_rejected_patch_locates_absent_root_and_preserves_atomicity(tmp_pa
     ("/instances/9", "parent_length", 2),
     ("/instances/0/height/value", "parent_type", "scalar"),
 ])
-def test_patch_context_identifies_actual_parent_without_a_new_write(tmp_path, path, field, expected):
+def test_patch_context_identifies_actual_parent_without_a_geometry_write(tmp_path, path, field, expected):
     from tests.test_bim_agent_tools import _parametric_function_op
     toolkit = _ParametricFunctionToolkit(tmp_path / "run")
     first = build_parametric(toolkit, json.dumps(plan()))
@@ -229,7 +231,9 @@ def test_patch_context_identifies_actual_parent_without_a_new_write(tmp_path, pa
     assert result["error_details"][field] == expected
     assert result["error_details"]["path"] == path
     assert result["error_details"]["operation_index"] == 0
-    assert _parametric_file_hashes(toolkit.run) == before
+    after = _parametric_file_hashes(toolkit.run)
+    assert all(after[name] == digest for name, digest in before.items())
+    assert set(after) - set(before) == {'parametric_patch_failures/failed_patch_001.json'}
 
 
 def test_stale_patch_hash_does_not_issue_a_replacement_write_authority(tmp_path):

@@ -148,14 +148,8 @@ def _evidence(row, instance):
 
 
 def _role_evidence(space):
-    if 'role_evidence' not in space:
-        return {}
-    from src.agent.correction.schema import RoomRoleEvidence
-    from src.agent.roles import require_role
-    evidence = RoomRoleEvidence.model_validate(space['role_evidence']).model_dump(mode='json')
-    if require_role(space['role']) != evidence['role']:
-        raise ValueError(f"space {space['id']}: role does not match role_evidence.role")
-    return {'role_evidence': evidence}
+    from src.agent.geometry.parametric_validation import validated_role_evidence
+    return validated_role_evidence(space)
 
 
 def _core_openings(plan, instances, groups, floors, existing):
@@ -187,7 +181,8 @@ def _core_openings(plan, instances, groups, floors, existing):
             raise ValueError(f'{cid}: service instances must be nonempty and unique')
         kind = declaration.get('kind', 'door')
         state = declaration.get('state', 'open' if kind == 'open' else 'unknown')
-        if kind not in ('door', 'open') or state not in ('open', 'closed', 'unknown') or (kind == 'open' and state != 'open'):
+        from src.agent.geometry.parametric_validation import core_connection_field_issues
+        if core_connection_field_issues(kind, state):
             raise ValueError('core connections must be doors or open passages with a valid state')
         points = [declaration['p1'], declaration['p2']]
         if any(not isinstance(point, list) or len(point) != 2 for point in points):
@@ -367,8 +362,9 @@ def expand_parametric_proposal(plan: dict, *, expansion_audit: dict | None = Non
         for row in template.get('opening_rows', []):
             if not simple_polygon:
                 raise ValueError('opening_rows requires source_polygon_v1')
-            fields(row, ('id', 'space', 'p1', 'p2', 'spans', 'z', 'kind', 'source_refs'),
-                   ('other_space', 'state', 'assumptions'))
+            from src.agent.geometry.parametric_validation import (
+                OPENING_ROW_REQUIRED_FIELDS, OPENING_ROW_OPTIONAL_FIELDS)
+            fields(row, OPENING_ROW_REQUIRED_FIELDS, OPENING_ROW_OPTIONAL_FIELDS)
             rid = identifier(row['id'])
             if rid in row_ids:
                 raise ValueError(f'duplicate aperture row {rid}')

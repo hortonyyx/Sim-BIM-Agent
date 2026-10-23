@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 
@@ -188,10 +189,13 @@ def _base(toolkit, candidate, draft):
     return _load((folder / "parametric_plan.json").read_bytes()), state, candidate
 
 
-def _failure(toolkit, action, error, *, state=None, stage="parametric_input", details=None, edit_route=None):
+def _failure(toolkit, action, error, *, state=None, stage="parametric_input", details=None, edit_route=None,
+             failed_batch=None):
     result = saved_result({"status": "error", "error": str(error), "error_stage": stage,
                            "remaining_seconds": toolkit.remaining_seconds()},
-                          audit_written=bool(state))
+                          audit_written=bool(state or failed_batch))
+    if failed_batch:
+        result["failed_batch"] = failed_batch
     if state:
         result.update(draft=state["draft"], plan_sha256=state["plan_sha256"], parametric=state)
         from scripts.tool_scripts.bim_agent_edit_route import draft_edit_route
@@ -278,8 +282,16 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
     if feedback_parent_error:
         state["feedback_parent_unavailable"] = feedback_parent_error
     _write(path.with_suffix(".state.json"), state)
+    field_feedback = {}
     try:
         plan = _load(plan_json)
+        from src.agent.geometry.parametric_validation import parametric_field_diagnostics
+        try:
+            field_diagnostics = parametric_field_diagnostics(plan)
+            if field_diagnostics:
+                field_feedback["field_diagnostics"] = field_diagnostics
+        except (ValueError, TypeError, KeyError) as diagnostic_error:
+            field_feedback["field_diagnostics_unavailable"] = str(diagnostic_error)
         from scripts.tool_scripts.bim_agent_architectural import prepare_parametric_plan
         compiled_plan, regularization = prepare_parametric_plan(toolkit, plan, draft_path=path)
         if regularization is not None:
@@ -294,13 +306,13 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
             state["regularization_failure"] = error.audit
         if isinstance(getattr(error, "audit_reference", None), dict):
             state["regularization_failure_reference"] = error.audit_reference
-        details = None
+        details = field_feedback or None
         if isinstance(getattr(error, "audit", None), dict):
             from scripts.tool_scripts.bim_agent_edit_route import declared_host_feedback
             try:
                 hosts = declared_host_feedback(plan, error.audit)
                 if hosts:
-                    details = {"kind": "parametric_declared_hosts", "host_diagnostics": hosts}
+                    details = {**(details or {}), "kind": "parametric_declared_hosts", "host_diagnostics": hosts}
             except (ValueError, TypeError, KeyError, IndexError):
                 # Supplementary feedback must not mask the original refusal.
                 pass
@@ -318,7 +330,8 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
     except (ValueError, TypeError, KeyError) as error:
         state.update(status="build_rejected", error=str(error))
         _write(path.with_suffix(".state.json"), state)
-        return _failure(toolkit, action, error, state=state, stage="parametric_build")
+        return _failure(toolkit, action, error, state=state, stage="parametric_build",
+                        details=field_feedback or None)
     candidate = result.get("candidate")
     if candidate:
         folder = _candidate(toolkit, candidate)
@@ -353,6 +366,8 @@ def _build(toolkit, plan_json, *, action, base=None, patch=None, parent=None,
     else:
         state["status"] = "build_rejected"
         result["parametric"] = state
+    if field_feedback and (not candidate or result.get("error")):
+        result["error_details"] = {**result.get("error_details", {}), **field_feedback}
     _write(path.with_suffix(".state.json"), state)
     result.update(draft=state["draft"], draft_sha256=state["plan_sha256"])
     if candidate:
@@ -608,11 +623,155 @@ def _apply(plan, operations):
     return value
 
 
+def _digest(value):
+    return hashlib.sha256(_json(value).encode()).hexdigest()
+
+
+def _run_binding(toolkit):
+    return hashlib.sha256(os.path.normcase(str(Path(toolkit.run).resolve())).encode()).hexdigest()
+
+
+def _patch_base(candidate, state, expected_sha):
+    return {"candidate": candidate or None, "draft": state["draft"], "plan_sha256": expected_sha,
+            "source_file_sha256": state.get("source_file_sha256"),
+            "proposal_sha256": state.get("proposal_sha256")}
+
+
+def _save_failed_batch(toolkit, base, operations, error, retry=None):
+    path = _new_path(toolkit, "parametric_patch_failures", "failed_patch")
+    record = {"schema_version": 1, "id": path.stem, "run_binding": _run_binding(toolkit),
+        "status": "rejected_unapplied", "base": base, "operations": operations,
+        "operations_sha256": _digest(operations), "error": str(error),
+        "error_details": error.details, "retry_of": retry}
+    with path.open("x", encoding="utf-8", newline="\n") as stream:
+        stream.write(_json(record) + "\n")
+    reference = {"id": path.stem, "sha256": _sha(path)}
+    selector = {"candidate": base["candidate"]} if base["candidate"] else {"draft": base["draft"]}
+    return {**reference, "status": "rejected_unapplied", "geometry_applied": False,
+        "operation_count": len(operations), "operations_sha256": record["operations_sha256"],
+        "base": base, "retry_tool": "patch_parametric_bim", "retry_arguments": {
+            **selector, "expected_plan_sha256": base["plan_sha256"],
+            "operations_json": _json({"retry_failed_batch": reference, "edits": []})},
+        "edit_contract": "Fill edits with replace/remove/insert at unique original zero-based indices; "
+            "replace/insert require one complete operation. insert precedes index (length appends). "
+            "All unchanged operations are retained, then the full batch is revalidated atomically."}
+
+
+def _retry_batch(toolkit, submitted, base):
+    if set(submitted) != {"retry_failed_batch", "edits"}:
+        raise ValueError("retry object requires exactly retry_failed_batch and edits")
+    reference = submitted["retry_failed_batch"]
+    if (not isinstance(reference, dict) or set(reference) != {"id", "sha256"}
+            or not isinstance(reference["id"], str)
+            or not re.fullmatch(r"failed_patch_[0-9]+", reference["id"])
+            or not isinstance(reference["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", reference["sha256"])):
+        raise ValueError("retry_failed_batch requires the exact returned batch id and sha256")
+    path = _inside(toolkit, Path(toolkit.run) / "parametric_patch_failures" / (reference["id"] + ".json"))
+    if not path.is_file() or _sha(path) != reference["sha256"]:
+        raise ValueError("unknown or changed failed patch batch")
+    record = _load(path.read_bytes())
+    if (not isinstance(record, dict) or record.get("schema_version") != 1 or record.get("id") != reference["id"]
+            or record.get("status") != "rejected_unapplied" or record.get("run_binding") != _run_binding(toolkit)):
+        raise ValueError("failed patch batch does not belong to this run")
+    if record.get("base") != base:
+        raise ValueError("failed patch batch base is stale or differs from the selected plan/source")
+    operations = record["operations"]
+    if (not isinstance(operations, list) or not 1 <= len(operations) <= 1000
+            or record.get("operations_sha256") != _digest(operations)):
+        raise ValueError("failed patch operations changed after rejection")
+    edits = submitted["edits"]
+    if not isinstance(edits, list) or not 1 <= len(edits) <= 1000:
+        raise ValueError("retry edits must be a nonempty array of at most 1000 explicit changes")
+    by_index = {}
+    for edit in edits:
+        if not isinstance(edit, dict):
+            raise ValueError("each retry edit must be an object")
+        op, index = edit.get("op"), edit.get("index")
+        fields = {"op", "index"} | ({"operation"} if op in {"replace", "insert"} else set())
+        if op not in {"replace", "remove", "insert"} or set(edit) != fields:
+            raise ValueError("retry edits support replace/insert with operation, or remove without operation")
+        if type(index) is not int or not 0 <= index < len(operations) + int(op == "insert"):
+            raise ValueError("retry edit index must address an original operation; insert may append at length")
+        if index in by_index:
+            raise ValueError("retry edit indices must be unique; all indices refer to the original failed batch")
+        by_index[index] = edit
+    corrected = []
+    for index in range(len(operations) + 1):
+        edit = by_index.get(index)
+        if edit and edit["op"] in {"replace", "insert"}:
+            corrected.append(copy.deepcopy(edit["operation"]))
+        if index < len(operations) and (not edit or edit["op"] == "insert"):
+            corrected.append(copy.deepcopy(operations[index]))
+    retry = {"failed_batch": reference, "edits": edits,
+             "request_sha256": _digest({"batch": reference, "base": base, "edits": edits})}
+    return corrected, retry, path.with_suffix(".claim.json")
+
+
+def _retry_saved_state(toolkit, claim):
+    """Locate only drafts explicitly bound to this attempt; never infer success."""
+    found = []
+    for path in (Path(toolkit.run) / "parametric_drafts").glob("draft_*.json"):
+        if not _DRAFT.fullmatch(path.name):
+            continue
+        state = _load(path.with_suffix(".state.json").read_bytes()) if path.with_suffix(".state.json").is_file() else {}
+        if isinstance(state, dict) and state.get("patch") == claim["patch"]:
+            state = _draft_state(toolkit, path)
+            if state["plan_sha256"] != claim["new_draft_sha256"]:
+                raise ValueError("retry draft bytes differ from the claimed operation result")
+            if state.get("candidate"):
+                candidate_state = _current_state(toolkit, state["candidate"])
+                if candidate_state is None or candidate_state.get("patch") != claim["patch"]:
+                    raise ValueError("retry candidate no longer binds its claimed patch")
+            found.append(state)
+    if len(found) > 1:
+        raise ValueError("retry attempt has more than one bound draft")
+    return found[0] if found else None
+
+
+def _read_retry(toolkit, action, claim_path, retry, base):
+    claim = _load(claim_path.read_bytes())
+    if (not isinstance(claim, dict) or claim.get("schema_version") != 1
+            or claim.get("run_binding") != _run_binding(toolkit) or claim.get("base") != base):
+        raise ValueError("retry claim run/base binding changed")
+    if claim.get("retry") != retry:
+        raise ValueError("failed batch already entered a different write attempt; use its saved draft/candidate")
+    patch_path = _inside(toolkit, Path(toolkit.run) / claim["patch"]["file"])
+    if _sha(patch_path) != claim["patch"]["sha256"]:
+        raise ValueError("retry patch audit changed")
+    state = _retry_saved_state(toolkit, claim)
+    receipt_path = claim_path.with_suffix(".result.json")
+    if not receipt_path.is_file():
+        result = saved_result({"status": "error", "error":
+            "Prior retry has no completed result receipt; no write was repeated. Inspect its saved draft/candidate.",
+            "error_stage": "parametric_retry_pending", "remaining_seconds": toolkit.remaining_seconds()})
+        result["retry_receipt"] = {"status": "pending", "request_sha256": retry["request_sha256"],
+            "patch": claim["patch"], "saved_state": state, "write_repeated": False}
+        if state:
+            from scripts.tool_scripts.bim_agent_edit_route import draft_edit_route
+            result["edit_route"] = draft_edit_route(toolkit, state["draft"])
+        toolkit.log(action, result)
+        return result
+    receipt = _load(receipt_path.read_bytes())
+    if not isinstance(receipt, dict) or not isinstance(receipt.get("result"), dict):
+        raise ValueError("retry result receipt must contain its saved result")
+    saved = receipt["result"]
+    if (receipt.get("claim_sha256") != _sha(claim_path) or receipt.get("result_sha256") != _digest(saved)
+            or state is None or saved.get("draft") != state["draft"]
+            or saved.get("candidate") != state.get("candidate")):
+        raise ValueError("retry result receipt no longer matches its saved draft/candidate")
+    result = saved_result(copy.deepcopy(saved), candidate=saved.get("saved_candidate"))
+    result["remaining_seconds"] = toolkit.remaining_seconds()
+    result["retry_receipt"] = {"status": "reused", "request_sha256": retry["request_sha256"],
+                               "write_repeated": False}
+    toolkit.log(action, result)
+    return result
+
+
 def patch_parametric(toolkit, operations_json: str, *, candidate: str = "", draft: str = "",
                      expected_sha: str, action="patch_parametric_bim") -> dict:
     if getattr(toolkit, "readonly", False):
         return _failure(toolkit, action, "parametric writes are unavailable in readonly mode")
-    admitted = False
+    admitted, retry, claim_path = False, None, None
     try:
         plan, state, parent = _base(toolkit, candidate, draft)
         if not isinstance(expected_sha, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_sha):
@@ -620,7 +779,12 @@ def patch_parametric(toolkit, operations_json: str, *, candidate: str = "", draf
         if expected_sha != state["plan_sha256"]:
             raise ValueError("stale expected_sha; inspect the intended base before patching")
         admitted = True
+        base = _patch_base(candidate, state, expected_sha)
         operations = _load(operations_json)
+        if isinstance(operations, dict):
+            operations, retry, claim_path = _retry_batch(toolkit, operations, base)
+            if claim_path.exists():
+                return _read_retry(toolkit, action, claim_path, retry, base)
         updated = _apply(plan, operations)
         encoded = _json(updated)
         feedback_parent, feedback_error = _feedback_parent(toolkit, state, parent)
@@ -629,15 +793,38 @@ def patch_parametric(toolkit, operations_json: str, *, candidate: str = "", draf
         if admitted:
             from scripts.tool_scripts.bim_agent_edit_route import candidate_edit_route, draft_edit_route
             route = candidate_edit_route(toolkit, candidate) if candidate else draft_edit_route(toolkit, draft)
-        return _failure(toolkit, action, error, edit_route=route)
-    base = {"candidate": candidate or None, "draft": state["draft"],
-            "plan_sha256": expected_sha,
-            "source_file_sha256": state.get("source_file_sha256"),
-            "proposal_sha256": state.get("proposal_sha256")}
+        failed_batch = _save_failed_batch(toolkit, base, operations, error, retry) if isinstance(error, _PatchError) else None
+        return _failure(toolkit, action, error, edit_route=route, failed_batch=failed_batch)
     record = {"schema_version": 1, "base": base, "operations": operations,
               "new_draft_sha256": hashlib.sha256(encoded.encode()).hexdigest()}
-    path = _new_path(toolkit, "parametric_patches", "patch")
-    _write(path, record)
+    if retry:
+        record["retry"] = retry
+    while True:
+        path = _new_path(toolkit, "parametric_patches", "patch")
+        try:
+            with path.open("x", encoding="utf-8", newline="\n") as stream:
+                stream.write(_json(record) + "\n")
+            break
+        except FileExistsError:
+            # Another admitted call owns that audit name; never overwrite it.
+            continue
     patch = {"file": _relative(toolkit, path), "sha256": _sha(path)}
-    return _build(toolkit, encoded, action=action, base=base, patch=patch, parent=parent,
-                  feedback_parent=feedback_parent, feedback_parent_error=feedback_error)
+    if retry:
+        claim = {"schema_version": 1, "run_binding": _run_binding(toolkit), "base": base,
+            "retry": retry, "patch": patch, "new_draft_sha256": record["new_draft_sha256"]}
+        try:
+            with claim_path.open("x", encoding="utf-8", newline="\n") as stream:
+                stream.write(_json(claim) + "\n")
+        except FileExistsError:
+            try:
+                return _read_retry(toolkit, action, claim_path, retry, base)
+            except (ValueError, TypeError, KeyError, OSError) as error:
+                return _failure(toolkit, action, error)
+    result = _build(toolkit, encoded, action=action, base=base, patch=patch, parent=parent,
+                    feedback_parent=feedback_parent, feedback_parent_error=feedback_error)
+    if retry:
+        result["retry_receipt"] = {"status": "completed", "request_sha256": retry["request_sha256"],
+                                   "write_repeated": False}
+        _write(claim_path.with_suffix(".result.json"), {"claim_sha256": _sha(claim_path),
+            "result_sha256": _digest(result), "result": result})
+    return result
