@@ -2,7 +2,15 @@
 
 本轮按用户夜间授权继续交付档位之外的 harness，所有新增真实测试仅 GPT-6.1 Sol/high。分工保持探索，09:00（Asia/Singapore）汇报后讨论。当前恢复根为 `D:/Sim-BIM-Agent/cases/mesh-harness-overnight-20261024/`，先看 `handoff.json`、`PROGRESS.md` 和各子目录实际 controller/seal，避免重复派发。本线程定时续跑为 automation `mesh-harness`。
 
-## 利园完整验收与独立质量复核已结束
+## 最新结论与当前恢复点
+
+本夜已完成两轮利园和七腿窄测试，实际版本分别列于下文；当前主库为runtime42/domain144。所有77次新增真实请求均为 GPT-6.1 Sol/high，实报全树 tokens 合计7,732,192，另有18次脚本父请求。此总账仅含本报告六组实验，不含此前10案、旧ROI探针或Codex开发/评审推理；订阅货币成本未知。worker回执去重、主控量测摘要与共享角点定位已合入，真实窄协议可用；**整案没有稳定提速证据**。
+
+最新Lee002显式交付C06，24:48.55，较本夜001慢2:29.30；主控等待worker增加90.04秒是最大的分项增量。首有效稿后有实际外形改善，也有从旧参数基线恢复窗改的重复工作。最终紧容差外壳指标弱于001，已知23F前室/H.R.分隔损失仍在，不称全面提质。原run4669文件、输入及封印复核保持。
+
+当前所有实际模型运行已终态，主库封印已解除。继续处理一个有直接轨迹证据的缺口：C04 `/connections/2/source_refs` 未在独立字段预检中定位，展开后报成 `/openings/234/source_refs`。新隔离树 `mesh-source-ref-preflight-20261024` 实现最小反馈补齐，外部 `source-ref-acceptance/` 仅准备窄验收；此项尚未合入/调用模型。参数与源级修订衔接先做有界提示方案，不自动合并几何。档位与生产异构调度仍待讨论，09:00早报约定保持。
+
+## 利园001完整验收与独立质量复核已结束
 
 冻结 `dd8768f3`、runtime42/domain141，原三个盲输入和原scope保持；48模型/240工具、无额外墙钟或token上限、worker8、Sol/high及32k本地输出预留。旧候选、GT、评价不进入模型。实际输出 `D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-overnight-20261024-001`。
 
@@ -16,7 +24,7 @@
 
 封印及终态审计：外部 `lee-acceptance/`；固定原frame的9视角射线/宿主/核心检查与独立视觉在 `evaluation/lee/`。模型申报质量、机器合法性及独立质量分别记录。方法中的 `binding.is_delivered_candidate` 只是从completion取候选；本轮正式交付依据另有terminal-audit，不将该描述字段当验收门。
 
-字段聚合、failed_batch引用局修、image_view_ids预取和worker量测摘要四项在本轮均未触发，不能把用时改善归因于它们。declared-host提示已出现且随后补丁成功，但不单独作因果断言。C01/C02唯一severe是floor_coverage毫米级缺口；进一步确定性重放发现**原始parametric_plan完整覆盖，0.1m supporting-line规整后产生真实裂口**。源验证在正确拒绝规整结果，不放宽阈值。根因及最小拓扑一致修复在隔离树调查，尚未合入。
+字段聚合、failed_batch引用局修、image_view_ids预取和worker量测摘要四项在本轮均未触发，不能把用时改善归因于它们。declared-host提示已出现且随后补丁成功，但不单独作因果断言。C01/C02唯一severe是floor_coverage毫米级缺口；进一步确定性重放发现**原始parametric_plan完整覆盖，0.1m supporting-line规整后产生真实裂口**。源验证在正确拒绝规整结果，不放宽阈值。后续已在domain144合入可定位诊断，详见下文；没有自动拓扑修复。
 
 ## 已集成的新改动
 
@@ -65,9 +73,9 @@
 
 六条旧回执用正式 hook 反事实重放：shown字符125,103→49,082，其中也包含JSON紧凑排版收益；统一排版后净减少41.21%，按原请求出现次数加权少335,238字符。六条完整报告/分页/pointer均等值，原证据不变；补的snapshot从终态原文件重建，不能倒称历史调用时已验真。不是token/费用/耗时实测。见外部 `analysis/FORMAL-HISTORY-MEASUREMENT-PROJECTION.md`。
 
-冻结 `c543c7a7`/domain143 的普通单parent Sol/high窄验收已完成：37.555865秒（含启动8.723814秒，另准备1.162072秒），3真实请求/2工具/6,563实报tokens。6请求/8工具/300秒上限内，一次量测后按实际报告入口读取 `/queries/0/triangle_surface_evidence`，没有worker、重试或格式修补。27协议项与17独审项全真；最终3.1899948120124404m等于两个实际XYZ的距离，三角面13字段逐值一致，报告/子树hash区分正确，161原run文件hash未变。原seal `7dfebca269e77243de3cd7d6ec1720997d1457d5ee3e7381c04a1e2974771584`及输入完整性已通过，源码冻结解除。证据在外部 `direct-measurement-acceptance/REAL-SEMANTIC-REVIEW.md`；这证明指导性数值协议可用，不是整楼质量、自主调度或用时降幅。规整定位器继续隔离审阅，通过后另登记。
+冻结 `c543c7a7`/domain143 的普通单parent Sol/high窄验收已完成：37.555865秒（含启动8.723814秒，另准备1.162072秒），3真实请求/2工具/6,563实报tokens。6请求/8工具/300秒上限内，一次量测后按实际报告入口读取 `/queries/0/triangle_surface_evidence`，没有worker、重试或格式修补。27协议项与17独审项全真；最终3.1899948120124404m等于两个实际XYZ的距离，三角面13字段逐值一致，报告/子树hash区分正确，161原run文件hash未变。原seal `7dfebca269e77243de3cd7d6ec1720997d1457d5ee3e7381c04a1e2974771584`及输入完整性已通过，源码冻结解除。证据在外部 `direct-measurement-acceptance/REAL-SEMANTIC-REVIEW.md`；这证明指导性数值协议可用，不是整楼质量、自主调度或用时降幅。其后规整定位器已完成独审并另登记domain144。
 
-## 规整共享角点诊断已集成，原输入整案待验收
+## 规整共享角点诊断已集成并实际触发
 
 最终源码 `1cc8ce00`（隔离受审 `1e6c14d3`）登记 **runtime42/domain144**。原支持线独立量化仍保持；新增定位在写 adopted/candidate 之前，检查同模板实质共享角点附近是否出现 source 原数值谓词同样拒绝的缺失/越界/重叠，聚合坐标、frame、声明路径与完整报告入口。共线冗余点和现有数值容差内的薄楔不因此拒绝。已有原模板平面谓词需先通过，避免把原始输入缺口归因规整。
 
@@ -77,10 +85,54 @@
 
 集成只在test_groups新增条目处发生内容冲突，已同时保留两个新模块。期间误对尚未完成的cherry-pick做了一次未发布登记；未用其启动任何模型、未提交/推送，原registry已按登记前副本逐字恢复，再以最终受审源码重新登记。错误尝试仅保留外部审计副本；最终42条runtime、143条历史domain及aliases均逐值不变，新domain144核验通过。
 
-原输入Lee002在 `lee-acceptance-next/` 已离线prepare，单次Sol/high、48模型/240工具、无额外墙钟/token上限、worker8和原scope；将基于最终HEAD新封印后启动。评价在 `evaluation/lee-next/`：原9×16×16射线/四方口径不变，上一轮001另作逐对比较。新run未产任何质量结论。三空间合成修复仅保留备用设计，不为增加次数自动启动。
+原输入Lee002已于最终HEAD `0da485d6`/domain144新封印运行并终态；原三个输入、48模型/240工具、无额外墙钟/token上限、worker8和原scope保持。封印 `897bb970927a832bad064d470bb80546e40f292c908fce503d2ca7cfaf1d39f0`；原产物、外部方法和源码在完成独审后再次核验。三空间合成修复仅保留备用设计，没有为增加次数启动。
 
-## 当前未完成
+## Lee002：整案时间回涨与修订价值
+
+输出 `D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-overnight-20261024-002`。C06显式finish、completion与7个绑定交付文件hash通过；原生24:48.55，controller含准备25:17.88。34真实请求（主控30/worker4）、74工具（69/5），全树4,602,954 tokens=主控4,522,945+worker80,009，由原生usage逐请求复核，无缺失。外部审计中 `usage_accounting` 是主控、`root_usage_accounting` 是树级，不能按字段名猜。全run4669文件前后hash相同。
+
+| 原生同口径 | 001 | 002 | 变化 |
+|---|---:|---:|---:|
+| 总用时 | 22:19.25 | 24:48.55 | +2:29.30 |
+| 主控模型秒 | 1128.996 | 1140.083 | +11.087 |
+| 主控等待worker秒 | 46.470 | 136.512 | +90.042 |
+| 其余主控工具秒 | 98.210 | 123.846 | +25.636 |
+| 其他运行开销秒 | 65.574 | 88.108 | +22.533 |
+| 首机器有效稿返回 | 11:27.22 | 11:57.16 | +29.94秒 |
+| 首有效至终态 | 10:52.03 | 12:51.39 | +1:59.36 |
+| 末稿返回至终态 | 3:16.34 | 1:29.61 | -1:46.74（未舍入原值差） |
+
+不是末次finish检查再次拉长；本轮末稿尾段反而缩短。worker等待已经计入总墙钟，不能二次相加。没有provider失败/自动重试/退避，但同一时段有一次独立boundary小请求重叠，且不同运行的自主策略和服务时点不同；不能将分项差值解释为某个代码改动的严格因果。002仍比旧20:40.70慢4:07.85，比前次27:37.97快2:49.42，没有稳定趋势。
+
+首稿前六次旧ring拒绝（10→6→4→4→2→4项），工具内核共0.785秒，跨调用126.010秒。之后新增shared_junctions实际返回office/retail两处；下一补丁成功产出C01，间隔74.294秒，包含模型间隔53.481秒和构建20.813秒。补丁共9项，改frame/外壳/开口/入口，不能归为仅修两个角点或证明新增定位节省了整段首稿时间。字段聚合、failed_batch重试、worker image_view_ids仍未触发。
+
+C01之后：C02缩屋顶PH并修底商窗；C03修最高三层窗区和6个内幕墙组、撤销无充分证据的灰块窗；模型明确选回C02参数基线改底商，C04因connection内部缺source_refs无效，补该字段成C05；C06恢复C03已做的13项开口几何/身份编辑。C03回执及真实native已明示exact_plan=false、patch_allowed=false、推荐revise_bim；**不是harness静默回退**。自动合并有几何风险，可先探索旧基线选择时有界提示间隔编辑；当前没有实施。
+
+三次主控量测实际采用新摘要：raw→shown字符12,779→5,001、23,485→8,159、11,678→5,584，数值/坐标/valid/来源hash及完整报告逐值核对通过；没有量测report重读。另8次剖面segments分页共35,140 UTF-8字节、来自3个响应批次，后5次同批，不能说5轮往返；底商补丁实际引用segments22..35。分页仍有改进空间，但不能一概记为无效检查或归咎新量测摘要。
+
+| 固定2304射线的比较 | 共同有效点 | 5/10/30cm内 | 中位绝对深度误差 |
+|---|---:|---|---|
+| 002 C01→C06 | 1179 | 19.34/67.26/91.43% → 21.63/69.72/93.72% | 7.01→6.88cm |
+| 001 C04→002 C06 | 1106 | 34.90/79.93/93.85% → 22.06/68.81/93.49% | 5.96→6.81cm |
+
+各自有效覆盖、no-hit/edge和逐视角保留，不混分母。002同run末稿有有限外壳改善，独立视觉也确认顶部窗组、底商退进和PH范围更贴原输入；但相较001紧分箱与中位退步，平均误差微好，不是全指标单向变化。深度残差也不评价窗的材质或室内空间身份。
+
+已知23F左梯前室并入连续楼梯体，H.R.柜位不单列，可见分隔未完整保留；首有效C01即有，C06未修复。147空间ID/用途/高度及232连接记录不变，69个电梯门端点约8.06cm变动不等于前室关系修复。309开口宿主诊断无问题，115层级核心联系潜在连通、7连续体未见所检水平封堵；门unknown不等于现场通行。32条floor含7核心容器，不是32层。独立Codex支持轻量外形/主要核心位置用途，不能替用户接受已知图纸身份合并或称全部核心还原。
+
+完整报告：外部 `evaluation/lee-next/NUMERIC-AND-MECHANISM-REVIEW.md`、`INDEPENDENT-VISUAL-REVIEW.md`；精确时间/用量/来源见 `summary-deltas.json`、`usage-native-crosscheck.json`、`lineage-field-evidence.json`。末次封印与方法验证在 `post-evaluation-verification.json`。质量审阅没有发新工作模型请求或改原候选。
+
+## 分工自然遮挡边界：模型回答可用，外部审计曾假失败
 
 四腿独立语义已复核通过：两次识别Miele/BRICK LANE/Bicycle，两次均为6条完整可见窗带，无越界推断；6个真实native developer提示均已消歧、图像字节一致，原1223文件hash不变。见 `evaluation/facade/INDEPENDENT-VISUAL-AND-PROMPT-REVIEW.md`。
 
-两项隔离实现均已独审并合入；domain143量测真实窄验收通过，domain144下一轮Lee002待最终封印。另在独立 `delegation-boundary/` 离线准备一题自然遮挡的立面裁图，检验可见图标与不完整文字的unknown边界，拟最多一次Sol回答、0子工具、0修格式/重试；截至本记录未启动。参考是独立Codex判断，未由用户人工标注。生产异构/异步调度和交付档位仍未实施。未更新桌面；`.playwright-cli/`原有资料保留。
+新增 `delegation-boundary/` 已终态：原图自然树叶遮挡、258×245固定裁图，PNG SHA256 `9686947d9c27d4c986e2492cf7764c0c046b1a64d871749fad7cdfba8f42f877`。1次真实Sol/high、4357tokens、0子工具/格式修补/重试；另4次脚本父请求/3父工具。worker14.639秒、leg25.347秒、controller28.968秒，时间嵌套不相加。回答看见Bicycle、文字完整性unknown，只引用BRICK可读片段，没有补全被挡名称；root另看图复核支持这个有界结论。输入不含参考答案，独立Codex参考不冒称用户GT。
+
+原controller确为stopped、原协议27/28及任务合同9/9；失败项是外部auditor将解码原句搜索于json.dumps输出，句内引号转义造成假阴性。原状态/审计/封印没有改写，**没有重跑模型**。追加17项独审逐层证明native answer→hydrated→formal raw/shown→下次脚本父请求内容一致，275原run文件及19受保护文件保持。纠正位于 `delegation-boundary/correction/READBACK-CORRECTION-v1.md`、`readback-correction-v1.json`；root图像与回读核对在 `ROOT-INDEPENDENT-READBACK-AND-VISUAL.json`。原seal `ff854ae346b8c109831c4ddf06d8f7c24d70481f092f6476636eca513ad62f0e` 终态后再次核验。
+
+此小题证明既定ROI上的一次Sol回答能保留unknown，不证明普遍校准、弱模型能力或自主裁图/采纳。分工优先候选仍是固定ROI短文字/清晰图标，再考虑无遮挡完整窗带计数；数值搬运/校验优先程序处理。ROI选择、空间关系、同墙/跨层推断与最终几何采用留主控。后续比较弱模型要同PNG/同合同，并计主控核验与失败成本；本夜没有新增任何弱模型测试。
+
+## 当前继续项
+
+仅source_refs预检补齐正在隔离实现，窄Sol验收还未启动；其余本报告实际运行已全部结束。参数基线与通用修订的有界衔接提示先写设计。档位/停止政策、生产异构/异步调度未实施；未更新桌面，`.playwright-cli/`原有资料保留。下一恢复先核外部handoff及实际状态，不重跑旧目录或把当前未完成项写成验收通过。
+
+两棵已集成的measurement/regularization短期工作树已核对全部源/测试与main字节一致、工作区干净，仅含160/145个缓存文件后移除；原分支和提交保留，正式证据/run未删，新的source-ref树及其他会话树保持。清理审计见外部 `analysis/completed-worktree-cleanup-*.json`。本检查点C余37.23GiB、D余101.73GiB。
