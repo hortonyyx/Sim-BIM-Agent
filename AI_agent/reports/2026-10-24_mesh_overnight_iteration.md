@@ -2,15 +2,21 @@
 
 本轮按用户夜间授权继续交付档位之外的 harness，所有新增真实测试仅 GPT-6.1 Sol/high。分工保持探索，09:00（Asia/Singapore）汇报后讨论。当前恢复根为 `D:/Sim-BIM-Agent/cases/mesh-harness-overnight-20261024/`，先看 `handoff.json`、`PROGRESS.md` 和各子目录实际 controller/seal，避免重复派发。本线程定时续跑为 automation `mesh-harness`。
 
-## 利园完整验收已结束，独立质量仍在复核
+## 利园完整验收与独立质量复核已结束
 
 冻结 `dd8768f3`、runtime42/domain141，原三个盲输入和原scope保持；48模型/240工具、无额外墙钟或token上限、worker8、Sol/high及32k本地输出预留。旧候选、GT、评价不进入模型。实际输出 `D:/Sim-BIM-Agent/runs/lee-garden-six-mixed-61sol-overnight-20261024-001`。
 
-原生 runtime 用时 **1339.250秒（22分19秒）**，外部准备至退出1361.086秒。主控24请求、worker3请求，全27次实际请求已核Sol/high。C04显式finish，finalization.delivery、7个绑定交付文件hash及只读前后不变检查通过。候选保存/首次有效时点、返工机制、用量及独立几何/视觉质量正在复核，不能以completed替代质量判断。
+原生 runtime 用时 **1339.250秒（22分19秒）**，外部准备至退出1361.086秒。主控24请求、worker3请求，全27次实际请求已核Sol/high；62工具（60+2），全树3,050,309实报tokens。C04显式finish，finalization.delivery、7个绑定交付文件hash及只读前后不变检查通过。首机器有效C03工具返回11:27.22，之后10:52.03；末稿C04返回19:02.91，至终态3:16.34。文件mtime、build_timings和工具返回分别记录，不混成一个首稿时间。
+
+独立Codex视觉审阅支持当前Lite BIM用途的主体外形、主要窗带和核心组织；318开口无宿主问题，7连续核心无中间foreign盖板，23占用层×3lift/2stair的115条接入具备潜在连通。AIR/PIPE无门不扣分。上部复杂窗型、屋顶设备和非23F内部仍有明示简化/推断，不称测绘或竣工还原。32条floor记录包含7核心支撑，并非32物理层；public_names序号让F23图标题显示F30，仅展示混淆，未改源身份。
+
+固定2304射线中四案共同有效1122：新稿5/10/30cm内34.76%/81.37%/95.01%，中位误差5.94cm。两两新/前稿共同1155中，30cm为94.11%对94.46%，不能挑分母说全面改善。详细数值、覆盖、独立视觉及边界分别在外部 `evaluation/lee/NUMERIC-AND-MECHANISM-REVIEW.md`、`INDEPENDENT-VISUAL-REVIEW.md`。
 
 与前轮runtime41/domain138的27分37.97秒相比，本样本少318.72秒（5分18.72秒），实际请求33→27；仍比旧runtime36/domain132的20分40.70秒慢98.55秒。代码、模型自主轨迹与服务时点都不同，不将单次差值归为某个特性的严格因果收益。本次完整验收**尚不含**下面的新证据投影改动。
 
 封印及终态审计：外部 `lee-acceptance/`；固定原frame的9视角射线/宿主/核心检查与独立视觉在 `evaluation/lee/`。模型申报质量、机器合法性及独立质量分别记录。方法中的 `binding.is_delivered_candidate` 只是从completion取候选；本轮正式交付依据另有terminal-audit，不将该描述字段当验收门。
+
+字段聚合、failed_batch引用局修、image_view_ids预取和worker量测摘要四项在本轮均未触发，不能把用时改善归因于它们。declared-host提示已出现且随后补丁成功，但不单独作因果断言。C01/C02唯一severe是floor_coverage毫米级缺口；进一步确定性重放发现**原始parametric_plan完整覆盖，0.1m supporting-line规整后产生真实裂口**。源验证在正确拒绝规整结果，不放宽阈值。根因及最小拓扑一致修复在隔离树调查，尚未合入。
 
 ## 已集成的新改动
 
@@ -29,10 +35,19 @@
 
 独审位于 `D:/Sim-BIM-Agent/cache/mesh-harness-overnight-20261024/receipts-review/`；受审主文件SHA256为 `3854d1355efc1b3bbf0a64cd28341153f706d5391d979684ca02af9c8c3c3b10`。字符减少不等于provider token、费用或整案秒数收益。
 
-## 下一批小验收准备
+## 新版真实Sol小验收
 
-- `receipt-acceptance/`：一次真实Sol主控+worker窄协议，最多10模型/24工具/600秒，worker4/6/300。明确指示delegate、同次取图和完整量测、再按入口取回默认答案；考查模型能否操作新引用，不是自主调度能力。实际MCP加ScriptedAdapter离线5通过/14.56秒、38断言全真，0真实provider；独审无阻断。已保留首轮外部脚本解析失败及修复。尚未封印/启动真实验收。
-- `delegation-experiment/`：两题四腿，立面招牌文字/图标和完整可见窗带行数；预取1请求/0工具、按需2请求/1工具，全部Sol/high，串行实际请求总上限6，14次synthetic零用量脚本请求另列，正式工具共12。两臂收到同字节1x无网格图片。外部进程统一固定max_answer_repairs=0，禁止用修复轮挑选更好样本；这不是生产专用角色能力。旧main的离线链只验证外部脚本，合入后的实质新代码需再验证后封印。尚未启动真实模型。
+- `receipt-acceptance/`：冻结54d1255e/runtime42/domain142，真实Sol主控+worker于85.589秒完成（另共享准备1.214秒），6真实请求/4工具、全树39,979 tokens；其中parent23,952、worker16,027，controller.reported_tokens仅父级。33协议检查及16独审证据检查全真，两条worker自然语言与实际valid flags/3.1899948120124404m一致。显式委派、同次取图和完整量测、再取完整答案的guided流程成功，不证明自主调度。原416文件读前后hash不变。离线5通过/14.56秒、38断言与第一次解析失败历史另存。
+- `delegation-experiment/`：同版两题四腿全部终态，123.81秒、6真实Sol/high请求、28,030实报tokens，另14 synthetic parent请求与12正式工具。四腿均19协议项及任务合同通过；实际图片字节、native新坐标提示、max_answer_repairs=0外部同臂控制均验证。末腿后显式原seal核验两次通过。独立视觉与提示审阅已通过，见 `evaluation/facade/`；合同与视觉两种证据分别保留。旧版两次离线smoke保留，新版离线1通过/40.93秒、57检查全真，0真实provider。
+
+| 题目/供图 | 子任务真实请求 | 实报tokens | worker秒 | 每腿完整秒（含准备/审计） |
+|---|---:|---:|---:|---:|
+| 招牌/预取 | 1 | 4,712 | 17.99 | 32.60 |
+| 招牌/按需 | 2 | 9,769 | 22.16 | 32.78 |
+| 窗带/按需 | 2 | 9,260 | 16.54 | 28.03 |
+| 窗带/预取 | 1 | 4,289 | 13.93 | 27.77 |
+
+预取少一次请求且输入用量下降，**本样本端到端几乎持平**；不同题目、单次样本与服务时点不能推稳定提速。订阅费用未知。父级是脚本、核验由Codex在外部进行，未计开发/协调推理费用，不能声称完整分工已经降本。
 
 实验输入与参考分别冻结，only task PNG和必要原GLB进入worker。正式schema/来源、任务字段合同、视觉事实可用性三层分别评价。已有图和固定ROI由评审侧预先给定，不能称为自主寻找视图。
 
@@ -44,4 +59,6 @@
 
 ## 当前未完成
 
-完成利园独立质量/机制分析；冻结新版本并运行两组Sol小验收；据结果决定后续非档位优化。主控直接measure_mesh_pixels回执的摘要/原报告读回仅在分析，未实现。生产异构/异步调度和交付档位仍未实施。未更新桌面；`.playwright-cli/`原有资料保留。
+四腿独立语义已复核通过：两次识别Miele/BRICK LANE/Bicycle，两次均为6条完整可见窗带，无越界推断；6个真实native developer提示均已消歧、图像字节一致，原1223文件hash不变。见 `evaluation/facade/INDEPENDENT-VISUAL-AND-PROMPT-REVIEW.md`。
+
+新增两项隔离实现：`D:/Sim-BIM-Agent/worktrees/mesh-measurement-replies-20261024`用于直接量测纯shown投影及完整报告读取；`D:/Sim-BIM-Agent/worktrees/mesh-regularization-20261024`用于规整后共享角点分裂的原子拒绝与可行动反馈，不自动改变方向/锚点或填缝。主库仍54d1255e的产品源码。量测方案见外部analysis/direct-measurement-design.md，完整raw、数字query列表和workercanonical不变，不新增API、不要求例行重读。下一组单parent Sol窄验收在独立direct-measurement-acceptance准备，6请求/8工具/300秒上限、一次量测后局部报告pointer读回，未发新调用。生产异构/异步调度和交付档位仍未实施。未更新桌面；`.playwright-cli/`原有资料保留。
