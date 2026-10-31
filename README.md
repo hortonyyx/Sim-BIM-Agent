@@ -1,87 +1,180 @@
 # Sim-BIM Agent
 
-从建筑图纸或带贴图的三维网格生成轻量 BIM 和 HTML 查看器。当前输入共用源 BIM、几何工具、查看器和自有 runtime；运行不需要 Codex 进程。模型调用需要用户自己的账号授权或 API 凭据。
+将建筑图纸和带贴图的三维网格转换为轻量建筑信息模型。
 
-本仓库为 [Sim-BIM Agent 成品](https://github.com/hortonyyx/Sim-BIM-Agent)；程序开发与问题修复在 [Sim-BIM Agent dev](https://github.com/hortonyyx/Sim-BIM-Agent-dev)，验收后再生成本仓库。
+Sim-BIM Agent 结合模型的视觉理解与建筑建模工具，生成包含楼层、空间、边界、门窗和连接关系的 **Sim-BIM**，并提供可在浏览器中打开的三维查看器。
 
-## 安装与启动
+**当前版本：Windows · PNG 图纸 / GLB 网格 · JSON 模型 + HTML 查看器**
 
-当前交付为 **Windows 源码安装包**，不是独立 EXE。安装前准备 Python 3.12 和 uv，在产品目录内用 PowerShell 执行：
+[下载最新版本](https://github.com/hortonyyx/Sim-BIM-Agent/releases/latest) · [版本记录](https://github.com/hortonyyx/Sim-BIM-Agent/releases) · [反馈问题](https://github.com/hortonyyx/Sim-BIM-Agent/issues)
+
+## 可以做什么
+
+- **从图纸建模**：结合平面图与立面图，组织建筑空间、边界、门窗及连接关系。
+- **从三维网格重建**：读取带贴图的建筑 GLB，结合辅助图纸和文字说明，还原外形、楼层关系和外窗，并补充内部空间。
+- **查看与保留结果**：在 HTML 查看器中检查三维模型，保存结构化 JSON，供后续修改和处理。
+- **记录建模依据**：结果保留假设、冲突和未解决事项，便于检查模型对资料的理解。
+
+## 安装与快速体验
+
+准备 Windows、Python 3.12 和 uv，并确保终端可以运行 `uv`。
+
+1. 在 [最新版本](https://github.com/hortonyyx/Sim-BIM-Agent/releases/latest) 的附件中下载 `Sim-BIM-Agent-*.zip`。
+2. 解压到一个独立目录，在该目录打开 PowerShell。
+3. 安装并检查环境：
 
 ```powershell
 ./setup.ps1
 ./Start.cmd doctor
-./Start.cmd demo --output D:/Sim-BIM-Data/runs/demo-001
 ```
 
-`setup.ps1` 按随包的 `uv.lock` 建立本目录的 `.venv`，首次安装可能需要联网下载依赖。不要复制其他目录的虚拟环境。`doctor` 校验发布文件、版本和基础依赖，不调用模型；`demo` 生成明确标记的两房间合成示例及离线查看器，不验证真实建筑识读质量。示例每次使用新的输出目录。
+首次安装需要联网下载依赖。看到 `"status": "ready"` 后即可继续。
 
-## 当前输入
+可以先运行一个不需要模型账号的本地示例：
 
-| 入口 | 配置模板 | 输入与运行方式 |
+```powershell
+./Start.cmd demo --output D:/Sim-BIM-Data/demo-001
+```
+
+示例会生成一个两房间模型，并返回 `source_model` 和 `viewer` 路径。用浏览器打开 `viewer` 对应的 HTML 即可查看。再次体验时换一个新的输出目录，例如 `demo-002`。
+
+## 准备建筑资料
+
+| 输入 | 支持内容 | 使用模板 |
 |---|---|---|
-| 图纸 | `config.example.json` | PNG 图纸目录；调度员、平面读图员和立面读图员分工 |
-| Textured mesh | `config.mesh.example.json` | 自包含、带贴图的 `.glb`；单模型调度员，可附辅助 PNG 和文字声明，可选只读 worker |
+| 建筑图纸 | 同一建筑的平面、立面 PNG 图片 | [config.example.json](config.example.json) |
+| 三维网格 | 几何与贴图包含在文件内的 GLB；可附辅助 PNG 和建筑说明 | [config.mesh.example.json](config.mesh.example.json) |
 
-将需要的模板复制到产品目录外，例如 `D:/Sim-BIM-Data/config/drawings.json` 或 `mesh.json`，再修改：
+建议把资料、配置和结果放在独立的数据目录，便于更换程序版本：
 
-- `input_root`：本案输入的专用绝对路径；`input`：其中的图纸目录或 GLB 文件相对路径。
-- `run_root`：独立运行输出目录；`output`：本次运行名。新任务使用新名字，续跑保留原配置并加 `--resume`。
-- `case_id`：命令的 `--case` 值；`scope`：本次任务目标、材料含义和需要保留的不确定性。
-- 模型服务与凭据：按所用模板配置；图纸分工的顶层模型设置须与 `roles.coordinator` 一致。
+```text
+D:/Sim-BIM-Data/
+├─ inputs/
+│  └─ building-a/
+│     ├─ drawings/        平面、立面 PNG
+│     ├─ building.glb     三维网格
+│     ├─ auxiliary/       可选的辅助 PNG
+│     └─ building.json    可选的建筑说明
+├─ config/
+│  ├─ drawings.json
+│  ├─ mesh.json
+│  └─ deepseek.env
+└─ runs/
+```
 
-模板中的 `D:/Sim-BIM-Agent/...` 是示例路径，需换为自己的目录。图纸、个人配置、运行结果和凭据都应放在产品目录及成品 Git 仓库之外。
+根据输入复制一份模板到 `config` 目录，分别命名为 `drawings.json` 或 `mesh.json`，并修改以下字段：
 
-图纸输入只读取指定目录直接包含的 PNG；当前此入口不接收 JPEG 或 PDF，也不递归查找子目录。`floor_plan_images` 如有填写，须为实际 PNG 的准确文件名。
+| 字段 | 填写方式 |
+|---|---|
+| `input_root` | 输入根目录，例如 `D:/Sim-BIM-Data/inputs` |
+| `run_root` | 结果目录，例如 `D:/Sim-BIM-Data/runs` |
+| `cases` 中的 `input` | 相对输入根目录的路径：图纸为 `building-a/drawings`，网格为 `building-a/building.glb` |
+| `cases` 中的 `output` | 本次任务的结果目录名；每次新建任务使用新名字 |
+| `cases` 中的 `scope` | 在任务说明中补充建筑用途、已知尺寸、材料含义和建模要求 |
 
-Mesh 模板的 `auxiliary_images` 指向辅助 PNG 目录，`building_input` 指向 UTF-8 JSON 对象，两者均须在本案 `input_root` 内。**只有 GLB 时，删除这两个可选字段。** 文字声明中的路径不会自动加载其他文件。可用以下声明起步，并按实际证据修改：
+图纸模式读取指定目录直接包含的 PNG，文件名应便于辨认楼层或立面方向。当前图纸入口不读取 PDF、JPEG 或子目录中的图片。
+
+网格模式中，`auxiliary_images` 和 `building_input` 分别填写辅助图片目录与建筑说明文件的相对路径。**只有 GLB 时，删除这两个可选字段即可。** 有辅助材料时，按上面的目录示例分别填写 `building-a/auxiliary` 和 `building-a/building.json`。
+
+建筑说明使用 UTF-8 JSON，例如：
 
 ```json
 {
-  "task_brief": "根据原网格重建轻量 BIM，优先外形、楼层关系和外窗。",
-  "confirmed_facts": [],
+  "task_brief": "重建办公楼，优先保留外形、楼层关系和外窗。",
+  "confirmed_facts": ["所附平面图对应第五层"],
   "user_conjectures": [],
-  "unknowns": ["内部房间布局未知"]
+  "unknowns": ["其余楼层的内部布局未知"]
 }
 ```
 
-Mesh 模板保留 8 个可选只读 worker 的并发上限；是否派工由调度员决定，worker 沿用本案模型和共享预算，主 BIM 只由调度员修改。删除 `mesh_workers` 字段可由调度员直接工作。模板默认模型、思考强度和预算见 JSON；本发布没有更改这些策略。时间目标、运行预算和建筑质量验收是不同事项。
+## 配置模型
 
-先预检，再运行所选案例：
+真实建模需要联网，并使用你自己的模型账号或 API 凭据。任务所需的图片和资料会发送到所选模型服务，API 用量由服务商按你的账户计费。
+
+### DeepSeek Flash
+
+以下以 `mesh.json` 为例。在自己的 `D:/Sim-BIM-Data/config/deepseek.env` 中填写：
+
+```dotenv
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_API_KEY=YOUR_DEEPSEEK_API_KEY
+```
+
+在 `mesh.json` 的 `cases` 对应任务中替换或补充这些字段，其余参数先保留模板默认值：
+
+```json
+{
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "credentials_file": "D:/Sim-BIM-Data/config/deepseek.env",
+  "reasoning_effort": "high"
+}
+```
+
+将 `YOUR_DEEPSEEK_API_KEY` 换成自己的密钥。凭据文件保存在自己的数据目录，不要上传到仓库或附在问题反馈中。
+
+### 使用默认模型配置
+
+图纸和网格模板默认使用 ChatGPT 账号授权。在程序目录执行：
+
+```powershell
+./Start.cmd auth login
+./Start.cmd auth status
+./Start.cmd auth models
+```
+
+可用模型以账号返回的列表为准。图纸模板为多个角色分别配置模型；调整型号时，需要同时修改顶层模型字段和 `roles` 中的相应设置。
+
+使用 OpenCode Go 的用户可参考 [配置示例](config.opencode-go.example.json)。
+
+## 开始建模
+
+在程序目录先检查配置，再启动任务。以下任务名沿用模板默认的 `case_id`；如已修改，请同步替换命令中的名称。
+
+**图纸任务：**
 
 ```powershell
 ./Start.cmd check D:/Sim-BIM-Data/config/drawings.json
 ./Start.cmd run D:/Sim-BIM-Data/config/drawings.json --case my-building
-./Start.cmd run D:/Sim-BIM-Data/config/drawings.json --case my-building --resume
+```
 
+**网格任务：**
+
+```powershell
 ./Start.cmd check D:/Sim-BIM-Data/config/mesh.json
 ./Start.cmd run D:/Sim-BIM-Data/config/mesh.json --case my-textured-building
 ```
 
-`check` 验证配置和输入文件，不调用模型，也不验证整栋质量或 GLB 是否能完成重建。运行结果位于配置的输出目录；候选不等于正式交付，应检查最终运行回执及交付路径。
+`check` 检查配置与输入文件，不发起模型请求。`run` 开始实际建模；请求次数、工具次数和时间上限可在配置的 `limits` 中设置。
 
-## 模型授权
-
-默认模板使用 ChatGPT 订阅：
+同一版本内中断后，可以保留原配置和输入，追加 `--resume` 继续：
 
 ```powershell
-./Start.cmd auth status
-./Start.cmd auth login
-./Start.cmd auth models
+./Start.cmd run D:/Sim-BIM-Data/config/mesh.json --case my-textured-building --resume
 ```
 
-授权保存在本机专用存储，更新程序不要求重新登录。其他服务通过配置中的 `credentials_file` 指定外部凭据文件；OpenCode Go 示例为 `config.opencode-go.example.json` 和 `config.opencode-go-haiku.example.json`。不要把密钥填入模板、发布包或 Git。账号连通与模型质量须分别验证。
+## 查看结果
 
-为兼容既有 ChatGPT 授权，本机凭据路径暂保留历史目录名 `%LOCALAPPDATA%/EnergyPlus-Agent/openai-subscription`，不随仓库改名迁移凭据。
+结果保存在 `run_root` 下本次任务的 `output` 目录中。完成后按照程序返回的交付路径打开结果：
 
-## 版本与更新
+| 文件 | 用途 |
+|---|---|
+| `source_model.json` | Sim-BIM 源模型：楼层、空间、边界、门窗、连接及建模说明 |
+| `viewer.html` | 对应模型的三维查看器，可直接用浏览器打开 |
+| `delivery.json` / `delivery.html` | 本次正式交付的记录与展示入口 |
 
-成品仓库存放由开发库生成的发布内容，不在这里进行功能开发。`release-manifest.json` 记录开发源提交、当前成品 runtime/domain 身份、逐文件哈希及生成来源；成品仓库自己的提交用于管理发布版本。成品使用独立的当前版本登记和依赖锁，保留依赖与开发锁版本一致。旧开发版或旧成品的运行记录不能直接在本版续跑；同一发布版本内的中断恢复仍须通过配置、输入和版本校验。
+**JSON 保存建筑模型，HTML 提供可视化。** 运行过程中可能产生多个候选版本，请以最终交付记录选中的结果为准。
 
-安装和隔离验收使用从已发布版本导出的 **无 `.git` 目录**。当前更新器与发布验收器拒绝把 Git 检出目录当作安装包。`.venv` 在安装目录本地建立，不进入 Git 或发布包。
+## 当前范围
 
-开发维护者在开发库使用 `scripts/release/build_product.py` 构建，经 `scripts/release/verify_product.py` 验证后再同步成品仓库。已有固定安装可由开发库的 `scripts/release/update_product.ps1` 按发布清单更新及回滚；这些维护脚本不属于本安装包。更新前结束当前运行，保留外部输入、配置、输出和授权存储。
+Sim-BIM Agent 仍在迭代中，当前通过命令与配置文件使用，支持 PNG 图纸和 GLB 网格输入，交付范围为 Sim-BIM 与 HTML 查看器。CAD、实景照片、其他模型格式及图形化编辑尚未开放。
 
-离线发布验收覆盖文件身份、隔离导入、合成 BIM/查看器、两个模板的配置路由与输入冻结、mesh 渲染和 runtime 恢复。它不调用真实模型，不代表图纸分工、整栋重建或建筑质量已经通过。本程序的模型自检与独立质量评价也应分开看待。
+生成质量受资料完整度和所选模型影响。使用结果前，请结合原始资料检查尺寸、空间划分、门窗位置和连接关系，尤其留意输入无法确定的内部布局。
 
-本版交付范围到 Sim-BIM 和 HTML 查看器，不包含 EnergyPlus 服务、仿真转换/执行和天气/IDD 数据。完整交互编辑界面尚未交付。查看器使用随包附带的 Three.js/OrbitControls，来源及许可见 `scripts/tool_scripts/vendor`。
+## 更新与反馈
+
+更新时下载新版 ZIP，解压到新目录并运行 `setup.ps1`，继续使用自己的输入、配置和结果目录。进行中的任务请在原版本中完成或恢复。
+
+遇到问题可在 [Issues](https://github.com/hortonyyx/Sim-BIM-Agent/issues) 中提供版本号、输入类型、所用模型、复现步骤和错误信息；分享资料前请移除密钥及不便公开的内容。
+
+查看器使用 Three.js 与 OrbitControls，许可信息见 [第三方说明](scripts/tool_scripts/vendor/README.md)。
