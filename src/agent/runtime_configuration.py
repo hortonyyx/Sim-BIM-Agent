@@ -30,6 +30,20 @@ ALLOWED_ENTRYPOINTS = {
     "external_coordinator_mcp": "src.agent.runtime_coordinator",
     "role_division": "src.agent.runtime_roles.entry",
 }
+PRODUCT_RUN_MODES = ("single_model", "role_division")
+
+
+def entrypoint_for(mode: str) -> str:
+    if mode not in ALLOWED_ENTRYPOINTS:
+        raise ValueError(f"unsupported run mode {mode!r}")
+    from src.agent_runtime.agent_registry import REGISTRY_RELATIVE_PATH, load_agent_registry
+    if (ROOT / REGISTRY_RELATIVE_PATH).is_file() and load_agent_registry(ROOT).get("product_projection"):
+        if mode not in PRODUCT_RUN_MODES:
+            raise ValueError(f"run mode {mode!r} is not included in this Sim-BIM product")
+        entrypoint = ALLOWED_ENTRYPOINTS[mode]
+        if not (ROOT / (entrypoint.replace(".", "/") + ".py")).is_file():
+            raise ValueError(f"installed product entrypoint is missing: {entrypoint}")
+    return ALLOWED_ENTRYPOINTS[mode]
 
 
 def mesh_worker_concurrency(case: dict) -> int:
@@ -135,8 +149,7 @@ def load_configuration(path: Path, *, low_output_limit_reason: str | None = None
             if name not in case and value.get(name) is not None:
                 case[name] = value[name]
         mode = case.get("mode")
-        if mode not in ALLOWED_ENTRYPOINTS:
-            raise ValueError(f"unsupported run mode {mode!r}")
+        entrypoint_for(mode)
         mesh_worker_concurrency(case)
         if type(case.get("process_reviews", False)) is not bool:
             raise ValueError("process_reviews must be a boolean")
@@ -295,13 +308,14 @@ def selected_case(configuration: dict, case_id: str) -> dict:
 
 
 def argv_for(case: dict, *, resume: bool = False) -> list[str]:
+    entrypoint = entrypoint_for(case["mode"])
     context_args = context_arguments(case)
     budget = validate_budget(case)
     validate_output_limit(case["model"], case.get("output_tokens"), reason=case.get("low_output_limit_reason"))
     limits = case["limits"]
     output = resolve_run_output(ROOT / case["output"] if case.get("run_root") is None else Path(case["output"]), repository_root=ROOT,
                                 run_root=case.get("run_root"))
-    argv = [sys.executable, "-m", ALLOWED_ENTRYPOINTS[case["mode"]],
+    argv = [sys.executable, "-m", entrypoint,
             "--out", str(output), "--provider", case["provider"],
             "--model", case["model"]]
     if case.get("credentials_file"):

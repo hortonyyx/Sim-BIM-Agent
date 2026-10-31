@@ -1,12 +1,7 @@
-__all__ = ["AgentState", "IntakeOutput", "SimContext", "build_graph"]
+"""Current Sim-BIM runtime package.
 
+Import concrete BIM submodules directly. Historical aggregate APIs and the
+EnergyPlus workflow belong to the development repository, not this product.
+"""
 
-def __getattr__(name):
-    """Load the optional legacy pipeline only when that public API is requested."""
-    if name not in __all__:
-        raise AttributeError(name)
-    from importlib import import_module
-    module = import_module("src.agent.legacy.graph" if name == "build_graph" else "src.agent.state")
-    value = getattr(module, name)
-    globals()[name] = value
-    return value
+__all__ = []

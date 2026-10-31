@@ -1,6 +1,8 @@
-# Sim BIM Agent
+# Sim-BIM Agent
 
-从建筑图纸或带贴图的三维网格生成轻量 BIM 和 HTML 查看器。一个程序提供两个输入入口，共用源 BIM、几何工具、查看器和自有 runtime；运行不需要 Codex 进程。模型调用需要用户自己的账号授权或 API 凭据。
+从建筑图纸或带贴图的三维网格生成轻量 BIM 和 HTML 查看器。当前输入共用源 BIM、几何工具、查看器和自有 runtime；运行不需要 Codex 进程。模型调用需要用户自己的账号授权或 API 凭据。
+
+本仓库为 [Sim-BIM Agent 成品](https://github.com/hortonyyx/Sim-BIM-Agent)；程序开发与问题修复在 [Sim-BIM Agent dev](https://github.com/hortonyyx/Sim-BIM-Agent-dev)，验收后再生成本仓库。
 
 ## 安装与启动
 
@@ -14,7 +16,7 @@
 
 `setup.ps1` 按随包的 `uv.lock` 建立本目录的 `.venv`，首次安装可能需要联网下载依赖。不要复制其他目录的虚拟环境。`doctor` 校验发布文件、版本和基础依赖，不调用模型；`demo` 生成明确标记的两房间合成示例及离线查看器，不验证真实建筑识读质量。示例每次使用新的输出目录。
 
-## 两个输入入口
+## 当前输入
 
 | 入口 | 配置模板 | 输入与运行方式 |
 |---|---|---|
@@ -70,9 +72,11 @@ Mesh 模板保留 8 个可选只读 worker 的并发上限；是否派工由调�
 
 授权保存在本机专用存储，更新程序不要求重新登录。其他服务通过配置中的 `credentials_file` 指定外部凭据文件；OpenCode Go 示例为 `config.opencode-go.example.json` 和 `config.opencode-go-haiku.example.json`。不要把密钥填入模板、发布包或 Git。账号连通与模型质量须分别验证。
 
+为兼容既有 ChatGPT 授权，本机凭据路径暂保留历史目录名 `%LOCALAPPDATA%/EnergyPlus-Agent/openai-subscription`，不随仓库改名迁移凭据。
+
 ## 版本与更新
 
-成品仓库存放由开发库生成的发布内容，不在这里进行功能开发。`release-manifest.json` 记录开发源提交、runtime/domain 版本及逐文件哈希；成品仓库自己的提交用于管理发布版本。
+成品仓库存放由开发库生成的发布内容，不在这里进行功能开发。`release-manifest.json` 记录开发源提交、当前成品 runtime/domain 身份、逐文件哈希及生成来源；成品仓库自己的提交用于管理发布版本。成品使用独立的当前版本登记和依赖锁，保留依赖与开发锁版本一致。旧开发版或旧成品的运行记录不能直接在本版续跑；同一发布版本内的中断恢复仍须通过配置、输入和版本校验。
 
 安装和隔离验收使用从已发布版本导出的 **无 `.git` 目录**。当前更新器与发布验收器拒绝把 Git 检出目录当作安装包。`.venv` 在安装目录本地建立，不进入 Git 或发布包。
 
@@ -80,4 +84,4 @@ Mesh 模板保留 8 个可选只读 worker 的并发上限；是否派工由调�
 
 离线发布验收覆盖文件身份、隔离导入、合成 BIM/查看器、两个模板的配置路由与输入冻结、mesh 渲染和 runtime 恢复。它不调用真实模型，不代表图纸分工、整栋重建或建筑质量已经通过。本程序的模型自检与独立质量评价也应分开看待。
 
-完整交互编辑界面尚未交付；EnergyPlus 是可选下游，需要另行安装和验收。查看器使用随包附带的 Three.js/OrbitControls，来源及许可见 `scripts/tool_scripts/vendor`。
+本版交付范围到 Sim-BIM 和 HTML 查看器，不包含 EnergyPlus 服务、仿真转换/执行和天气/IDD 数据。完整交互编辑界面尚未交付。查看器使用随包附带的 Three.js/OrbitControls，来源及许可见 `scripts/tool_scripts/vendor`。

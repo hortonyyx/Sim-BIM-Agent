@@ -31,7 +31,7 @@ from src.agent.geometry.modelling import (
     build_zone_volumes,
 )
 from src.agent.geometry.split_pairing import pair_surfaces
-from src.validator.data_model import canonicalize_ring_vertices
+from src.agent.geometry.ring_order import canonicalize_ring_vertices
 
 __all__ = [
     "BuildingGeometry", "Surface", "VerifiedWindowHostProof", "Window",

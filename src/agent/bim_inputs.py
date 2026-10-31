@@ -20,7 +20,6 @@ ROOT = Path(__file__).resolve().parents[2]
 # One list for both runners; hashes identify the actual implementation used.
 IMPLEMENTATION_FILES = (
     'src/agent/bim_inputs.py',
-    'src/agent/sdk.py',
     'src/agent/runtime_mesh_evidence.py',
     'src/agent/runtime_mesh_workers.py',
     'scripts/tool_scripts/bim_agent_claims.py',

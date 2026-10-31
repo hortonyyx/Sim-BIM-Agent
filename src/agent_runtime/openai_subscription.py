@@ -1,4 +1,4 @@
-"""Sign in with ChatGPT credentials for the local Sim BIM Agent runtime.
+"""Sign in with ChatGPT credentials for the local Sim-BIM Agent runtime.
 
 This module implements the public-client OAuth flow documented at
 https://developers.openai.com/siwc/token-sharing-open-source.  It deliberately
@@ -43,7 +43,7 @@ TOKEN_ENDPOINT = f"{ISSUER}/api/accounts/oauth/token"
 RESOURCE = "https://api.openai.com/v1"
 MODELS_ENDPOINT = f"{RESOURCE}/models"
 DYNAMIC_CLIENT_ID = "dynamic_agent_client"
-APP_NAME = "Sim BIM Agent"
+APP_NAME = "Sim-BIM Agent"
 CALLBACK_PATH = "/auth/callback"
 REQUIRED_SCOPE = "chatgpt.tokens.use.direct"
 SCOPES = (

@@ -1,4 +1,4 @@
-"""User entry point for a verified Sim BIM Agent installation."""
+"""User entry point for a verified Sim-BIM Agent installation."""
 from __future__ import annotations
 
 import argparse
@@ -23,7 +23,7 @@ def doctor():
     missing = [name for name in resources if not (ROOT / name).is_file()]
     if missing:
         raise ValueError("Missing installed resources: " + ", ".join(missing))
-    return {"status": "ready", "product": "Sim BIM Agent", "directory": str(ROOT),
+    return {"status": "ready", "product": "Sim-BIM Agent", "directory": str(ROOT),
             "runtime_version": records["runtime"]["version_id"],
             "domain_version": records["domain"]["version_id"], "source_commit": source_commit(ROOT),
             "python": sys.executable, "python_version": sys.version.split()[0],
@@ -75,7 +75,7 @@ def demo(output: Path):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="Sim BIM Agent", description="Generate and inspect lightweight BIM.")
+    parser = argparse.ArgumentParser(prog="Sim-BIM Agent", description="Generate and inspect lightweight BIM.")
     commands = parser.add_subparsers(dest="action")
     commands.add_parser("doctor", help="verify installed files and dependencies without contacting a model")
     sample = commands.add_parser("demo", help="build a small synthetic BIM locally, without a model")

@@ -48,6 +48,13 @@ def _canonical_json_bytes(value):
                       separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
+def product_version_id(line, record, scope):
+    """Content identity for a generated product snapshot, distinct from dev IDs."""
+    encoded = (json.dumps({"scope": scope, "record": record}, ensure_ascii=False,
+                          sort_keys=True, indent=2, allow_nan=False) + "\n").encode("utf-8")
+    return f"{line}-product-v1-" + hashlib.sha256(encoded).hexdigest()[:24]
+
+
 def _registry_path(root, registry_path):
     override = os.environ.get("BIM_AGENT_REGISTRY_PATH") if registry_path is None else None
     if override is not None and not Path(override).is_absolute():
@@ -74,6 +81,22 @@ def load_agent_registry(root: Path, registry_path: Path | None = None) -> dict[s
     runtime_id = registry.get("current_runtime_version")
     if runtime_id is not None and runtime_id not in registry.get("runtime_versions", {}):
         raise AgentVersionMismatch("registry has no valid current runtime version")
+    projection = registry.get("product_projection")
+    if projection is not None:
+        if (not isinstance(projection, dict) or projection.get("schema_version") != "sim-bim-product-projection.v1"
+                or not re.fullmatch(r"[a-f0-9]{40}", projection.get("source_commit", ""))):
+            raise AgentVersionMismatch("invalid product projection provenance")
+        if registry.get("aliases") != {}:
+            raise AgentVersionMismatch("product projection cannot alias historical versions")
+        for line in ("runtime", "domain"):
+            identity = registry[f"current_{line}_version"]
+            if set(registry[f"{line}_versions"]) != {identity}:
+                raise AgentVersionMismatch("product projection must contain only its current versions")
+            record = registry[f"{line}_versions"][identity]
+            if (record.get("source_commit") != projection["source_commit"]
+                    or record.get("product_projection") != projection
+                    or identity != product_version_id(line, record, registry["scope"])):
+                raise AgentVersionMismatch(f"product {line} identity differs from its immutable projection")
     # Read-only compatibility view; only canonical records are serialized.
     registry["versions"] = dict(domains)
     for alias, canonical in registry.get("aliases", {}).items():
@@ -152,6 +175,12 @@ def load_release_manifest(root: Path) -> dict[str, Any] | None:
 def _verify_release_payload(root, manifest, registry, *, registry_path):
     if _registry_path(root, registry_path) != root / REGISTRY_RELATIVE_PATH:
         raise AgentVersionMismatch("a release must use its bundled version registry")
+    projection = registry.get("product_projection")
+    if projection is not None:
+        declared = manifest.get("projection")
+        if (manifest["source_commit"] != projection["source_commit"] or not isinstance(declared, dict)
+                or any(declared.get(key) != value for key, value in projection.items())):
+            raise AgentVersionMismatch("release source identity differs from its product projection")
     covered = {}
     for line in ("runtime", "domain"):
         version = registry[f"current_{line}_version"]
@@ -326,6 +355,8 @@ def register_versions(root, *, registry_path=None, registration_date=None, finge
     root = Path(root).resolve()
     path = _registry_path(root, registry_path)
     loaded = load_agent_registry(root, path)
+    if loaded.get("product_projection"):
+        raise ValueError("Generated product versions are immutable; register and rebuild in the development repository")
     registry = migrate_registry(root, loaded, legacy_order=legacy_order)
     stamp = registration_date or date.today().strftime("%Y%m%d")
     if not re.fullmatch(r"\d{8}", stamp):
