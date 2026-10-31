@@ -1,6 +1,6 @@
 {
   "schema_version": "sim-bim-release.v1",
-  "source_commit": "eb2836f5af3bdad3404a58b6e5794d95e4db2f83",
+  "source_commit": "7d090d7394dffddd3ceeba16ed74ed2536d94efa",
   "runtime_version": "runtime-v43-20261025",
   "domain_version": "domain-v154-20261031",
   "files": {
