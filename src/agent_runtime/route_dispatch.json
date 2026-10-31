@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "basis": "2026-10-07 sm21 accepted five concurrent requests; sixth received 1302. Night runs accepted six to eight. Start at five, recover cautiously; this is a local policy, not a service guarantee.",
+  "routes": {
+    "glm-subscription-anthropic": {
+      "initial_concurrency": 5,
+      "max_concurrency": 8,
+      "recovery_seconds": 60,
+      "cooldown_seconds": 1,
+      "max_cooldown_seconds": 30
+    },
+    "glm-subscription": {
+      "initial_concurrency": 5,
+      "max_concurrency": 8,
+      "recovery_seconds": 60,
+      "cooldown_seconds": 1,
+      "max_cooldown_seconds": 30
+    }
+  }
+}

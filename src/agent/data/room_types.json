@@ -1,0 +1,546 @@
+{
+  "schema_version": "room_types_v1",
+  "source": {
+    "name": "OpenStudio(R) standards — level 1 space types",
+    "repository": "https://github.com/NatLabRockies/openstudio-standards",
+    "commit": "83b1e64c6f130f02b48c8b3ad4eeb3eb4da41663",
+    "path": "lib/openstudio-standards/space_type/data/level_1_space_types.json",
+    "url": "https://github.com/NatLabRockies/openstudio-standards/blob/83b1e64c6f130f02b48c8b3ad4eeb3eb4da41663/lib/openstudio-standards/space_type/data/level_1_space_types.json",
+    "sha256": "e2a99276bf824fc38a5ae43720c5f447dbcfbccec41cb03c1fad88fb6eb16b25",
+    "retrieved_on": "2026-09-27",
+    "license": "openstudio/LICENSE.md"
+  },
+  "scope": "Exact upstream classification names plus project unknown sentinel. Chinese labels, name tokens, colors and aliases are project presentation data; no load, schedule, material or HVAC assignment.",
+  "types": [
+    {
+      "code": "atrium",
+      "label_zh": "中庭",
+      "name_token": "Atrium",
+      "color": "#afbddf",
+      "upstream_id": 1,
+      "annotation": null
+    },
+    {
+      "code": "attic",
+      "label_zh": "阁楼",
+      "name_token": "Attic",
+      "color": "#cbdfaf",
+      "upstream_id": 2,
+      "annotation": null
+    },
+    {
+      "code": "audience seating",
+      "label_zh": "观众席",
+      "name_token": "Audience-Seating",
+      "color": "#dfafd9",
+      "upstream_id": 3,
+      "annotation": null
+    },
+    {
+      "code": "banking",
+      "label_zh": "银行营业区",
+      "name_token": "Banking",
+      "color": "#afdfd7",
+      "upstream_id": 4,
+      "annotation": null
+    },
+    {
+      "code": "classroom/lecture/training",
+      "label_zh": "教室／讲堂／培训",
+      "name_token": "Classroom-Lecture-Training",
+      "color": "#dfc9af",
+      "upstream_id": 5,
+      "annotation": null
+    },
+    {
+      "code": "computer room",
+      "label_zh": "计算机房",
+      "name_token": "Computer-Room",
+      "color": "#bbafdf",
+      "upstream_id": 6,
+      "annotation": null
+    },
+    {
+      "code": "conference/meeting/multipurpose",
+      "label_zh": "会议／多功能",
+      "name_token": "Conference-Meeting-Multipurpose",
+      "color": "#d7ecd2",
+      "upstream_id": 7,
+      "annotation": null
+    },
+    {
+      "code": "confinement cells",
+      "label_zh": "拘留室",
+      "name_token": "Confinement-Cells",
+      "color": "#dfafbf",
+      "upstream_id": 8,
+      "annotation": null
+    },
+    {
+      "code": "copy/print",
+      "label_zh": "复印／打印",
+      "name_token": "Copy-Print",
+      "color": "#afcddf",
+      "upstream_id": 9,
+      "annotation": "to be revised"
+    },
+    {
+      "code": "corridor",
+      "label_zh": "走廊",
+      "name_token": "Corridor",
+      "color": "#fdf0c8",
+      "upstream_id": 10,
+      "annotation": null
+    },
+    {
+      "code": "courtroom",
+      "label_zh": "法庭",
+      "name_token": "Courtroom",
+      "color": "#d5afdf",
+      "upstream_id": 11,
+      "annotation": null
+    },
+    {
+      "code": "datacenter/high ite",
+      "label_zh": "高设备负载数据中心",
+      "name_token": "Datacenter-High-Ite",
+      "color": "#afdfc7",
+      "upstream_id": 12,
+      "annotation": "to be revised"
+    },
+    {
+      "code": "datacenter/low ite",
+      "label_zh": "低设备负载数据中心",
+      "name_token": "Datacenter-Low-Ite",
+      "color": "#dfb9af",
+      "upstream_id": 13,
+      "annotation": "to be revised"
+    },
+    {
+      "code": "dining",
+      "label_zh": "用餐区",
+      "name_token": "Dining",
+      "color": "#afb3df",
+      "upstream_id": 14,
+      "annotation": null
+    },
+    {
+      "code": "dressing room",
+      "label_zh": "化妆／换装室",
+      "name_token": "Dressing-Room",
+      "color": "#c1dfaf",
+      "upstream_id": 15,
+      "annotation": null
+    },
+    {
+      "code": "electrical/mechanical",
+      "label_zh": "电气／机械设备",
+      "name_token": "Electrical-Mechanical",
+      "color": "#cfe0db",
+      "upstream_id": 16,
+      "annotation": null
+    },
+    {
+      "code": "emergency room",
+      "label_zh": "急诊室",
+      "name_token": "Emergency-Room",
+      "color": "#afdddf",
+      "upstream_id": 17,
+      "annotation": null
+    },
+    {
+      "code": "emergency vehicle garage",
+      "label_zh": "应急车辆车库",
+      "name_token": "Emergency-Vehicle-Garage",
+      "color": "#dfd3af",
+      "upstream_id": 18,
+      "annotation": null
+    },
+    {
+      "code": "exam/treatment",
+      "label_zh": "检查／治疗",
+      "name_token": "Exam-Treatment",
+      "color": "#c5afdf",
+      "upstream_id": 19,
+      "annotation": null
+    },
+    {
+      "code": "exercise area",
+      "label_zh": "健身区",
+      "name_token": "Exercise-Area",
+      "color": "#afdfb7",
+      "upstream_id": 20,
+      "annotation": null
+    },
+    {
+      "code": "exhibit",
+      "label_zh": "展览区",
+      "name_token": "Exhibit",
+      "color": "#dfafb5",
+      "upstream_id": 21,
+      "annotation": null
+    },
+    {
+      "code": "guest room",
+      "label_zh": "客房",
+      "name_token": "Guest-Room",
+      "color": "#afc3df",
+      "upstream_id": 22,
+      "annotation": null
+    },
+    {
+      "code": "imaging",
+      "label_zh": "医学影像",
+      "name_token": "Imaging",
+      "color": "#d1dfaf",
+      "upstream_id": 23,
+      "annotation": null
+    },
+    {
+      "code": "interior parking",
+      "label_zh": "室内停车",
+      "name_token": "Interior-Parking",
+      "color": "#dfafdf",
+      "upstream_id": 24,
+      "annotation": null
+    },
+    {
+      "code": "judges chambers",
+      "label_zh": "法官办公室",
+      "name_token": "Judges-Chambers",
+      "color": "#afdfd1",
+      "upstream_id": 25,
+      "annotation": null
+    },
+    {
+      "code": "food preparation",
+      "label_zh": "食品制备",
+      "name_token": "Food-Preparation",
+      "color": "#fde0e0",
+      "upstream_id": 26,
+      "annotation": null
+    },
+    {
+      "code": "laboratory",
+      "label_zh": "实验室",
+      "name_token": "Laboratory",
+      "color": "#b5afdf",
+      "upstream_id": 27,
+      "annotation": null
+    },
+    {
+      "code": "laundry/washing",
+      "label_zh": "洗衣",
+      "name_token": "Laundry-Washing",
+      "color": "#b7dfaf",
+      "upstream_id": 28,
+      "annotation": null
+    },
+    {
+      "code": "library",
+      "label_zh": "图书馆",
+      "name_token": "Library",
+      "color": "#dfafc5",
+      "upstream_id": 29,
+      "annotation": null
+    },
+    {
+      "code": "living quarters",
+      "label_zh": "集体起居区",
+      "name_token": "Living-Quarters",
+      "color": "#afd3df",
+      "upstream_id": 30,
+      "annotation": "living quarters such as in a fire station"
+    },
+    {
+      "code": "loading dock",
+      "label_zh": "装卸区",
+      "name_token": "Loading-Dock",
+      "color": "#dfddaf",
+      "upstream_id": 31,
+      "annotation": "to be revised"
+    },
+    {
+      "code": "lobby",
+      "label_zh": "门厅",
+      "name_token": "Lobby",
+      "color": "#f6d6c2",
+      "upstream_id": 32,
+      "annotation": null
+    },
+    {
+      "code": "locker room",
+      "label_zh": "更衣室",
+      "name_token": "Locker-Room",
+      "color": "#afdfc1",
+      "upstream_id": 33,
+      "annotation": null
+    },
+    {
+      "code": "lounge/breakroom",
+      "label_zh": "休息室／茶歇",
+      "name_token": "Lounge-Breakroom",
+      "color": "#dfb3af",
+      "upstream_id": 34,
+      "annotation": null
+    },
+    {
+      "code": "manufacturing",
+      "label_zh": "生产制造",
+      "name_token": "Manufacturing",
+      "color": "#afb9df",
+      "upstream_id": 35,
+      "annotation": null
+    },
+    {
+      "code": "medical supply",
+      "label_zh": "医疗物资",
+      "name_token": "Medical-Supply",
+      "color": "#c7dfaf",
+      "upstream_id": 36,
+      "annotation": null
+    },
+    {
+      "code": "multifamily",
+      "label_zh": "多户住宅公共区",
+      "name_token": "Multifamily",
+      "color": "#dfafd5",
+      "upstream_id": 37,
+      "annotation": "common areas in a multifamily building/NOT dwelling units; schedule to be revised"
+    },
+    {
+      "code": "nursery",
+      "label_zh": "育婴室",
+      "name_token": "Nursery",
+      "color": "#afdfdb",
+      "upstream_id": 38,
+      "annotation": null
+    },
+    {
+      "code": "nurses station",
+      "label_zh": "护士站",
+      "name_token": "Nurses-Station",
+      "color": "#dfcdaf",
+      "upstream_id": 39,
+      "annotation": null
+    },
+    {
+      "code": "office",
+      "label_zh": "办公",
+      "name_token": "Office",
+      "color": "#cfe3f2",
+      "upstream_id": 40,
+      "annotation": null
+    },
+    {
+      "code": "office/enclosed",
+      "label_zh": "独立办公室",
+      "name_token": "Office-Enclosed",
+      "color": "#b9d4eb",
+      "upstream_id": 41,
+      "annotation": null
+    },
+    {
+      "code": "operating room",
+      "label_zh": "手术室",
+      "name_token": "Operating-Room",
+      "color": "#dfafbb",
+      "upstream_id": 42,
+      "annotation": null
+    },
+    {
+      "code": "patient room",
+      "label_zh": "病房",
+      "name_token": "Patient-Room",
+      "color": "#afc9df",
+      "upstream_id": 43,
+      "annotation": null
+    },
+    {
+      "code": "pharmacy",
+      "label_zh": "药房",
+      "name_token": "Pharmacy",
+      "color": "#d7dfaf",
+      "upstream_id": 44,
+      "annotation": null
+    },
+    {
+      "code": "physical therapy",
+      "label_zh": "物理治疗",
+      "name_token": "Physical-Therapy",
+      "color": "#d9afdf",
+      "upstream_id": 45,
+      "annotation": null
+    },
+    {
+      "code": "playing area",
+      "label_zh": "运动场地",
+      "name_token": "Playing-Area",
+      "color": "#afdfcb",
+      "upstream_id": 46,
+      "annotation": null
+    },
+    {
+      "code": "plenum",
+      "label_zh": "吊顶／架空夹层",
+      "name_token": "Plenum",
+      "color": "#dfbdaf",
+      "upstream_id": 47,
+      "annotation": null
+    },
+    {
+      "code": "post office",
+      "label_zh": "邮局",
+      "name_token": "Post-Office",
+      "color": "#afafdf",
+      "upstream_id": 48,
+      "annotation": null
+    },
+    {
+      "code": "recovery",
+      "label_zh": "康复区",
+      "name_token": "Recovery",
+      "color": "#bddfaf",
+      "upstream_id": 49,
+      "annotation": null
+    },
+    {
+      "code": "recreation/common living",
+      "label_zh": "休闲／公共起居",
+      "name_token": "Recreation-Common-Living",
+      "color": "#dfafcb",
+      "upstream_id": 50,
+      "annotation": null
+    },
+    {
+      "code": "restroom",
+      "label_zh": "卫生间",
+      "name_token": "Restroom",
+      "color": "#e6d5f0",
+      "upstream_id": 51,
+      "annotation": null
+    },
+    {
+      "code": "retail",
+      "label_zh": "零售",
+      "name_token": "Retail",
+      "color": "#f0e4b0",
+      "upstream_id": 52,
+      "annotation": null
+    },
+    {
+      "code": "shaft",
+      "label_zh": "竖井",
+      "name_token": "Shaft",
+      "color": "#d0d0d0",
+      "upstream_id": 53,
+      "annotation": null
+    },
+    {
+      "code": "sleeping quarters",
+      "label_zh": "集体寝室",
+      "name_token": "Sleeping-Quarters",
+      "color": "#afdfbb",
+      "upstream_id": 54,
+      "annotation": "sleeping quarters such as in a dormitory"
+    },
+    {
+      "code": "sports arena",
+      "label_zh": "体育场馆",
+      "name_token": "Sports-Arena",
+      "color": "#dfafb1",
+      "upstream_id": 55,
+      "annotation": null
+    },
+    {
+      "code": "stairwell",
+      "label_zh": "楼梯间",
+      "name_token": "Stairwell",
+      "color": "#dcdcdc",
+      "upstream_id": 56,
+      "annotation": null
+    },
+    {
+      "code": "storage",
+      "label_zh": "储藏",
+      "name_token": "Storage",
+      "color": "#e6e3d2",
+      "upstream_id": 57,
+      "annotation": null
+    },
+    {
+      "code": "transportation",
+      "label_zh": "交通客运",
+      "name_token": "Transportation",
+      "color": "#dfafdb",
+      "upstream_id": 58,
+      "annotation": null
+    },
+    {
+      "code": "vehicular maintenance",
+      "label_zh": "车辆维修",
+      "name_token": "Vehicular-Maintenance",
+      "color": "#afdfd5",
+      "upstream_id": 59,
+      "annotation": null
+    },
+    {
+      "code": "workshop",
+      "label_zh": "车间",
+      "name_token": "Workshop",
+      "color": "#dfc7af",
+      "upstream_id": 60,
+      "annotation": null
+    },
+    {
+      "code": "worship",
+      "label_zh": "宗教礼拜",
+      "name_token": "Worship",
+      "color": "#b8afdf",
+      "upstream_id": 61,
+      "annotation": null
+    },
+    {
+      "code": "unknown",
+      "label_zh": "未知／待判定",
+      "name_token": "Unknown",
+      "color": "#c9ced4",
+      "upstream_id": null,
+      "annotation": "Project sentinel; not an OpenStudio space type. Use when evidence is insufficient or no catalog type fits."
+    }
+  ],
+  "aliases": {
+    "meeting": "conference/meeting/multipurpose",
+    "conference": "conference/meeting/multipurpose",
+    "meeting room": "conference/meeting/multipurpose",
+    "conference room": "conference/meeting/multipurpose",
+    "entrance lobby": "lobby",
+    "entry lobby": "lobby",
+    "reception": "lobby",
+    "rest room": "restroom",
+    "bathroom": "restroom",
+    "wc": "restroom",
+    "toilet": "restroom",
+    "stair": "stairwell",
+    "stairs": "stairwell",
+    "breakroom": "lounge/breakroom",
+    "break room": "lounge/breakroom",
+    "lounge": "lounge/breakroom",
+    "kitchen": "food preparation",
+    "pantry": "food preparation",
+    "mechanical": "electrical/mechanical",
+    "mechanical room": "electrical/mechanical",
+    "electrical": "electrical/mechanical",
+    "electrical room": "electrical/mechanical",
+    "equipment": "electrical/mechanical",
+    "open office": "office",
+    "openoffice": "office",
+    "hallway": "corridor",
+    "circulation": "corridor",
+    "store": "storage",
+    "shop": "retail",
+    "server": "computer room",
+    "classroom": "classroom/lecture/training",
+    "会议室": "conference/meeting/multipurpose"
+  }
+}

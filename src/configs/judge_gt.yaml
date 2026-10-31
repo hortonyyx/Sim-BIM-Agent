@@ -1,0 +1,11 @@
+# Judge② GT v3 tooling profile.  All seven B4a-specific values are explicit;
+# the two Vg epsilons remain owned by correction.yaml and are resolved at the
+# tool boundary into candidate provenance.
+profile_version: 1
+dxf_node_join_tolerance_m: 0.001
+dxf_axis_alignment_tolerance_m: 0.001
+dxf_topology_area_tolerance_m2: 0.000001
+opening_boundary_max_distance_m: 0.400
+opening_assignment_tie_epsilon_m: 0.000000001
+elevation_match_max_distance_m: 0.400
+elevation_match_tie_epsilon_m: 0.000000001

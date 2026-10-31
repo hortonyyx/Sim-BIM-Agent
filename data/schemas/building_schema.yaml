@@ -1,0 +1,633 @@
+# ==================================================================
+# 模拟控制
+# ==================================================================
+SimulationControl:
+    Do Zone Sizing Calculation: No
+    Do System Sizing Calculation: No
+    Do Plant Sizing Calculation: No
+    Run Simulation for Sizing Periods: No
+    Run Simulation for Weather File Run Periods: Yes
+    Do HVAC Sizing Simulation for Sizing Periods: Yes
+    Maximum Number of HVAC Sizing Simulation Passes: 1
+
+# ==================================================================
+# 建筑概况
+# ==================================================================
+Building:
+    Name: Two Zone Building
+    North Axis: 0 # degrees
+    Terrain: Suburbs
+    Loads Convergence Tolerance Value: 0.04
+    Temperature Convergence Tolerance Value: 0.40
+    Solar Distribution: FullInteriorAndExterior
+    Maximum Number of Warmup Days: 25
+    Minimum Number of Warmup Days: 6
+
+# ==================================================================
+# 时间步长
+# ==================================================================
+Timestep:
+    Number of Timesteps per Hour: 4
+
+# ==================================================================
+# 场地区位
+# ==================================================================
+Site:Location:
+    Name: Shenzhen_GD_CHN Design_Conditions
+    Latitude : 22.54 # degrees
+    Longitude : 114.00 # degrees
+    Time Zone : 8.00 # hours
+    Elevation : 4.00 # meters
+
+# ==================================================================
+# 运行周期
+# ==================================================================
+RunPeriod:
+    Name: Run Period 1
+    Begin Month: 1
+    Begin Day of Month: 1
+    Begin Year: 2040
+    End Month: 12
+    End Day of Month: 31
+    End Year: 2040
+    Day of Week for Start Day: Tuesday
+    Use Weather File Holidays and Special Days: Yes
+    Use Weather File Daylight Saving Period: Yes
+    Apply Weekend Holiday Rule: No
+    Use Weather File Rain Indicators: Yes
+    Use Weather File Snow Indicators: Yes
+
+# ==================================================================
+# 材料
+Material:
+  - Name: Concrete_20cm
+    Type: Standard
+    Roughness: MediumRough
+    Thickness: 0.2
+    Conductivity: 1.729
+    Density: 2240
+    Specific_Heat: 837
+
+  - Name: Gypsum_1.3cm
+    Type: Standard
+    Roughness: Smooth
+    Thickness: 0.0127
+    Conductivity: 0.16
+    Density: 785
+    Specific_Heat: 830
+
+  - Name: Interior_Insulation
+    Type: NoMass
+    Roughness: MediumRough
+    Thermal_Resistance: 2.5
+
+  - Name: Roof_AirGap
+    Type: AirGap
+    Thermal_Resistance: 0.18
+
+  - Name: SimpleGlazingSystem
+    Type: Glazing
+    U-Factor: 5.8
+    Solar_Heat_Gain_Coefficient: 0.8
+    Visible_Transmittance: 0.9
+# ==================================================================
+# 构造
+# ==================================================================
+Construction:
+  - Name: Exterior_Wall_Const
+    Layers:
+      - Concrete_20cm
+  - Name: Interior_Wall_Const
+    Layers:
+      - Gypsum_1.3cm
+      - Gypsum_1.3cm
+  - Name: Roof_Const
+    Layers:
+      - Concrete_20cm
+  - Name: Floor_Const
+    Layers:
+      - Concrete_20cm
+  - Name: Window_Const
+    Layers:
+      - SimpleGlazingSystem
+
+# ==================================================================
+# 全局几何规则
+# ==================================================================
+GlobalGeometryRules:
+    Starting Vertex Position: UpperLeftCorner
+    Vertex Entry Direction: Counterclockwise
+    Coordinate System: World
+
+# ==================================================================
+# 热区定义
+# ==================================================================
+Zone:
+  - Name: Zone_West
+    Direction of Relative North : null
+    X Origin : 0 # meters
+    Y Origin : 5 # meters
+    Z Origin : 0 # meters
+    Type: 1
+    Multiplier: 1
+    Ceiling Height : autocalculate
+    Volume : autocalculate
+    Floor Area : autocalculate
+  - Name: Zone_East
+    Direction of Relative North : null
+    X Origin : 5 # meters
+    Y Origin : 5 # meters
+    Z Origin : 0 # meters
+    Type: 1
+    Multiplier: 1
+    Ceiling Height : autocalculate
+    Volume : autocalculate
+    Floor Area : autocalculate
+
+# ==================================================================
+# 建筑表面细则
+# ==================================================================
+BuildingSurface:Detailed:
+  - Name: Zone_West_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: Zone_West
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 5, Z: 0}
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 5, Y: 0, Z: 0}
+      - {X: 0, Y: 0, Z: 0}
+  - Name: Zone_West_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Const
+    Zone Name: Zone_West
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 0, Z: 3}
+      - {X: 5, Y: 0, Z: 3}
+      - {X: 5, Y: 5, Z: 3}
+      - {X: 0, Y: 5, Z: 3}
+  - Name: Zone_West_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: Zone_West
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 3}  
+      - {X: 5, Y: 5, Z: 0}  
+      - {X: 0, Y: 5, Z: 0}  
+      - {X: 0, Y: 5, Z: 3}  
+  - Name: Zone_West_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: Zone_West
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 0, Z: 0}
+      - {X: 5, Y: 0, Z: 0}
+      - {X: 5, Y: 0, Z: 3}
+      - {X: 0, Y: 0, Z: 3}
+  - Name: Zone_West_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: Zone_West
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 0, Z: 3}
+      - {X: 0, Y: 5, Z: 3}
+      - {X: 0, Y: 5, Z: 0}
+      - {X: 0, Y: 0, Z: 0}
+  - Name: Zone_East_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: Zone_East
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 10, Y: 5, Z: 0}
+      - {X: 10, Y: 0, Z: 0}
+      - {X: 5, Y: 0, Z: 0}
+  - Name: Zone_East_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Const
+    Zone Name: Zone_East
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 0, Z: 3}
+      - {X: 10, Y: 0, Z: 3}
+      - {X: 10, Y: 5, Z: 3}
+      - {X: 5, Y: 5, Z: 3}
+  - Name: Zone_East_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: Zone_East
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 10, Y: 5, Z: 3}
+      - {X: 10, Y: 5, Z: 0}
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 5, Y: 5, Z: 3}
+  - Name: Zone_East_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: Zone_East
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 0, Z: 0}
+      - {X: 10, Y: 0, Z: 0}
+      - {X: 10, Y: 0, Z: 3}
+      - {X: 5, Y: 0, Z: 3}
+  - Name: Zone_East_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: Zone_East
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 10, Y: 0, Z: 0}
+      - {X: 10, Y: 5, Z: 0}
+      - {X: 10, Y: 5, Z: 3}
+      - {X: 10, Y: 0, Z: 3}
+  - Name: Zone_West_Wall_Internal
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: Zone_West
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: Zone_East_Wall_Internal
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    # Normal points to +X direction
+    Vertices:
+      - {X: 5, Y: 5, Z: 3}
+      - {X: 5, Y: 0, Z: 3}
+      - {X: 5, Y: 0, Z: 0}
+      - {X: 5, Y: 5, Z: 0}
+  - Name: Zone_East_Wall_Internal
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: Zone_East
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: Zone_West_Wall_Internal
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 0, Z: 3}
+      - {X: 5, Y: 5, Z: 3}
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 5, Y: 0, Z: 0}
+
+FenestrationSurface:Detailed:
+  - Name: Zone_West_Window_North_1
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: Zone_West_Wall_North
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 4, Y: 5, Z: 2}
+      - {X: 4, Y: 5, Z: 1}
+      - {X: 1, Y: 5, Z: 1}
+      - {X: 1, Y: 5, Z: 2}
+
+
+Schedule:
+  ScheduleTypeLimits:
+    - Name: On/Off
+      Lower Limit Value: 0
+      Upper Limit Value: 1
+      Numeric Type: DISCRETE
+      Unit Type: Dimensionless
+    - Name: Temperature
+      Numeric Type: CONTINUOUS  
+      Unit Type: Temperature
+    - Name: Fraction
+      Lower Limit Value: 0.0
+      Upper Limit Value: 1.0
+      Numeric Type: CONTINUOUS
+      Unit Type: Dimensionless
+    - Name: Any Number
+      Numeric Type: CONTINUOUS
+      Unit Type: Dimensionless
+  Schedule:Compact:
+    - Name: Always On
+      Schedule Type Limits Name: On/Off
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 1
+
+    - Name: Heating_Setpoint_Schedule
+      Schedule Type Limits Name: Temperature
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 20
+
+    - Name: Cooling_Setpoint_Schedule
+      Schedule Type Limits Name: Temperature
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 26
+
+    - Name: "MediumOffice_Lighting_Schedule"
+      Schedule Type Limits Name: "Fraction" 
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "Weekdays"
+            Times:
+            - Until:
+                Time: "05:00"
+                Value: 0.05
+            - Until:
+                Time: "07:00"
+                Value: 0.10
+            - Until:
+                Time: "08:00"
+                Value: 0.30
+            - Until:
+                Time: "17:00"
+                Value: 0.90
+            - Until:
+                Time: "18:00"
+                Value: 0.70
+            - Until:
+                Time: "20:00"
+                Value: 0.50
+            - Until:
+                Time: "22:00"
+                Value: 0.30
+            - Until:
+                Time: "23:00"
+                Value: 0.10
+            - Until:
+                Time: "24:00"
+                Value: 0.05
+          - For: "Saturday"
+            Times:
+            - Until:
+                Time: "06:00"
+                Value: 0.05
+            - Until:
+                Time: "08:00"
+                Value: 0.10
+            - Until:
+                Time: "14:00"
+                Value: 0.50
+            - Until:
+                Time: "17:00"
+                Value: 0.15
+            - Until:
+                Time: "24:00"
+                Value: 0.05
+          - For: "AllOtherDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 0.05
+
+    - Name: "MediumOffice_Occupancy_Schedule"
+      Schedule Type Limits Name: "Fraction" 
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "Weekdays"
+            Times:
+            - Until:
+                Time: "06:00"
+                Value: 0.0
+            - Until:
+                Time: "07:00"
+                Value: 0.10
+            - Until:
+                Time: "08:00"
+                Value: 0.20
+            - Until:
+                Time: "17:00"
+                Value: 0.95
+            - Until:
+                Time: "18:00"
+                Value: 0.70
+            - Until:
+                Time: "20:00"
+                Value: 0.40
+            - Until:
+                Time: "21:00"
+                Value: 0.10
+            - Until:
+                Time: "24:00"
+                Value: 0.05
+          - For: "Saturday"
+            Times:
+            - Until:
+                Time: "06:00"
+                Value: 0.0
+            - Until:
+                Time: "14:00"
+                Value: 0.50
+            - Until:
+                Time: "24:00"
+                Value: 0.0
+          - For: "AllOtherDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 0.0
+
+    - Name: "MediumOffice_Activity_Schedule"
+      Schedule Type Limits Name: "Any Number" 
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 120
+
+    - Name: "MediumOffice_HVAC_Availability_Schedule"
+      Schedule Type Limits Name: "On/Off"
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "Weekdays"
+            Times:
+            - Until:
+                Time: "06:00"
+                Value: 0
+            - Until:
+                Time: "22:00" 
+                Value: 1
+            - Until:
+                Time: "24:00"
+                Value: 0
+          - For: "Saturday"
+            Times:
+            - Until:
+                Time: "06:00"
+                Value: 0
+            - Until:
+                Time: "15:00" 
+                Value: 1
+            - Until:
+                Time: "24:00"
+                Value: 0
+          - For: "AllOtherDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 0
+
+HVAC:
+  HVACTemplate:Zone:IdealLoadsAirSystem:
+    - Zone Name: Zone_West
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: MediumOffice_HVAC_Availability_Schedule
+      
+    - Zone Name: Zone_East 
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: MediumOffice_HVAC_Availability_Schedule
+      
+  HVACTemplate:Thermostat:
+    - Name: Ideal Loads Thermostat
+      Heating Setpoint Schedule Name: Heating_Setpoint_Schedule
+      Cooling Setpoint Schedule Name: Cooling_Setpoint_Schedule
+
+Light:
+  - Name: "Zone_West_Light"
+    Zone or ZoneList or Space or SpaceList Name: "Zone_West"
+    Schedule Name: "MediumOffice_Lighting_Schedule"
+    Design Level Calculation Method: "Watts/Area"
+    Lighting Level: 0.0
+    Watts per Floor Area: 12.0
+    Watts per Person: 0.0
+    Return Air Fraction: 0.2
+    Fraction Radiant: 0.42
+    Fraction Visible: 0.18
+    Fraction Replaceable: 1.0
+    End-Use Subcategory: General  
+
+  - Name: "Zone_East_Light"
+    Zone or ZoneList or Space or SpaceList Name: "Zone_East"
+    Schedule Name: "MediumOffice_Lighting_Schedule"
+    Design Level Calculation Method: "Watts/Area"
+    Lighting Level: 0.0
+    Watts per Floor Area: 12.0
+    Watts per Person: 0.0
+    Return Air Fraction: 0.2
+    Fraction Radiant: 0.42
+    Fraction Visible: 0.18
+    Fraction Replaceable: 1.0
+    End-Use Subcategory: General
+
+People:
+  - Name: "Zone_West_People"
+    Zone or ZoneList or Space or SpaceList Name: "Zone_West"
+    Number of People Schedule Name: "MediumOffice_Occupancy_Schedule"
+    Activity Level Schedule Name: "MediumOffice_Activity_Schedule" 
+    Number of People Calculation Method: "People/Area"
+    People per Floor Area: 0.1
+    Number of People: 0
+    Floor Area per Person: 0
+    Fraction Radiant: 0.3
+    Sensible Heat Fraction: "autocalculate"
+    Carbon Dioxide Generation Rate: 0.0000000382
+  - Name: "Zone_East_People"
+    Zone or ZoneList or Space or SpaceList Name: "Zone_East"
+    Number of People Schedule Name: "MediumOffice_Occupancy_Schedule"
+    Activity Level Schedule Name: "MediumOffice_Activity_Schedule" 
+    Number of People Calculation Method: "People/Area"
+    People per Floor Area: 0.1
+    Number of People: 0
+    Floor Area per Person: 0
+    Fraction Radiant: 0.3
+    Sensible Heat Fraction: "autocalculate"
+    Carbon Dioxide Generation Rate: 0.0000000382
+# ==================================================================
+# 输出设置
+# ==================================================================
+Output:VariableDictionary:
+    Key Field: regular
+Output:Diagnostics:  
+    Key 1: DisplayExtraWarnings
+Output:Table:SummaryReports:
+    Report 1 Name: AllSummary
+OutputControl:Table:Style:
+    Column Separator: HTML
+Output:Variable:
+  - Key Value: "*"
+    Variable Name: Zone Mean Air Temperature
+    Reporting Frequency: Hourly
+  - Key Value: "*"
+    Variable Name: Surface Inside Face Temperature
+    Reporting Frequency: Hourly

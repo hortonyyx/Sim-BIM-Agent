@@ -1,0 +1,796 @@
+# ==================================================================
+# EnergyPlus YAML Configuration - L形住宅 (深圳)
+# ==================================================================
+
+# ==================================================================
+# 模拟控制
+# ==================================================================
+SimulationControl:
+    Do Zone Sizing Calculation: Yes
+    Do System Sizing Calculation: Yes
+    Do Plant Sizing Calculation: No
+    Run Simulation for Sizing Periods: No
+    Run Simulation for Weather File Run Periods: Yes
+    Do HVAC Sizing Simulation for Sizing Periods: Yes
+    Maximum Number of HVAC Sizing Simulation Passes: 1
+
+# ==================================================================
+# 建筑概况
+# ==================================================================
+Building:
+    Name: L-Shaped Residential Building
+    North Axis: 0
+    Terrain: Suburbs
+    Loads Convergence Tolerance Value: 0.04
+    Temperature Convergence Tolerance Value: 0.40
+    Solar Distribution: FullInteriorAndExterior
+    Maximum Number of Warmup Days: 25
+    Minimum Number of Warmup Days: 6
+
+# ==================================================================
+# 时间步长
+# ==================================================================
+Timestep:
+    Number of Timesteps per Hour: 4
+
+# ==================================================================
+# 场地区位
+# ==================================================================
+Site:Location:
+    Name: Shenzhen_GD_CHN
+    Latitude: 22.54
+    Longitude: 114.00
+    Time Zone: 8.00
+    Elevation: 4.00
+
+# ==================================================================
+# 运行周期
+# ==================================================================
+RunPeriod:
+    Name: Annual Simulation
+    Begin Month: 1
+    Begin Day of Month: 1
+    Begin Year: 2024
+    End Month: 12
+    End Day of Month: 31
+    End Year: 2024
+    Day of Week for Start Day: Monday
+    Use Weather File Holidays and Special Days: Yes
+    Use Weather File Daylight Saving Period: Yes
+    Apply Weekend Holiday Rule: No
+    Use Weather File Rain Indicators: Yes
+    Use Weather File Snow Indicators: Yes
+
+# ==================================================================
+# 材料
+# ==================================================================
+Material:
+  # 外墙材料
+  - Name: Cement_Mortar_20mm
+    Type: Standard
+    Roughness: MediumRough
+    Thickness: 0.02
+    Conductivity: 0.93
+    Density: 1800
+    Specific_Heat: 1050
+
+  - Name: Concrete_Block_200mm
+    Type: Standard
+    Roughness: MediumRough
+    Thickness: 0.2
+    Conductivity: 1.13
+    Density: 2000
+    Specific_Heat: 920
+
+  - Name: EPS_Insulation_30mm
+    Type: Standard
+    Roughness: Smooth
+    Thickness: 0.03
+    Conductivity: 0.04
+    Density: 25
+    Specific_Heat: 1380
+
+  - Name: Gypsum_Board_12mm
+    Type: Standard
+    Roughness: Smooth
+    Thickness: 0.012
+    Conductivity: 0.16
+    Density: 785
+    Specific_Heat: 830
+
+  # 内墙材料
+  - Name: Brick_120mm
+    Type: Standard
+    Roughness: MediumRough
+    Thickness: 0.12
+    Conductivity: 0.89
+    Density: 1920
+    Specific_Heat: 790
+
+  # 屋顶材料
+  - Name: Roof_Waterproof_5mm
+    Type: Standard
+    Roughness: Smooth
+    Thickness: 0.005
+    Conductivity: 0.17
+    Density: 1100
+    Specific_Heat: 1000
+
+  - Name: Roof_Screed_40mm
+    Type: Standard
+    Roughness: MediumRough
+    Thickness: 0.04
+    Conductivity: 1.4
+    Density: 2100
+    Specific_Heat: 840
+
+  - Name: XPS_Insulation_50mm
+    Type: Standard
+    Roughness: Smooth
+    Thickness: 0.05
+    Conductivity: 0.035
+    Density: 35
+    Specific_Heat: 1400
+
+  - Name: RC_Slab_120mm
+    Type: Standard
+    Roughness: MediumRough
+    Thickness: 0.12
+    Conductivity: 1.74
+    Density: 2400
+    Specific_Heat: 920
+
+  # 地面材料
+  - Name: Ceramic_Tile_10mm
+    Type: Standard
+    Roughness: Smooth
+    Thickness: 0.01
+    Conductivity: 1.3
+    Density: 2300
+    Specific_Heat: 840
+
+  - Name: Cement_Screed_30mm
+    Type: Standard
+    Roughness: MediumRough
+    Thickness: 0.03
+    Conductivity: 1.4
+    Density: 2100
+    Specific_Heat: 840
+
+  - Name: Concrete_Slab_150mm
+    Type: Standard
+    Roughness: MediumRough
+    Thickness: 0.15
+    Conductivity: 1.74
+    Density: 2400
+    Specific_Heat: 920
+
+  # 窗户材料
+  - Name: Double_Glazing_6_12_6
+    Type: Glazing
+    U-Factor: 2.7
+    Solar_Heat_Gain_Coefficient: 0.6
+    Visible_Transmittance: 0.78
+
+# ==================================================================
+# 构造
+# ==================================================================
+Construction:
+  - Name: Exterior_Wall
+    Layers:
+      - Cement_Mortar_20mm
+      - Concrete_Block_200mm
+      - EPS_Insulation_30mm
+      - Gypsum_Board_12mm
+
+  - Name: Interior_Wall
+    Layers:
+      - Gypsum_Board_12mm
+      - Brick_120mm
+      - Gypsum_Board_12mm
+
+  - Name: Roof_Construction
+    Layers:
+      - Roof_Waterproof_5mm
+      - Roof_Screed_40mm
+      - XPS_Insulation_50mm
+      - RC_Slab_120mm
+
+  - Name: Ground_Floor
+    Layers:
+      - Ceramic_Tile_10mm
+      - Cement_Screed_30mm
+      - Concrete_Slab_150mm
+
+  - Name: Window_Double_Glazing
+    Layers:
+      - Double_Glazing_6_12_6
+
+# ==================================================================
+# 全局几何规则
+# ==================================================================
+GlobalGeometryRules:
+    Starting Vertex Position: UpperLeftCorner
+    Vertex Entry Direction: Counterclockwise
+    Coordinate System: World
+
+# ==================================================================
+# 热区定义
+# L形住宅分为3个热区:
+# Zone_A: 主体区域 (8m x 10m) - 客厅/餐厅
+# Zone_B: 翼部区域 (6m x 5m) - 卧室1
+# Zone_C: 连接区域 (4m x 5m) - 卧室2/书房
+# 总建筑面积: 80 + 30 + 20 = 130 m²
+# 层高: 3m
+# ==================================================================
+Zone:
+  - Name: Zone_A_Living
+    Direction of Relative North: null
+    X Origin: 0
+    Y Origin: 0
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: Zone_B_Bedroom1
+    Direction of Relative North: null
+    X Origin: 8
+    Y Origin: 5
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: Zone_C_Bedroom2
+    Direction of Relative North: null
+    X Origin: 8
+    Y Origin: 0
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+# ==================================================================
+# 建筑表面细则
+# ==================================================================
+BuildingSurface:Detailed:
+  # ================================================================
+  # Zone_A_Living (8m x 10m x 3m) - 主体客厅区域
+  # 坐标范围: X: 0-8, Y: 0-10, Z: 0-3
+  # ================================================================
+  - Name: Zone_A_Floor
+    Surface Type: Floor
+    Construction Name: Ground_Floor
+    Zone Name: Zone_A_Living
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 10, Z: 0}
+      - {X: 8, Y: 10, Z: 0}
+      - {X: 8, Y: 0, Z: 0}
+      - {X: 0, Y: 0, Z: 0}
+
+  - Name: Zone_A_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Construction
+    Zone Name: Zone_A_Living
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 0, Z: 3}
+      - {X: 8, Y: 0, Z: 3}
+      - {X: 8, Y: 10, Z: 3}
+      - {X: 0, Y: 10, Z: 3}
+
+  - Name: Zone_A_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall
+    Zone Name: Zone_A_Living
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 0, Z: 3}
+      - {X: 0, Y: 0, Z: 0}
+      - {X: 8, Y: 0, Z: 0}
+      - {X: 8, Y: 0, Z: 3}
+
+  - Name: Zone_A_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall
+    Zone Name: Zone_A_Living
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 10, Z: 3}
+      - {X: 0, Y: 10, Z: 0}
+      - {X: 0, Y: 0, Z: 0}
+      - {X: 0, Y: 0, Z: 3}
+
+  - Name: Zone_A_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall
+    Zone Name: Zone_A_Living
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 10, Z: 3}
+      - {X: 8, Y: 10, Z: 0}
+      - {X: 0, Y: 10, Z: 0}
+      - {X: 0, Y: 10, Z: 3}
+
+  - Name: Zone_A_Wall_East_Upper
+    Surface Type: Wall
+    Construction Name: Exterior_Wall
+    Zone Name: Zone_A_Living
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 5, Z: 3}
+      - {X: 8, Y: 5, Z: 0}
+      - {X: 8, Y: 10, Z: 0}
+      - {X: 8, Y: 10, Z: 3}
+
+  - Name: Zone_A_Wall_Internal_B
+    Surface Type: Wall
+    Construction Name: Interior_Wall
+    Zone Name: Zone_A_Living
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: Zone_B_Wall_Internal_A
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 10, Z: 3}
+      - {X: 8, Y: 10, Z: 0}
+      - {X: 8, Y: 5, Z: 0}
+      - {X: 8, Y: 5, Z: 3}
+
+  - Name: Zone_A_Wall_Internal_C
+    Surface Type: Wall
+    Construction Name: Interior_Wall
+    Zone Name: Zone_A_Living
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: Zone_C_Wall_Internal_A
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 5, Z: 3}
+      - {X: 8, Y: 5, Z: 0}
+      - {X: 8, Y: 0, Z: 0}
+      - {X: 8, Y: 0, Z: 3}
+
+  # ================================================================
+  # Zone_B_Bedroom1 (6m x 5m x 3m) - 卧室1 (L形上翼)
+  # 坐标范围: X: 8-14, Y: 5-10, Z: 0-3
+  # ================================================================
+  - Name: Zone_B_Floor
+    Surface Type: Floor
+    Construction Name: Ground_Floor
+    Zone Name: Zone_B_Bedroom1
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 10, Z: 0}
+      - {X: 14, Y: 10, Z: 0}
+      - {X: 14, Y: 5, Z: 0}
+      - {X: 8, Y: 5, Z: 0}
+
+  - Name: Zone_B_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Construction
+    Zone Name: Zone_B_Bedroom1
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 5, Z: 3}
+      - {X: 14, Y: 5, Z: 3}
+      - {X: 14, Y: 10, Z: 3}
+      - {X: 8, Y: 10, Z: 3}
+
+  - Name: Zone_B_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall
+    Zone Name: Zone_B_Bedroom1
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 14, Y: 10, Z: 3}
+      - {X: 14, Y: 10, Z: 0}
+      - {X: 8, Y: 10, Z: 0}
+      - {X: 8, Y: 10, Z: 3}
+
+  - Name: Zone_B_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall
+    Zone Name: Zone_B_Bedroom1
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 14, Y: 5, Z: 3}
+      - {X: 14, Y: 5, Z: 0}
+      - {X: 14, Y: 10, Z: 0}
+      - {X: 14, Y: 10, Z: 3}
+
+  - Name: Zone_B_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall
+    Zone Name: Zone_B_Bedroom1
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 5, Z: 3}
+      - {X: 8, Y: 5, Z: 0}
+      - {X: 14, Y: 5, Z: 0}
+      - {X: 14, Y: 5, Z: 3}
+
+  - Name: Zone_B_Wall_Internal_A
+    Surface Type: Wall
+    Construction Name: Interior_Wall
+    Zone Name: Zone_B_Bedroom1
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: Zone_A_Wall_Internal_B
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 5, Z: 3}
+      - {X: 8, Y: 10, Z: 3}
+      - {X: 8, Y: 10, Z: 0}
+      - {X: 8, Y: 5, Z: 0}
+
+  # ================================================================
+  # Zone_C_Bedroom2 (4m x 5m x 3m) - 卧室2/书房 (L形下翼)
+  # 坐标范围: X: 8-12, Y: 0-5, Z: 0-3
+  # ================================================================
+  - Name: Zone_C_Floor
+    Surface Type: Floor
+    Construction Name: Ground_Floor
+    Zone Name: Zone_C_Bedroom2
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 5, Z: 0}
+      - {X: 12, Y: 5, Z: 0}
+      - {X: 12, Y: 0, Z: 0}
+      - {X: 8, Y: 0, Z: 0}
+
+  - Name: Zone_C_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Construction
+    Zone Name: Zone_C_Bedroom2
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 0, Z: 3}
+      - {X: 12, Y: 0, Z: 3}
+      - {X: 12, Y: 5, Z: 3}
+      - {X: 8, Y: 5, Z: 3}
+
+  - Name: Zone_C_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall
+    Zone Name: Zone_C_Bedroom2
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 0, Z: 3}
+      - {X: 8, Y: 0, Z: 0}
+      - {X: 12, Y: 0, Z: 0}
+      - {X: 12, Y: 0, Z: 3}
+
+  - Name: Zone_C_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall
+    Zone Name: Zone_C_Bedroom2
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 12, Y: 0, Z: 3}
+      - {X: 12, Y: 0, Z: 0}
+      - {X: 12, Y: 5, Z: 0}
+      - {X: 12, Y: 5, Z: 3}
+
+  - Name: Zone_C_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall
+    Zone Name: Zone_C_Bedroom2
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 12, Y: 5, Z: 3}
+      - {X: 12, Y: 5, Z: 0}
+      - {X: 8, Y: 5, Z: 0}
+      - {X: 8, Y: 5, Z: 3}
+
+  - Name: Zone_C_Wall_Internal_A
+    Surface Type: Wall
+    Construction Name: Interior_Wall
+    Zone Name: Zone_C_Bedroom2
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: Zone_A_Wall_Internal_C
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 0, Z: 3}
+      - {X: 8, Y: 5, Z: 3}
+      - {X: 8, Y: 5, Z: 0}
+      - {X: 8, Y: 0, Z: 0}
+
+# ==================================================================
+# 门窗表面细则
+# ==================================================================
+FenestrationSurface:Detailed:
+  # Zone_A 客厅窗户
+  - Name: Zone_A_Window_South_1
+    Surface Type: Window
+    Construction Name: Window_Double_Glazing
+    Building Surface Name: Zone_A_Wall_South
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 1, Y: 0, Z: 2.4}
+      - {X: 1, Y: 0, Z: 0.9}
+      - {X: 3.5, Y: 0, Z: 0.9}
+      - {X: 3.5, Y: 0, Z: 2.4}
+
+  - Name: Zone_A_Window_South_2
+    Surface Type: Window
+    Construction Name: Window_Double_Glazing
+    Building Surface Name: Zone_A_Wall_South
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 4.5, Y: 0, Z: 2.4}
+      - {X: 4.5, Y: 0, Z: 0.9}
+      - {X: 7, Y: 0, Z: 0.9}
+      - {X: 7, Y: 0, Z: 2.4}
+
+  - Name: Zone_A_Window_West
+    Surface Type: Window
+    Construction Name: Window_Double_Glazing
+    Building Surface Name: Zone_A_Wall_West
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 0, Y: 8, Z: 2.4}
+      - {X: 0, Y: 8, Z: 0.9}
+      - {X: 0, Y: 5, Z: 0.9}
+      - {X: 0, Y: 5, Z: 2.4}
+
+  # Zone_B 卧室1窗户
+  - Name: Zone_B_Window_North
+    Surface Type: Window
+    Construction Name: Window_Double_Glazing
+    Building Surface Name: Zone_B_Wall_North
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 13, Y: 10, Z: 2.4}
+      - {X: 13, Y: 10, Z: 0.9}
+      - {X: 9, Y: 10, Z: 0.9}
+      - {X: 9, Y: 10, Z: 2.4}
+
+  - Name: Zone_B_Window_East
+    Surface Type: Window
+    Construction Name: Window_Double_Glazing
+    Building Surface Name: Zone_B_Wall_East
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 14, Y: 6, Z: 2.4}
+      - {X: 14, Y: 6, Z: 0.9}
+      - {X: 14, Y: 9, Z: 0.9}
+      - {X: 14, Y: 9, Z: 2.4}
+
+  # Zone_C 卧室2窗户
+  - Name: Zone_C_Window_South
+    Surface Type: Window
+    Construction Name: Window_Double_Glazing
+    Building Surface Name: Zone_C_Wall_South
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 8.5, Y: 0, Z: 2.4}
+      - {X: 8.5, Y: 0, Z: 0.9}
+      - {X: 11.5, Y: 0, Z: 0.9}
+      - {X: 11.5, Y: 0, Z: 2.4}
+
+  - Name: Zone_C_Window_East
+    Surface Type: Window
+    Construction Name: Window_Double_Glazing
+    Building Surface Name: Zone_C_Wall_East
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 12, Y: 1, Z: 2.4}
+      - {X: 12, Y: 1, Z: 0.9}
+      - {X: 12, Y: 4, Z: 0.9}
+      - {X: 12, Y: 4, Z: 2.4}
+
+# ==================================================================
+# 时间表
+# ==================================================================
+Schedule:
+  ScheduleTypeLimits:
+    - Name: On/Off
+      Lower Limit Value: 0
+      Upper Limit Value: 1
+      Numeric Type: DISCRETE
+      Unit Type: Dimensionless
+
+    - Name: Temperature
+      Lower Limit Value: 0
+      Upper Limit Value: 50
+      Numeric Type: CONTINUOUS
+      Unit Type: Temperature
+
+    - Name: Fraction
+      Lower Limit Value: 0
+      Upper Limit Value: 1
+      Numeric Type: CONTINUOUS
+      Unit Type: Dimensionless
+
+  Schedule:Compact:
+    - Name: Always On
+      Schedule Type Limits Name: On/Off
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 1
+
+    - Name: Always Off
+      Schedule Type Limits Name: On/Off
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 0
+
+    - Name: Heating_Setpoint_Schedule
+      Schedule Type Limits Name: Temperature
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 18
+
+    - Name: Cooling_Setpoint_Schedule
+      Schedule Type Limits Name: Temperature
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 27
+
+    - Name: Occupancy_Schedule_Living
+      Schedule Type Limits Name: Fraction
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 0.5
+
+    - Name: Occupancy_Schedule_Bedroom
+      Schedule Type Limits Name: Fraction
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 1

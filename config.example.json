@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "batch_id": "my-building",
+  "approval_required_before_launch": true,
+  "maximum_seconds_per_case": 1800,
+  "input_root": "D:/Sim-BIM-Agent/user-inputs",
+  "run_root": "D:/Sim-BIM-Agent/runs",
+  "cases": [
+    {
+      "case_id": "my-building",
+      "mode": "role_division",
+      "input": "my-building",
+      "output": "my-building-001",
+      "input_kind": "images",
+      "image_kind": "drawings",
+      "scope": "Build and explicitly deliver the whole lightweight BIM and viewer from all supplied drawings. Coordinate one shared origin, axes, floor IDs and absolute Z. Delegate plan and elevation readers concurrently; readers own actual-result local overlay checks and immutable deliveries. Reuse accepted deliveries for deterministic assembly, matching and supported height writeback. Judge architectural reasonableness and cross-drawing conflicts; request targeted rework only. Preserve spaces, walls, opening hosts and connectivity. State assumptions and unresolved evidence honestly, then finish_bim. All roles use GPT-6 Sol: coordinator and plan reader high, elevation reader medium. About ten minutes is an optimization target, not a pass/fail cutoff; the 30-minute operational budget is separate.",
+      "provider": "chatgpt-subscription",
+      "model": "gpt-6-sol",
+      "reasoning_history": "all",
+      "reasoning_effort": "high",
+      "output_tokens": 32000,
+      "max_candidates": 64,
+      "context_tokens": null,
+      "compact_at_tokens": null,
+      "limits": {
+        "model_calls": 120,
+        "tool_calls": 400,
+        "seconds": 1800,
+        "tokens": null,
+        "model_retries": 1,
+        "retry_backoff_seconds": 2
+      },
+      "max_concurrent_readers": 6,
+      "roles": {
+        "coordinator": {
+          "provider": "chatgpt-subscription",
+          "model": "gpt-6-sol",
+          "reasoning_effort": "high",
+          "output_tokens": 32000
+        },
+        "plan_reader": {
+          "provider": "chatgpt-subscription",
+          "model": "gpt-6-sol",
+          "reasoning_effort": "high",
+          "output_tokens": 32000
+        },
+        "elevation_reader": {
+          "provider": "chatgpt-subscription",
+          "model": "gpt-6-sol",
+          "reasoning_effort": "medium",
+          "output_tokens": 32000
+        }
+      }
+    }
+  ]
+}

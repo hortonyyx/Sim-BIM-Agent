@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "batch_id": "my-textured-building",
+  "approval_required_before_launch": true,
+  "maximum_seconds_per_case": null,
+  "input_root": "D:/Sim-BIM-Agent/user-inputs",
+  "run_root": "D:/Sim-BIM-Agent/runs",
+  "cases": [
+    {
+      "case_id": "my-textured-building",
+      "mode": "single_model",
+      "mesh_workers": {"max_concurrent": 8},
+      "input": "my-building/building.glb",
+      "auxiliary_images": "my-building/auxiliary",
+      "building_input": "my-building/building.json",
+      "output": "my-textured-building-001",
+      "input_kind": "mesh",
+      "image_kind": "unknown",
+      "scope": "Build and explicitly deliver a useful lightweight source BIM and viewer from the original textured mesh and supplied auxiliary evidence. Choose observations, precision, templates, worker delegation and local revisions autonomously. Prioritize overall massing, storey/terrace relationships and exterior opening positions, sizes and hosts. Interpret auxiliary drawings, relationship sketches and text locally according to their evidence: sketch proportions are not measurements. Keep user-confirmed facts, user conjectures and your inferences distinct. Organize unknown interiors plausibly at the requested simplification; no fixed room count, one-window-per-room rule or universal door offset. Use actual saved geometry and visible-host overlays to check; an overlay is not independent fidelity approval. Record assumptions and unresolved evidence, then finish_bim. Workers are optional read-only observers using the same configured model and shared run budget. The coordinator owns all BIM changes. The 5-10 minute target is not a quality cutoff.",
+      "provider": "chatgpt-subscription",
+      "model": "gpt-6-sol",
+      "reasoning_history": "all",
+      "reasoning_effort": "high",
+      "output_tokens": 32000,
+      "max_candidates": 64,
+      "context_tokens": null,
+      "compact_at_tokens": null,
+      "image_history_batches": 3,
+      "limits": {
+        "model_calls": 48,
+        "tool_calls": 240,
+        "seconds": null,
+        "tokens": null,
+        "model_retries": 1,
+        "retry_backoff_seconds": 2
+      }
+    }
+  ]
+}

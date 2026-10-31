@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "batch_id": "my-building-opencode-go",
+  "approval_required_before_launch": true,
+  "maximum_seconds_per_case": null,
+  "input_root": "D:/Sim-BIM-Agent/user-inputs",
+  "run_root": "D:/Sim-BIM-Agent/runs",
+  "cases": [
+    {
+      "case_id": "my-building-opencode-go",
+      "mode": "single_model",
+      "input": "my-building",
+      "output": "my-building-opencode-go-001",
+      "input_kind": "images",
+      "image_kind": "drawings",
+      "scope": "Build and explicitly deliver the complete lightweight source BIM and viewer from every supplied drawing. First establish the common coordinate frame, major dimensions and supported storey levels/heights from the whole set. Draft each floor early, compare actual-result overlays locally, and fix concrete errors. Complete independent elevation readings and their adopted-value overlay checks. Carry judgments with normal actions, assemble checked floors, and apply supported opening heights in a batch. Review the assembled building for architectural reasonableness and cross-drawing conflicts; reuse unchanged checks and revise only affected scopes. Preserve physical spaces, partitions, openings, hosts and connectivity under the current 0.1 m policy. Save assumptions and unresolved evidence honestly; finish the intended final candidate with finish_bim. Single model, no run-level time deadline; independent quality evaluation follows the run.",
+      "provider": "opencode-go",
+      "model": "kimi-k3",
+      "credentials_file": "D:/Sim-BIM-Agent/local-connections/opencode-go/credentials.env",
+      "reasoning_history": "all",
+      "output_tokens": 32000,
+      "max_candidates": 64,
+      "context_tokens": null,
+      "compact_at_tokens": null,
+      "image_history_batches": 3,
+      "limits": {
+        "model_calls": 48,
+        "tool_calls": 240,
+        "seconds": null,
+        "tokens": null,
+        "model_retries": 1,
+        "retry_backoff_seconds": 2
+      },
+      "process_reviews": true
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+[project]
+name = "energyplus-agent"
+version = "0.1.0"
+description = "Sim BIM Agent: lightweight BIM generation with independent model runtime"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "attrs>=25.4.0",
+    "eppy>=0.5.63",
+    "ezdxf>=1.4.3",
+    "fastmcp>=2.14.1",
+    "idfpy>=26.1.0.post2",
+    "google-genai>=1.68.0",
+    "langchain>=1.2.13",
+    "langchain-anthropic>=1.4.0",
+    "langchain-openai>=1.1.12",
+    "langgraph>=1.1.3",
+    "loguru>=0.7.3",
+    "numpy>=2.3.4",
+    "omegaconf>=2.3.0",
+    "openai>=2.11.0",
+    "pillow>=11.0.0",
+    "portalocker>=3.2.0",
+    "pydantic>=2.11.7",
+    "PyJWT[crypto]>=2.12.1",
+    "python-dotenv>=1.2.1",
+    "python-dateutil>=2.9.0.post0",
+    "pyyaml>=6.0.2",
+    "qdrant-client>=1.17.1",
+    "scipy>=1.16.2",
+    "shapely>=2.0.0",
+    "tqdm>=4.67.3",
+    "trimesh>=4.9.0",
+    "typer>=0.20.1",
+]
+
+[project.scripts]
+energyplus-mcp = "src.mcp.server:mcp.run"
+sim-bim-agent = "src.agent.product_cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src", "scripts"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = ["-n", "0", "-p", "ep_no_billed_gate"]
+markers = [
+    "mutation: fresh-process source-mutation matrix; excluded from child pytest runs",
+    "fast: current product checks suitable for everyday development",
+    "targeted: current checks selected for the affected capability",
+    "node: current end-to-end and integration acceptance",
+    "historical: explicitly requested historical evidence or compatibility replay",
+]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "B",
+    "C4",
+    "UP",
+    "SIM",
+    "RUF",
+    "N",
+]
+
+ignore = [
+    "E501", # Line too long
+    "N805",
+    "N806"
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[dependency-groups]
+dev = [
+    "grandalf>=0.8",
+    "langsmith>=0.7.23",
+    "pytest>=9.0.2",
+    "pytest-xdist>=3.8",
+]

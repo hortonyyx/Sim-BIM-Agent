@@ -1,0 +1,196 @@
+# ============================================================================
+# 几何校正 — 确定性核 容差配置
+# ============================================================================
+# 这些常数驱动 src/agent/correction/deterministic.py（correction stage 之后、the modeling/MEP stages 之前
+# 跑的确定性核）。把它们抽成配置文件，是为了：
+#   1. 单一真源——核不再硬编码常数，消除「A0 文档 registry vs Python 常数」漂移；
+#   2. 方便实验——改这里的数值即可测不同颗粒度的效果，不用动代码。
+#
+# 值的依据（standards basis）来自 PartA-correction/A0_contract.md §4 容差 registry；
+# 改值前请同步那篇文档的口径。所有长度单位 = 米 (m)。
+#
+# 覆盖方式：设环境变量 EP_AGENT_CORRECTION_CONFIG=<path> 指向另一份 YAML，即对该次
+# run 生效（与 EP_AGENT_LLM_CONFIG 的 per-case 模式一致）；不设则用本文件。
+#
+# ---------------------------------------------------------------------------
+# 【核心概念：聚类 ≠ 吸附，是两步】
+#   第1步 聚类(identity)：把"本是同一道意图墙"的近邻坐标合成一个代表值
+#         —— 这步消跨层抖动(4.90/4.95→一条轴)，由 axis_jitter_tol_m 控制。
+#   第2步 吸附(规整)：把代表值 round 到干净栅格(灭 4.925 这种 mm 级均值)
+#         —— 由 structural_snap_grid_m 控制。
+#   颗粒度(栅格)不负责合并身份；调粗栅格对消抖动毫无帮助，只会吃掉小特征。
+# ---------------------------------------------------------------------------
+
+correction:
+
+  # ====== 第1步：同轴身份聚类 ======
+  axis_jitter_tol_m: 0.050
+  # 约束：两条坐标轴相距 ≤ 此值 → 判为"同一道意图墙/轴"，合成一个代表值。
+  # 作用：这是消除跨层抖动(同一道墙在不同楼层被识成 4.90 / 4.95)的关键一步。
+  # 调大 → 合并更激进，可能并掉两道真实相邻的薄墙(误并)；
+  # 调小 → 抖动合不掉，碎片/重影墙回来。
+  # 上界含义：超过此值、且拓扑证据说它们是不同墙 → 不静默合并，升级为
+  #           reference_or_identity_ambiguity 交 A3 仲裁(见 A0 §1.4 / §3)。
+  # 对应 A0：AXIS_JITTER_TOL = 50mm（M/2 模数；刻意比 SNAP_GRID=10mm 粗，聚类≠吸附）。
+
+  cross_floor_align_tol_m: 0.11
+  # 跨层同墙 reading jitter 的保守对齐上限。安全性来自 deterministic core 的
+  # mutual-nearest + competition flag 策略，而不是把此 tol 调大。
+
+  # ====== 第2步：结构轴吸附栅格 ======
+  structural_snap_grid_m: 0.010
+  # 约束：房间 / 墙 / 外包的 x、y 代表值，吸附到此栅格的整数倍。
+  # 作用：身份聚类已经把抖动合并完，这步只做"规整"——保留图纸给出的
+  #       0.12/0.06 等墙中心线真值，避免 50mm 栅格把 240mm 墙半厚
+  #       系统性碾成 0.10/0.05。"图纸给多准就多准"，聚类负责身份/消抖，
+  #       栅格只负责去浮点尾差。
+  # 颗粒度选择(实验入口)：
+  #   0.010(默认)：10mm 输出精度，保留 240mm 墙中心线的 0.12m 半厚等真值。
+  #   0.050      ：GB/T-50002 M/2 模数；会吃掉 0.12/0.06 类真实墙中心线，
+  #               仅适合粗粒度实验，不作为默认。
+  #   0.100      ：M 模数，输出数字更圆整；仍保住 ~100mm 级特征。可在宽松
+  #               profile(use_grouped_rooms / perimeter_core)下用。
+  #   0.500      ：不建议作结构栅格——会塌掉亚米级真实特征、扭曲小房间面积，
+  #               且对消抖动无帮助(那是第1步干的)。能耗上虽可忽略，但伤拓扑。
+  # 硬约束关系：必须 ≤ min_edge_length_m。吸附后代码会再过一遍碎片守卫
+  #            (吸附可能把两条 ≥min_edge 的轴各自挪近到 < min_edge)，
+  #            保证最终任意两轴间距 ≥ min_edge_length_m。
+  # 对应 A0：SNAP_GRID = 10mm。
+
+  # ====== 碎片守卫地板(防 EP 段错) ======
+  min_edge_length_m: 0.100
+  # 约束：最终任意两条规范轴的间距不得 < 此值；任一 cell 的边长 < 此值
+  #       → 该 cell 标记 unsupported(不静默吞)。
+  # 作用：结构性杜绝"退化碎片"(如 0.05m × 3m 的薄条)。跨层楼板/天花切配时，
+  #       这类薄条会让 EnergyPlus 输入处理阶段段错(exit 139，.err 还没写就崩)。
+  #       本守卫把这一整类崩溃变成"结构上不可能"。
+  # 依据：EP very-small-vertex warning 阈值 ~0.01m，此处留约 10x 安全裕度。
+  # 性质：hard_fail —— 低于它的几何不放行(合并 / 重吸附 / 标 unsupported)。
+  # 对应 A0：MIN_EDGE_LENGTH = 0.10m。
+
+  # ====== 输出精度 / 记账阈值 ======
+  output_precision_m: 0.010
+  # 约束：最终坐标的格式化精度；坐标移动量 > 此值才记一条 corrections[]
+  #       (≤ 此值的微调算 normalization，A0 §2 规定不记账)。
+  # 作用：(a) 控制 audit 噪声——避免每个 0.x mm 的浮点尾差都刷一条记录；
+  #       (b) 兼作窗户吸附栅格的默认值(见下)。
+  # 对应 A0：OUTPUT_PRECISION = 10mm (M/10 模数)。
+
+  # ====== 窗户(分级：比结构更细) ======
+  window_snap_grid_m: 0.010
+  # 约束：窗户的 span(沿立面跨度)与 z(窗台/窗顶)吸附到此栅格。
+  # 为何与结构分级：窗户【没有】跨层身份、也不参与碎片切配，所以吸结构栅格
+  #   (50mm)对它毫无意义，反而直接伤 WWR(窗宽被 round 掉 ±25% 是常事)。
+  #   窗的两个硬指标是 WWR 保真(±5%)与"必须落在父墙内"(否则 CHKSBS 部分重叠
+  #   warning / 求解异常)，都要求细颗粒。默认 = output_precision_m(10mm)。
+
+  window_clamp_to_parent: true
+  # Legacy v1/v2 only：吸附后，把窗 span 钳进其所属 cell 在该立面方向的边界、把窗 z[sill,head]
+  #       钳进所在楼层的 [z_floor, z_floor + ceiling_height]。
+  # 作用：防"窗顶冒出墙顶 / 窗边伸出墙外"那类 CHKSBS partial-overlap。
+  #       false 时只吸附不钳制(调试用，便于观察 LLM 原始越界程度)。
+
+  # ====== B5 v3 source-aware window host resolver ======
+  # These are separate owners from min-edge and Vg numeric tolerances.
+  window_segment_endpoint_clamp_tol_m: 0.010
+  # Only after a unique facade segment is selected, permit this much physical
+  # endpoint overrun to clamp back to the segment endpoint.
+  window_host_span_epsilon_m: 1.0e-9
+  # Numeric containment/positive-width/half-open endpoint guard; never clamp.
+  window_host_plane_epsilon_m: 1.0e-9
+  # Numeric collinearity/parent-plane guard; never an angular tolerance.
+
+  # ====== 立面外包权威吸收(外包→footprint 基准，#2.3) ======
+  envelope_reconcile_tol_m: 0.300
+  # 约束：立面外包 bounds 与 correction footprint 的 lo/hi/跨度差若均 ≤ 此值，
+  #       且 reading 证据满足外包权威规则 → footprint 与贴旧外边界的 cell 边
+  #       吸到立面外包；超过则不静默强压，记 unsupported/conflict。
+  # 背景：立面尺寸常到外墙外包，平面 footprint 可能到墙中线/轴线，同栋楼两套
+  #       基准会差约一个墙厚(如每边 120mm、跨度差 240mm)。
+  # 作用：吸收墙厚量级的外包/中线差，让整栋 origin 回到 SW 外包角；窗不沿立面
+  #       平移，随重建后的父外墙平面定位。
+  # 0.30 = 容一个偏厚外墙(~0.24)+余量；调小→偏厚墙吸不动，调大→可能吞真实尺寸差。
+  # boundary_attach_tol 当前显式等同此值：只移动距旧 footprint 外边界 ≤ 此值的 cell 边。
+
+  facade_frame_cross_check_tol_m: 0.300
+  # 约束：gate① cross-check only。用 derive_facade_frame 把 0_reading 立面
+  #       window 的 image-local x span 投到 world along-facade 坐标后，与
+  #       correction LLM 输出的同立面 window span center 比较；偏差 > 此值则
+  #       FLAG，不 block，不改几何。
+  # 依据：这是跨 reading/correction 两产物的立面落位核对，主要吸收外包/中线与墙厚
+  #       基准差，故与 ENVELOPE_RECONCILE_TOL 同量级；窗自身吸附仍用更细的
+  #       window_snap_grid_m。
+
+  # ====== B3 覆盖硬门 v2：逐层面积守恒 ======
+  coverage_area_tol_m2: 0.050
+  # 约束：每层 cells 的几何并集面积与该层权威 footprint ring 的面积之差，以及
+  #       重叠、洞、越界各自的面积残差，均不得超过此值；超过即 BLOCK。
+  # 口径：面积由正交 polygon/ring 计算，绝不以 footprint bbox 近似。v1/v2
+  #       仍经 floor_footprint 的 legacy bbox ring；v3 经各 Floor.footprint。
+  # 依据：沿用 B3 前 correction.coverage 的 0.05m² 容差，故 legacy 行为不放宽；
+  #       约等于 10mm 坐标精度下、约 5m 边界的一侧量化带面积。独立于
+  #       min_edge_length_m（线性长度），不得复用后者。
+
+  # ====== B2b envelope shared-axis transform ======
+  envelope_axis_attach_tol_m: 0.010
+  # canonical ring/cell/window endpoint shared-axis attachment only.
+
+  envelope_endpoint_match_tol_m: 0.050
+  # wing_break world endpoint -> unique footprint shared-axis match only.
+
+  envelope_candidate_agreement_tol_m: 0.050
+  # overall candidates and dimension value-vs-endpoint-span agreement only.
+
+  # ====== Vg 立面可见性(纯几何,#E1')：数值退化门,非测量容差 ======
+  facade_visibility_depth_epsilon_m: 1.0e-9
+  # 约束：同一方向、同一正宽 along 原子区间内，两个不同 segment 的 depth 差
+  #       ≤ 此值 → 判为同深冲突(INVARIANT，不选赢家)；depth 绝对值 ≤ 此值时
+  #       序列化为精确 0.0(同时消除 -0.0)；raw depth < -此值 → INVARIANT。
+  # 作用：只吸收 IEEE-754 浮点运算噪声，不是可测量的建模精度/吸附半径。
+  #       比 structural_snap_grid_m(10mm)小七个数量级，二者不得混用/复用。
+  # 对应 A0：FACADE_VISIBILITY_DEPTH_EPSILON。
+
+  facade_visibility_endpoint_epsilon_m: 1.0e-9
+  # 约束：half-open 1D skyline sweep 中，(a) 边长 ≤ 此值的边判退化拒绝；
+  #       (b) 两个不同 along-axis event 的正差 ≤ 此值 → INVARIANT(拒绝，不
+  #       桥接、不吸附、不合并)。
+  # 作用：纯数值拓扑门，只拒绝、不移动坐标；与 min_edge_length_m(结构碎片
+  #       地板,10cm)分属不同层级，不得互相替代。
+  # 对应 A0：FACADE_VISIBILITY_ENDPOINT_EPSILON。
+
+  # ====== 连接性补缝(端点→边界，#2.4) ======
+  # 【与轴聚类是两类操作】轴聚类(axis_jitter_tol)问"两坐标是不是同一道墙"
+  # (身份，颗粒 50mm)；补缝问"一条墙线该不该接到边界上"(连接性，颗粒 300mm)。
+  # 二者刻意分开(A0 §4)：补缝用更大的阈值，且只把"差一点够不到外墙"的 cell 边
+  # 沿原方向拉到 footprint 边界，不做近邻轴合并。
+  gap_close_threshold_m: 0.300
+  # 约束：cell 的某条边若落在 footprint 边界内侧、距边界 ≤ 此值 → 把该边吸到
+  #       footprint 边界(把房间封到外墙上)。
+  # 作用：解决"内墙没顶到外墙、留小缝"——闭包不连续就形不成 zone(BEM 里是 fatal)。
+  # 为何定 300mm 而非 A0 老值 100mm：两类错误代价极不对称——
+  #   · 没闭合 = 致命(无 zone)；· 误闭合 = 罕见且轻(真实 <300mm 有意缝几乎不存在，
+  #     且对 BEM 本就必须封)。代价不对称 + 经验(真建筑少有 <300mm 缝)→ 阈值往上。
+  # 方向性：只把差一点够不到边界的边"向外"拉到 footprint，不会把内部边乱吸；
+  #         门洞也照样闭合墙线(门是开在墙上的子面，zone 边界仍连续)。
+  # 当前范围：仅 cell 边→footprint 边界(内墙→外墙，即图示那类)。内墙→内墙的
+  #          连接性(隔墙没顶到另一道隔墙)是后续细化，风险更高、暂不做。
+  # 硬约束关系：必须 > axis_jitter_tol_m(连接性比身份粗) 且 < gap_arbitration_band_m。
+
+  gap_arbitration_band_m: 1.000
+  # 约束：缝在 (gap_close_threshold, 此值] 区间 → 不在代码里自动闭合，升 A3 仲裁
+  #       (门洞那类：墙线闭合+门作子面 vs 真开口)；≥ 此值 → 视作开放边界，交
+  #       A3/zonification 判"该不该合成一个 zone"，不静默封墙。
+  # 说明：当前确定性核只消费 gap_close_threshold(自动闭合段)；此值是给 A3(LLM)
+  #       与文档的口径，代码暂不据此动作，仅参与不变量校验。
+
+  # ---------------------------------------------------------------------------
+  # 【未来扩展，当前未启用】按 method profile 分档结构栅格：
+  #   room_identity   → 0.050 (每道隔墙都是热边界，全保真，永不丢墙)
+  #   use_grouped_rooms / perimeter_core → 0.100 (内部坐标可放宽，输出更圆整)
+  # 接法：core 读 geom 的 profile 字段后从此处取对应栅格。留待 method profile
+  # 真正接进管线时再开。
+  # ---------------------------------------------------------------------------
+  # structural_snap_grid_by_profile:
+  #   room_identity: 0.050
+  #   use_grouped_rooms: 0.100
+  #   perimeter_core: 0.100

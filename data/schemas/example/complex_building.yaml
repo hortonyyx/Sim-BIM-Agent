@@ -1,0 +1,4346 @@
+# Complex 4-Floor Office Building
+# Each floor has different shape (stepped/terraced design)
+# Complexity: complex (9+ zones per floor)
+# Location: Shenzhen
+# Floor 1: 32m x 26m (full rectangle)
+# Floor 2: L-shape (NE corner removed)
+# Floor 3: 28m x 22m (stepped back)
+# Floor 4: 24m x 20m (tower top)
+# Floor height: 3.5m each
+
+SimulationControl:
+    Do Zone Sizing Calculation: No
+    Do System Sizing Calculation: No
+    Do Plant Sizing Calculation: No
+    Run Simulation for Sizing Periods: No
+    Run Simulation for Weather File Run Periods: Yes
+    Do HVAC Sizing Simulation for Sizing Periods: Yes
+    Maximum Number of HVAC Sizing Simulation Passes: 1
+
+Building:
+    Name: Complex_4Floor_Office_Shenzhen
+    North Axis: 0
+    Terrain: City
+    Loads Convergence Tolerance Value: 0.04
+    Temperature Convergence Tolerance Value: 0.40
+    Solar Distribution: FullInteriorAndExterior
+    Maximum Number of Warmup Days: 25
+    Minimum Number of Warmup Days: 6
+
+Timestep:
+    Number of Timesteps per Hour: 4
+
+Site:Location:
+    Name: Shenzhen_GD_CHN Design_Conditions
+    Latitude: 22.54
+    Longitude: 114.00
+    Time Zone: 8.00
+    Elevation: 4.00
+
+RunPeriod:
+    Name: Run Period 1
+    Begin Month: 1
+    Begin Day of Month: 1
+    Begin Year: 2040
+    End Month: 12
+    End Day of Month: 31
+    End Year: 2040
+    Day of Week for Start Day: Tuesday
+    Use Weather File Holidays and Special Days: Yes
+    Use Weather File Daylight Saving Period: Yes
+    Apply Weekend Holiday Rule: No
+    Use Weather File Rain Indicators: Yes
+    Use Weather File Snow Indicators: Yes
+
+Material:
+  - Name: Concrete_20cm
+    Type: Standard
+    Roughness: MediumRough
+    Thickness: 0.2
+    Conductivity: 1.729
+    Density: 2240
+    Specific_Heat: 837
+
+  - Name: Gypsum_1.3cm
+    Type: Standard
+    Roughness: Smooth
+    Thickness: 0.0127
+    Conductivity: 0.16
+    Density: 785
+    Specific_Heat: 830
+
+  - Name: SimpleGlazingSystem
+    Type: Glazing
+    U-Factor: 5.8
+    Solar_Heat_Gain_Coefficient: 0.8
+    Visible_Transmittance: 0.9
+
+Construction:
+  - Name: Exterior_Wall_Const
+    Layers:
+      - Concrete_20cm
+  - Name: Interior_Wall_Const
+    Layers:
+      - Gypsum_1.3cm
+      - Gypsum_1.3cm
+  - Name: Roof_Const
+    Layers:
+      - Concrete_20cm
+  - Name: Floor_Const
+    Layers:
+      - Concrete_20cm
+  - Name: Ceiling_Const
+    Layers:
+      - Concrete_20cm
+  - Name: Window_Const
+    Layers:
+      - SimpleGlazingSystem
+
+GlobalGeometryRules:
+    Starting Vertex Position: UpperLeftCorner
+    Vertex Entry Direction: Counterclockwise
+    Coordinate System: World
+
+# ==================================================================
+# FLOOR 1: Rectangle 32m x 26m (z=0 to 3.5)
+# Perimeter depth: 5m, Core: 22m x 16m
+# Layout:
+# +--------+------------+--------+
+# | F1_NW  |   F1_N     | F1_NE  |  y: 21-26
+# | 5x5    |   22x5     | 5x5    |
+# +--------+------------+--------+
+# | F1_W   |   F1_Core  | F1_E   |  y: 5-21
+# | 5x16   |   22x16    | 5x16   |
+# +--------+------------+--------+
+# | F1_SW  |   F1_S     | F1_SE  |  y: 0-5
+# | 5x5    |   22x5     | 5x5    |
+# +--------+------------+--------+
+#   x:0-5    x:5-27      x:27-32
+# ==================================================================
+
+Zone:
+  # Floor 1 Zones
+  - Name: F1_SW
+    Direction of Relative North: null
+    X Origin: 0
+    Y Origin: 0
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F1_S
+    Direction of Relative North: null
+    X Origin: 5
+    Y Origin: 0
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F1_SE
+    Direction of Relative North: null
+    X Origin: 27
+    Y Origin: 0
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F1_W
+    Direction of Relative North: null
+    X Origin: 0
+    Y Origin: 5
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F1_Core
+    Direction of Relative North: null
+    X Origin: 5
+    Y Origin: 5
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F1_E
+    Direction of Relative North: null
+    X Origin: 27
+    Y Origin: 5
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F1_NW
+    Direction of Relative North: null
+    X Origin: 0
+    Y Origin: 21
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F1_N
+    Direction of Relative North: null
+    X Origin: 5
+    Y Origin: 21
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F1_NE
+    Direction of Relative North: null
+    X Origin: 27
+    Y Origin: 21
+    Z Origin: 0
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  # ==================================================================
+  # FLOOR 2: L-Shape (z=3.5 to 7), NE corner removed
+  # Base: 32m x 26m, removed area: 10m x 10m at NE
+  # Layout:
+  # +--------+------------+
+  # | F2_NW  |   F2_N     |  y: 21-26
+  # | 5x5    |   17x5     |  (NE removed)
+  # +--------+------------+--------+
+  # | F2_W   |   F2_Core  | F2_E   |  y: 5-21
+  # | 5x16   |   17x16    | 10x16  |
+  # +--------+------------+--------+
+  # | F2_SW  |   F2_S     | F2_SE  |  y: 0-5
+  # | 5x5    |   17x5     | 10x5   |
+  # +--------+------------+--------+
+  #   x:0-5    x:5-22      x:22-32
+  # ==================================================================
+
+  - Name: F2_SW
+    Direction of Relative North: null
+    X Origin: 0
+    Y Origin: 0
+    Z Origin: 3.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F2_S
+    Direction of Relative North: null
+    X Origin: 5
+    Y Origin: 0
+    Z Origin: 3.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F2_SE
+    Direction of Relative North: null
+    X Origin: 22
+    Y Origin: 0
+    Z Origin: 3.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F2_W
+    Direction of Relative North: null
+    X Origin: 0
+    Y Origin: 5
+    Z Origin: 3.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F2_Core
+    Direction of Relative North: null
+    X Origin: 5
+    Y Origin: 5
+    Z Origin: 3.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F2_E
+    Direction of Relative North: null
+    X Origin: 22
+    Y Origin: 5
+    Z Origin: 3.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F2_NW
+    Direction of Relative North: null
+    X Origin: 0
+    Y Origin: 21
+    Z Origin: 3.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F2_N
+    Direction of Relative North: null
+    X Origin: 5
+    Y Origin: 21
+    Z Origin: 3.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  # ==================================================================
+  # FLOOR 3: Stepped Rectangle 28m x 22m (z=7 to 10.5)
+  # Centered on base, offset: x=2, y=2
+  # Perimeter depth: 4m, Core: 20m x 14m
+  # Layout:
+  # +--------+------------+--------+
+  # | F3_NW  |   F3_N     | F3_NE  |  y: 20-24
+  # | 4x4    |   20x4     | 4x4    |
+  # +--------+------------+--------+
+  # | F3_W   |   F3_Core  | F3_E   |  y: 6-20
+  # | 4x14   |   20x14    | 4x14   |
+  # +--------+------------+--------+
+  # | F3_SW  |   F3_S     | F3_SE  |  y: 2-6
+  # | 4x4    |   20x4     | 4x4    |
+  # +--------+------------+--------+
+  #   x:2-6    x:6-26      x:26-30
+  # ==================================================================
+
+  - Name: F3_SW
+    Direction of Relative North: null
+    X Origin: 2
+    Y Origin: 2
+    Z Origin: 7
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F3_S
+    Direction of Relative North: null
+    X Origin: 6
+    Y Origin: 2
+    Z Origin: 7
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F3_SE
+    Direction of Relative North: null
+    X Origin: 26
+    Y Origin: 2
+    Z Origin: 7
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F3_W
+    Direction of Relative North: null
+    X Origin: 2
+    Y Origin: 6
+    Z Origin: 7
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F3_Core
+    Direction of Relative North: null
+    X Origin: 6
+    Y Origin: 6
+    Z Origin: 7
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F3_E
+    Direction of Relative North: null
+    X Origin: 26
+    Y Origin: 6
+    Z Origin: 7
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F3_NW
+    Direction of Relative North: null
+    X Origin: 2
+    Y Origin: 20
+    Z Origin: 7
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F3_N
+    Direction of Relative North: null
+    X Origin: 6
+    Y Origin: 20
+    Z Origin: 7
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F3_NE
+    Direction of Relative North: null
+    X Origin: 26
+    Y Origin: 20
+    Z Origin: 7
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  # ==================================================================
+  # FLOOR 4: Tower Top 24m x 20m (z=10.5 to 14)
+  # Centered, offset: x=4, y=3
+  # Perimeter depth: 4m, Core: 16m x 12m
+  # Layout:
+  # +--------+------------+--------+
+  # | F4_NW  |   F4_N     | F4_NE  |  y: 19-23
+  # | 4x4    |   16x4     | 4x4    |
+  # +--------+------------+--------+
+  # | F4_W   |   F4_Core  | F4_E   |  y: 7-19
+  # | 4x12   |   16x12    | 4x12   |
+  # +--------+------------+--------+
+  # | F4_SW  |   F4_S     | F4_SE  |  y: 3-7
+  # | 4x4    |   16x4     | 4x4    |
+  # +--------+------------+--------+
+  #   x:4-8    x:8-24      x:24-28
+  # ==================================================================
+
+  - Name: F4_SW
+    Direction of Relative North: null
+    X Origin: 4
+    Y Origin: 3
+    Z Origin: 10.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F4_S
+    Direction of Relative North: null
+    X Origin: 8
+    Y Origin: 3
+    Z Origin: 10.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F4_SE
+    Direction of Relative North: null
+    X Origin: 24
+    Y Origin: 3
+    Z Origin: 10.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F4_W
+    Direction of Relative North: null
+    X Origin: 4
+    Y Origin: 7
+    Z Origin: 10.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F4_Core
+    Direction of Relative North: null
+    X Origin: 8
+    Y Origin: 7
+    Z Origin: 10.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F4_E
+    Direction of Relative North: null
+    X Origin: 24
+    Y Origin: 7
+    Z Origin: 10.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F4_NW
+    Direction of Relative North: null
+    X Origin: 4
+    Y Origin: 19
+    Z Origin: 10.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F4_N
+    Direction of Relative North: null
+    X Origin: 8
+    Y Origin: 19
+    Z Origin: 10.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+  - Name: F4_NE
+    Direction of Relative North: null
+    X Origin: 24
+    Y Origin: 19
+    Z Origin: 10.5
+    Type: 1
+    Multiplier: 1
+    Ceiling Height: autocalculate
+    Volume: autocalculate
+    Floor Area: autocalculate
+
+BuildingSurface:Detailed:
+  # ==================================================================
+  # FLOOR 1 SURFACES (32m x 26m, z=0-3.5)
+  # ==================================================================
+
+  # F1_SW (0-5, 0-5)
+  - Name: F1_SW_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F1_SW
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 5, Z: 0}
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 5, Y: 0, Z: 0}
+      - {X: 0, Y: 0, Z: 0}
+
+  - Name: F1_SW_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F1_SW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_SW_Floor
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 0, Z: 3.5}
+      - {X: 5, Y: 0, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 0, Y: 5, Z: 3.5}
+
+  - Name: F1_SW_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 0, Z: 0}
+      - {X: 5, Y: 0, Z: 0}
+      - {X: 5, Y: 0, Z: 3.5}
+      - {X: 0, Y: 0, Z: 3.5}
+
+  - Name: F1_SW_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 0, Z: 3.5}
+      - {X: 0, Y: 5, Z: 3.5}
+      - {X: 0, Y: 5, Z: 0}
+      - {X: 0, Y: 0, Z: 0}
+
+  - Name: F1_SW_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_SW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_S_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 0, Z: 0}
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 5, Y: 0, Z: 3.5}
+
+  - Name: F1_SW_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_SW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_W_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 0, Y: 5, Z: 0}
+      - {X: 0, Y: 5, Z: 3.5}
+
+  # F1_S (5-27, 0-5)
+  - Name: F1_S_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F1_S
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 27, Y: 5, Z: 0}
+      - {X: 27, Y: 0, Z: 0}
+      - {X: 5, Y: 0, Z: 0}
+
+  - Name: F1_S_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F1_S
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 0, Z: 3.5}
+      - {X: 27, Y: 0, Z: 3.5}
+      - {X: 27, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+
+  - Name: F1_S_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_S
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 0, Z: 0}
+      - {X: 27, Y: 0, Z: 0}
+      - {X: 27, Y: 0, Z: 3.5}
+      - {X: 5, Y: 0, Z: 3.5}
+
+  - Name: F1_S_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_SW_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 0, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 5, Y: 0, Z: 0}
+
+  - Name: F1_S_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_SE_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 0, Z: 0}
+      - {X: 27, Y: 5, Z: 0}
+      - {X: 27, Y: 5, Z: 3.5}
+      - {X: 27, Y: 0, Z: 3.5}
+
+  - Name: F1_S_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_Core_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 5, Z: 3.5}
+      - {X: 27, Y: 5, Z: 0}
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 5, Y: 5, Z: 3.5}
+
+  # F1_SE (27-32, 0-5)
+  - Name: F1_SE_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F1_SE
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 5, Z: 0}
+      - {X: 32, Y: 5, Z: 0}
+      - {X: 32, Y: 0, Z: 0}
+      - {X: 27, Y: 0, Z: 0}
+
+  - Name: F1_SE_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F1_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 0, Z: 3.5}
+      - {X: 32, Y: 0, Z: 3.5}
+      - {X: 32, Y: 5, Z: 3.5}
+      - {X: 27, Y: 5, Z: 3.5}
+
+  - Name: F1_SE_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 0, Z: 0}
+      - {X: 32, Y: 0, Z: 0}
+      - {X: 32, Y: 0, Z: 3.5}
+      - {X: 27, Y: 0, Z: 3.5}
+
+  - Name: F1_SE_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 32, Y: 0, Z: 0}
+      - {X: 32, Y: 5, Z: 0}
+      - {X: 32, Y: 5, Z: 3.5}
+      - {X: 32, Y: 0, Z: 3.5}
+
+  - Name: F1_SE_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_SE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_S_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 0, Z: 3.5}
+      - {X: 27, Y: 5, Z: 3.5}
+      - {X: 27, Y: 5, Z: 0}
+      - {X: 27, Y: 0, Z: 0}
+
+  - Name: F1_SE_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_SE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_E_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 32, Y: 5, Z: 3.5}
+      - {X: 32, Y: 5, Z: 0}
+      - {X: 27, Y: 5, Z: 0}
+      - {X: 27, Y: 5, Z: 3.5}
+
+  # F1_W (0-5, 5-21)
+  - Name: F1_W_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F1_W
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 21, Z: 0}
+      - {X: 5, Y: 21, Z: 0}
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 0, Y: 5, Z: 0}
+
+  - Name: F1_W_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F1_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_W_Floor
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 0, Y: 21, Z: 3.5}
+
+  - Name: F1_W_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_W
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 5, Z: 3.5}
+      - {X: 0, Y: 21, Z: 3.5}
+      - {X: 0, Y: 21, Z: 0}
+      - {X: 0, Y: 5, Z: 0}
+
+  - Name: F1_W_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_SW_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 5, Z: 0}
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 0, Y: 5, Z: 3.5}
+
+  - Name: F1_W_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_NW_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 0}
+      - {X: 0, Y: 21, Z: 0}
+      - {X: 0, Y: 21, Z: 3.5}
+
+  - Name: F1_W_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_Core_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 5, Y: 21, Z: 0}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+
+  # F1_Core (5-27, 5-21)
+  - Name: F1_Core_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F1_Core
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 0}
+      - {X: 27, Y: 21, Z: 0}
+      - {X: 27, Y: 5, Z: 0}
+      - {X: 5, Y: 5, Z: 0}
+
+  - Name: F1_Core_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F1_Core
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 27, Y: 5, Z: 3.5}
+      - {X: 27, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+
+  - Name: F1_Core_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_S_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 0}
+      - {X: 27, Y: 5, Z: 0}
+      - {X: 27, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+
+  - Name: F1_Core_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_N_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 21, Z: 3.5}
+      - {X: 27, Y: 21, Z: 0}
+      - {X: 5, Y: 21, Z: 0}
+      - {X: 5, Y: 21, Z: 3.5}
+
+  - Name: F1_Core_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_W_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 0}
+      - {X: 5, Y: 5, Z: 0}
+
+  - Name: F1_Core_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_E_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 5, Z: 0}
+      - {X: 27, Y: 21, Z: 0}
+      - {X: 27, Y: 21, Z: 3.5}
+      - {X: 27, Y: 5, Z: 3.5}
+
+  # F1_E (27-32, 5-21)
+  - Name: F1_E_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F1_E
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 21, Z: 0}
+      - {X: 32, Y: 21, Z: 0}
+      - {X: 32, Y: 5, Z: 0}
+      - {X: 27, Y: 5, Z: 0}
+
+  - Name: F1_E_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F1_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 5, Z: 3.5}
+      - {X: 32, Y: 5, Z: 3.5}
+      - {X: 32, Y: 21, Z: 3.5}
+      - {X: 27, Y: 21, Z: 3.5}
+
+  - Name: F1_E_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 32, Y: 5, Z: 0}
+      - {X: 32, Y: 21, Z: 0}
+      - {X: 32, Y: 21, Z: 3.5}
+      - {X: 32, Y: 5, Z: 3.5}
+
+  - Name: F1_E_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_E
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_SE_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 5, Z: 0}
+      - {X: 32, Y: 5, Z: 0}
+      - {X: 32, Y: 5, Z: 3.5}
+      - {X: 27, Y: 5, Z: 3.5}
+
+  - Name: F1_E_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_E
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_NE_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 32, Y: 21, Z: 3.5}
+      - {X: 32, Y: 21, Z: 0}
+      - {X: 27, Y: 21, Z: 0}
+      - {X: 27, Y: 21, Z: 3.5}
+
+  - Name: F1_E_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_E
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_Core_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 5, Z: 3.5}
+      - {X: 27, Y: 21, Z: 3.5}
+      - {X: 27, Y: 21, Z: 0}
+      - {X: 27, Y: 5, Z: 0}
+
+  # F1_NW (0-5, 21-26)
+  - Name: F1_NW_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F1_NW
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 26, Z: 0}
+      - {X: 5, Y: 26, Z: 0}
+      - {X: 5, Y: 21, Z: 0}
+      - {X: 0, Y: 21, Z: 0}
+
+  - Name: F1_NW_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F1_NW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_NW_Floor
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 5, Y: 26, Z: 3.5}
+      - {X: 0, Y: 26, Z: 3.5}
+
+  - Name: F1_NW_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 26, Z: 3.5}
+      - {X: 5, Y: 26, Z: 0}
+      - {X: 0, Y: 26, Z: 0}
+      - {X: 0, Y: 26, Z: 3.5}
+
+  - Name: F1_NW_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 21, Z: 3.5}
+      - {X: 0, Y: 26, Z: 3.5}
+      - {X: 0, Y: 26, Z: 0}
+      - {X: 0, Y: 21, Z: 0}
+
+  - Name: F1_NW_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_NW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_N_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 0}
+      - {X: 5, Y: 26, Z: 0}
+      - {X: 5, Y: 26, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+
+  - Name: F1_NW_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_NW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_W_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 21, Z: 0}
+      - {X: 5, Y: 21, Z: 0}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 0, Y: 21, Z: 3.5}
+
+  # F1_N (5-27, 21-26)
+  - Name: F1_N_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F1_N
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 26, Z: 0}
+      - {X: 27, Y: 26, Z: 0}
+      - {X: 27, Y: 21, Z: 0}
+      - {X: 5, Y: 21, Z: 0}
+
+  - Name: F1_N_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F1_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 27, Y: 21, Z: 3.5}
+      - {X: 27, Y: 26, Z: 3.5}
+      - {X: 5, Y: 26, Z: 3.5}
+
+  - Name: F1_N_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 26, Z: 3.5}
+      - {X: 27, Y: 26, Z: 0}
+      - {X: 5, Y: 26, Z: 0}
+      - {X: 5, Y: 26, Z: 3.5}
+
+  - Name: F1_N_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_N
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_NW_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 5, Y: 26, Z: 3.5}
+      - {X: 5, Y: 26, Z: 0}
+      - {X: 5, Y: 21, Z: 0}
+
+  - Name: F1_N_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_N
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_NE_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 21, Z: 0}
+      - {X: 27, Y: 26, Z: 0}
+      - {X: 27, Y: 26, Z: 3.5}
+      - {X: 27, Y: 21, Z: 3.5}
+
+  - Name: F1_N_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_N
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_Core_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 0}
+      - {X: 27, Y: 21, Z: 0}
+      - {X: 27, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+
+  # F1_NE (27-32, 21-26)
+  - Name: F1_NE_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F1_NE
+    Space Name: null
+    Outside Boundary Condition: Ground
+    Outside Boundary Condition Object: null
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 26, Z: 0}
+      - {X: 32, Y: 26, Z: 0}
+      - {X: 32, Y: 21, Z: 0}
+      - {X: 27, Y: 21, Z: 0}
+
+  - Name: F1_NE_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F1_NE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 21, Z: 3.5}
+      - {X: 32, Y: 21, Z: 3.5}
+      - {X: 32, Y: 26, Z: 3.5}
+      - {X: 27, Y: 26, Z: 3.5}
+
+  - Name: F1_NE_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_NE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 32, Y: 26, Z: 3.5}
+      - {X: 32, Y: 26, Z: 0}
+      - {X: 27, Y: 26, Z: 0}
+      - {X: 27, Y: 26, Z: 3.5}
+
+  - Name: F1_NE_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F1_NE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 32, Y: 21, Z: 0}
+      - {X: 32, Y: 26, Z: 0}
+      - {X: 32, Y: 26, Z: 3.5}
+      - {X: 32, Y: 21, Z: 3.5}
+
+  - Name: F1_NE_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_NE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_N_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 21, Z: 3.5}
+      - {X: 27, Y: 26, Z: 3.5}
+      - {X: 27, Y: 26, Z: 0}
+      - {X: 27, Y: 21, Z: 0}
+
+  - Name: F1_NE_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F1_NE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_E_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 27, Y: 21, Z: 0}
+      - {X: 32, Y: 21, Z: 0}
+      - {X: 32, Y: 21, Z: 3.5}
+      - {X: 27, Y: 21, Z: 3.5}
+
+  # ==================================================================
+  # FLOOR 2 SURFACES (L-Shape, z=3.5-7)
+  # No NE corner (22-32, 21-26 area removed)
+  # ==================================================================
+
+  # F2_SW (0-5, 0-5)
+  - Name: F2_SW_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F2_SW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_SW_Ceiling
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 5, Y: 0, Z: 3.5}
+      - {X: 0, Y: 0, Z: 3.5}
+
+  - Name: F2_SW_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F2_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 0, Z: 7}
+      - {X: 5, Y: 0, Z: 7}
+      - {X: 5, Y: 5, Z: 7}
+      - {X: 0, Y: 5, Z: 7}
+
+  - Name: F2_SW_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 0, Z: 3.5}
+      - {X: 5, Y: 0, Z: 3.5}
+      - {X: 5, Y: 0, Z: 7}
+      - {X: 0, Y: 0, Z: 7}
+
+  - Name: F2_SW_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 0, Z: 7}
+      - {X: 0, Y: 5, Z: 7}
+      - {X: 0, Y: 5, Z: 3.5}
+      - {X: 0, Y: 0, Z: 3.5}
+
+  - Name: F2_SW_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_SW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_S_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 0, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 7}
+      - {X: 5, Y: 0, Z: 7}
+
+  - Name: F2_SW_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_SW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_W_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 7}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 0, Y: 5, Z: 3.5}
+      - {X: 0, Y: 5, Z: 7}
+
+  # F2_S (5-22, 0-5)
+  - Name: F2_S_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F2_S
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 22, Y: 5, Z: 3.5}
+      - {X: 22, Y: 0, Z: 3.5}
+      - {X: 5, Y: 0, Z: 3.5}
+
+  - Name: F2_S_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F2_S
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 0, Z: 7}
+      - {X: 22, Y: 0, Z: 7}
+      - {X: 22, Y: 5, Z: 7}
+      - {X: 5, Y: 5, Z: 7}
+
+  - Name: F2_S_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_S
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 0, Z: 3.5}
+      - {X: 22, Y: 0, Z: 3.5}
+      - {X: 22, Y: 0, Z: 7}
+      - {X: 5, Y: 0, Z: 7}
+
+  - Name: F2_S_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_SW_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 0, Z: 7}
+      - {X: 5, Y: 5, Z: 7}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 5, Y: 0, Z: 3.5}
+
+  - Name: F2_S_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_SE_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 0, Z: 3.5}
+      - {X: 22, Y: 5, Z: 3.5}
+      - {X: 22, Y: 5, Z: 7}
+      - {X: 22, Y: 0, Z: 7}
+
+  - Name: F2_S_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_Core_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 5, Z: 7}
+      - {X: 22, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 7}
+
+  # F2_SE (22-32, 0-5)
+  - Name: F2_SE_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F2_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 5, Z: 3.5}
+      - {X: 32, Y: 5, Z: 3.5}
+      - {X: 32, Y: 0, Z: 3.5}
+      - {X: 22, Y: 0, Z: 3.5}
+
+  - Name: F2_SE_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F2_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 0, Z: 7}
+      - {X: 32, Y: 0, Z: 7}
+      - {X: 32, Y: 5, Z: 7}
+      - {X: 22, Y: 5, Z: 7}
+
+  - Name: F2_SE_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 0, Z: 3.5}
+      - {X: 32, Y: 0, Z: 3.5}
+      - {X: 32, Y: 0, Z: 7}
+      - {X: 22, Y: 0, Z: 7}
+
+  - Name: F2_SE_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 32, Y: 0, Z: 3.5}
+      - {X: 32, Y: 5, Z: 3.5}
+      - {X: 32, Y: 5, Z: 7}
+      - {X: 32, Y: 0, Z: 7}
+
+  - Name: F2_SE_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_SE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_S_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 0, Z: 7}
+      - {X: 22, Y: 5, Z: 7}
+      - {X: 22, Y: 5, Z: 3.5}
+      - {X: 22, Y: 0, Z: 3.5}
+
+  - Name: F2_SE_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_SE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_E_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 32, Y: 5, Z: 7}
+      - {X: 32, Y: 5, Z: 3.5}
+      - {X: 22, Y: 5, Z: 3.5}
+      - {X: 22, Y: 5, Z: 7}
+
+  # F2_W (0-5, 5-21)
+  - Name: F2_W_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F2_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_W_Ceiling
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 0, Y: 5, Z: 3.5}
+
+  - Name: F2_W_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F2_W
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 5, Z: 7}
+      - {X: 5, Y: 5, Z: 7}
+      - {X: 5, Y: 21, Z: 7}
+      - {X: 0, Y: 21, Z: 7}
+
+  - Name: F2_W_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_W
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 5, Z: 7}
+      - {X: 0, Y: 21, Z: 7}
+      - {X: 0, Y: 21, Z: 3.5}
+      - {X: 0, Y: 5, Z: 3.5}
+
+  - Name: F2_W_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_SW_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 7}
+      - {X: 0, Y: 5, Z: 7}
+
+  - Name: F2_W_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_NW_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 7}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 0, Y: 21, Z: 3.5}
+      - {X: 0, Y: 21, Z: 7}
+
+  - Name: F2_W_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_Core_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 7}
+      - {X: 5, Y: 5, Z: 7}
+
+  # F2_Core (5-22, 5-21)
+  - Name: F2_Core_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F2_Core
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 22, Y: 21, Z: 3.5}
+      - {X: 22, Y: 5, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+
+  - Name: F2_Core_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F2_Core
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 7}
+      - {X: 22, Y: 5, Z: 7}
+      - {X: 22, Y: 21, Z: 7}
+      - {X: 5, Y: 21, Z: 7}
+
+  - Name: F2_Core_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_S_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 3.5}
+      - {X: 22, Y: 5, Z: 3.5}
+      - {X: 22, Y: 5, Z: 7}
+      - {X: 5, Y: 5, Z: 7}
+
+  - Name: F2_Core_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_N_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 21, Z: 7}
+      - {X: 22, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 7}
+
+  - Name: F2_Core_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_W_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 5, Z: 7}
+      - {X: 5, Y: 21, Z: 7}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 5, Y: 5, Z: 3.5}
+
+  - Name: F2_Core_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_E_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 5, Z: 3.5}
+      - {X: 22, Y: 21, Z: 3.5}
+      - {X: 22, Y: 21, Z: 7}
+      - {X: 22, Y: 5, Z: 7}
+
+  # F2_E (22-32, 5-21)
+  - Name: F2_E_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F2_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 21, Z: 3.5}
+      - {X: 32, Y: 21, Z: 3.5}
+      - {X: 32, Y: 5, Z: 3.5}
+      - {X: 22, Y: 5, Z: 3.5}
+
+  - Name: F2_E_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F2_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 5, Z: 7}
+      - {X: 32, Y: 5, Z: 7}
+      - {X: 32, Y: 21, Z: 7}
+      - {X: 22, Y: 21, Z: 7}
+
+  - Name: F2_E_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 32, Y: 5, Z: 3.5}
+      - {X: 32, Y: 21, Z: 3.5}
+      - {X: 32, Y: 21, Z: 7}
+      - {X: 32, Y: 5, Z: 7}
+
+  - Name: F2_E_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_E
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_SE_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 5, Z: 3.5}
+      - {X: 32, Y: 5, Z: 3.5}
+      - {X: 32, Y: 5, Z: 7}
+      - {X: 22, Y: 5, Z: 7}
+
+  - Name: F2_E_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 32, Y: 21, Z: 7}
+      - {X: 32, Y: 21, Z: 3.5}
+      - {X: 22, Y: 21, Z: 3.5}
+      - {X: 22, Y: 21, Z: 7}
+
+  - Name: F2_E_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_E
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_Core_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 5, Z: 7}
+      - {X: 22, Y: 21, Z: 7}
+      - {X: 22, Y: 21, Z: 3.5}
+      - {X: 22, Y: 5, Z: 3.5}
+
+  # F2_NW (0-5, 21-26)
+  - Name: F2_NW_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F2_NW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F1_NW_Ceiling
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 26, Z: 3.5}
+      - {X: 5, Y: 26, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 0, Y: 21, Z: 3.5}
+
+  - Name: F2_NW_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F2_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 21, Z: 7}
+      - {X: 5, Y: 21, Z: 7}
+      - {X: 5, Y: 26, Z: 7}
+      - {X: 0, Y: 26, Z: 7}
+
+  - Name: F2_NW_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 26, Z: 7}
+      - {X: 5, Y: 26, Z: 3.5}
+      - {X: 0, Y: 26, Z: 3.5}
+      - {X: 0, Y: 26, Z: 7}
+
+  - Name: F2_NW_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 21, Z: 7}
+      - {X: 0, Y: 26, Z: 7}
+      - {X: 0, Y: 26, Z: 3.5}
+      - {X: 0, Y: 21, Z: 3.5}
+
+  - Name: F2_NW_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_NW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_N_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 5, Y: 26, Z: 3.5}
+      - {X: 5, Y: 26, Z: 7}
+      - {X: 5, Y: 21, Z: 7}
+
+  - Name: F2_NW_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_NW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_W_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 0, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 7}
+      - {X: 0, Y: 21, Z: 7}
+
+  # F2_N (5-22, 21-26)
+  - Name: F2_N_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F2_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 26, Z: 3.5}
+      - {X: 22, Y: 26, Z: 3.5}
+      - {X: 22, Y: 21, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+
+  - Name: F2_N_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F2_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 7}
+      - {X: 22, Y: 21, Z: 7}
+      - {X: 22, Y: 26, Z: 7}
+      - {X: 5, Y: 26, Z: 7}
+
+  - Name: F2_N_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 26, Z: 7}
+      - {X: 22, Y: 26, Z: 3.5}
+      - {X: 5, Y: 26, Z: 3.5}
+      - {X: 5, Y: 26, Z: 7}
+
+  - Name: F2_N_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_N
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_NW_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 7}
+      - {X: 5, Y: 26, Z: 7}
+      - {X: 5, Y: 26, Z: 3.5}
+      - {X: 5, Y: 21, Z: 3.5}
+
+  - Name: F2_N_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F2_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 22, Y: 21, Z: 3.5}
+      - {X: 22, Y: 26, Z: 3.5}
+      - {X: 22, Y: 26, Z: 7}
+      - {X: 22, Y: 21, Z: 7}
+
+  - Name: F2_N_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F2_N
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F2_Core_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 5, Y: 21, Z: 3.5}
+      - {X: 22, Y: 21, Z: 3.5}
+      - {X: 22, Y: 21, Z: 7}
+      - {X: 5, Y: 21, Z: 7}
+
+  # ==================================================================
+  # FLOOR 3 SURFACES (28m x 22m, z=7-10.5)
+  # Offset: x=2, y=2, Perimeter: 4m
+  # ==================================================================
+
+  # F3_SW (2-6, 2-6)
+  - Name: F3_SW_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F3_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 6, Z: 7}
+      - {X: 6, Y: 6, Z: 7}
+      - {X: 6, Y: 2, Z: 7}
+      - {X: 2, Y: 2, Z: 7}
+
+  - Name: F3_SW_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F3_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 2, Z: 10.5}
+      - {X: 6, Y: 2, Z: 10.5}
+      - {X: 6, Y: 6, Z: 10.5}
+      - {X: 2, Y: 6, Z: 10.5}
+
+  - Name: F3_SW_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 2, Z: 7}
+      - {X: 6, Y: 2, Z: 7}
+      - {X: 6, Y: 2, Z: 10.5}
+      - {X: 2, Y: 2, Z: 10.5}
+
+  - Name: F3_SW_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 2, Z: 10.5}
+      - {X: 2, Y: 6, Z: 10.5}
+      - {X: 2, Y: 6, Z: 7}
+      - {X: 2, Y: 2, Z: 7}
+
+  - Name: F3_SW_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_SW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_S_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 2, Z: 7}
+      - {X: 6, Y: 6, Z: 7}
+      - {X: 6, Y: 6, Z: 10.5}
+      - {X: 6, Y: 2, Z: 10.5}
+
+  - Name: F3_SW_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_SW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_W_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 6, Z: 10.5}
+      - {X: 6, Y: 6, Z: 7}
+      - {X: 2, Y: 6, Z: 7}
+      - {X: 2, Y: 6, Z: 10.5}
+
+  # F3_S (6-26, 2-6)
+  - Name: F3_S_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F3_S
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 6, Z: 7}
+      - {X: 26, Y: 6, Z: 7}
+      - {X: 26, Y: 2, Z: 7}
+      - {X: 6, Y: 2, Z: 7}
+
+  - Name: F3_S_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F3_S
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 2, Z: 10.5}
+      - {X: 26, Y: 2, Z: 10.5}
+      - {X: 26, Y: 6, Z: 10.5}
+      - {X: 6, Y: 6, Z: 10.5}
+
+  - Name: F3_S_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_S
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 2, Z: 7}
+      - {X: 26, Y: 2, Z: 7}
+      - {X: 26, Y: 2, Z: 10.5}
+      - {X: 6, Y: 2, Z: 10.5}
+
+  - Name: F3_S_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_SW_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 2, Z: 10.5}
+      - {X: 6, Y: 6, Z: 10.5}
+      - {X: 6, Y: 6, Z: 7}
+      - {X: 6, Y: 2, Z: 7}
+
+  - Name: F3_S_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_SE_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 2, Z: 7}
+      - {X: 26, Y: 6, Z: 7}
+      - {X: 26, Y: 6, Z: 10.5}
+      - {X: 26, Y: 2, Z: 10.5}
+
+  - Name: F3_S_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_Core_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 6, Z: 10.5}
+      - {X: 26, Y: 6, Z: 7}
+      - {X: 6, Y: 6, Z: 7}
+      - {X: 6, Y: 6, Z: 10.5}
+
+  # F3_SE (26-30, 2-6)
+  - Name: F3_SE_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F3_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 6, Z: 7}
+      - {X: 30, Y: 6, Z: 7}
+      - {X: 30, Y: 2, Z: 7}
+      - {X: 26, Y: 2, Z: 7}
+
+  - Name: F3_SE_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F3_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 2, Z: 10.5}
+      - {X: 30, Y: 2, Z: 10.5}
+      - {X: 30, Y: 6, Z: 10.5}
+      - {X: 26, Y: 6, Z: 10.5}
+
+  - Name: F3_SE_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 2, Z: 7}
+      - {X: 30, Y: 2, Z: 7}
+      - {X: 30, Y: 2, Z: 10.5}
+      - {X: 26, Y: 2, Z: 10.5}
+
+  - Name: F3_SE_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 30, Y: 2, Z: 7}
+      - {X: 30, Y: 6, Z: 7}
+      - {X: 30, Y: 6, Z: 10.5}
+      - {X: 30, Y: 2, Z: 10.5}
+
+  - Name: F3_SE_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_SE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_S_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 2, Z: 10.5}
+      - {X: 26, Y: 6, Z: 10.5}
+      - {X: 26, Y: 6, Z: 7}
+      - {X: 26, Y: 2, Z: 7}
+
+  - Name: F3_SE_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_SE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_E_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 30, Y: 6, Z: 10.5}
+      - {X: 30, Y: 6, Z: 7}
+      - {X: 26, Y: 6, Z: 7}
+      - {X: 26, Y: 6, Z: 10.5}
+
+  # F3_W (2-6, 6-20)
+  - Name: F3_W_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F3_W
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 20, Z: 7}
+      - {X: 6, Y: 20, Z: 7}
+      - {X: 6, Y: 6, Z: 7}
+      - {X: 2, Y: 6, Z: 7}
+
+  - Name: F3_W_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F3_W
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 6, Z: 10.5}
+      - {X: 6, Y: 6, Z: 10.5}
+      - {X: 6, Y: 20, Z: 10.5}
+      - {X: 2, Y: 20, Z: 10.5}
+
+  - Name: F3_W_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_W
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 6, Z: 10.5}
+      - {X: 2, Y: 20, Z: 10.5}
+      - {X: 2, Y: 20, Z: 7}
+      - {X: 2, Y: 6, Z: 7}
+
+  - Name: F3_W_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_SW_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 6, Z: 7}
+      - {X: 6, Y: 6, Z: 7}
+      - {X: 6, Y: 6, Z: 10.5}
+      - {X: 2, Y: 6, Z: 10.5}
+
+  - Name: F3_W_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_NW_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 20, Z: 10.5}
+      - {X: 6, Y: 20, Z: 7}
+      - {X: 2, Y: 20, Z: 7}
+      - {X: 2, Y: 20, Z: 10.5}
+
+  - Name: F3_W_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_Core_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 6, Z: 7}
+      - {X: 6, Y: 20, Z: 7}
+      - {X: 6, Y: 20, Z: 10.5}
+      - {X: 6, Y: 6, Z: 10.5}
+
+  # F3_Core (6-26, 6-20)
+  - Name: F3_Core_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F3_Core
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 20, Z: 7}
+      - {X: 26, Y: 20, Z: 7}
+      - {X: 26, Y: 6, Z: 7}
+      - {X: 6, Y: 6, Z: 7}
+
+  - Name: F3_Core_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F3_Core
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 6, Z: 10.5}
+      - {X: 26, Y: 6, Z: 10.5}
+      - {X: 26, Y: 20, Z: 10.5}
+      - {X: 6, Y: 20, Z: 10.5}
+
+  - Name: F3_Core_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_S_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 6, Z: 7}
+      - {X: 26, Y: 6, Z: 7}
+      - {X: 26, Y: 6, Z: 10.5}
+      - {X: 6, Y: 6, Z: 10.5}
+
+  - Name: F3_Core_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_N_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 20, Z: 10.5}
+      - {X: 26, Y: 20, Z: 7}
+      - {X: 6, Y: 20, Z: 7}
+      - {X: 6, Y: 20, Z: 10.5}
+
+  - Name: F3_Core_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_W_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 6, Z: 10.5}
+      - {X: 6, Y: 20, Z: 10.5}
+      - {X: 6, Y: 20, Z: 7}
+      - {X: 6, Y: 6, Z: 7}
+
+  - Name: F3_Core_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_E_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 6, Z: 7}
+      - {X: 26, Y: 20, Z: 7}
+      - {X: 26, Y: 20, Z: 10.5}
+      - {X: 26, Y: 6, Z: 10.5}
+
+  # F3_E (26-30, 6-20)
+  - Name: F3_E_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F3_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 20, Z: 7}
+      - {X: 30, Y: 20, Z: 7}
+      - {X: 30, Y: 6, Z: 7}
+      - {X: 26, Y: 6, Z: 7}
+
+  - Name: F3_E_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F3_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 6, Z: 10.5}
+      - {X: 30, Y: 6, Z: 10.5}
+      - {X: 30, Y: 20, Z: 10.5}
+      - {X: 26, Y: 20, Z: 10.5}
+
+  - Name: F3_E_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 30, Y: 6, Z: 7}
+      - {X: 30, Y: 20, Z: 7}
+      - {X: 30, Y: 20, Z: 10.5}
+      - {X: 30, Y: 6, Z: 10.5}
+
+  - Name: F3_E_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_E
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_SE_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 6, Z: 7}
+      - {X: 30, Y: 6, Z: 7}
+      - {X: 30, Y: 6, Z: 10.5}
+      - {X: 26, Y: 6, Z: 10.5}
+
+  - Name: F3_E_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_E
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_NE_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 30, Y: 20, Z: 10.5}
+      - {X: 30, Y: 20, Z: 7}
+      - {X: 26, Y: 20, Z: 7}
+      - {X: 26, Y: 20, Z: 10.5}
+
+  - Name: F3_E_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_E
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_Core_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 6, Z: 10.5}
+      - {X: 26, Y: 20, Z: 10.5}
+      - {X: 26, Y: 20, Z: 7}
+      - {X: 26, Y: 6, Z: 7}
+
+  # F3_NW (2-6, 20-24)
+  - Name: F3_NW_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F3_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 24, Z: 7}
+      - {X: 6, Y: 24, Z: 7}
+      - {X: 6, Y: 20, Z: 7}
+      - {X: 2, Y: 20, Z: 7}
+
+  - Name: F3_NW_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F3_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 20, Z: 10.5}
+      - {X: 6, Y: 20, Z: 10.5}
+      - {X: 6, Y: 24, Z: 10.5}
+      - {X: 2, Y: 24, Z: 10.5}
+
+  - Name: F3_NW_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 24, Z: 10.5}
+      - {X: 6, Y: 24, Z: 7}
+      - {X: 2, Y: 24, Z: 7}
+      - {X: 2, Y: 24, Z: 10.5}
+
+  - Name: F3_NW_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 20, Z: 10.5}
+      - {X: 2, Y: 24, Z: 10.5}
+      - {X: 2, Y: 24, Z: 7}
+      - {X: 2, Y: 20, Z: 7}
+
+  - Name: F3_NW_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_NW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_N_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 20, Z: 7}
+      - {X: 6, Y: 24, Z: 7}
+      - {X: 6, Y: 24, Z: 10.5}
+      - {X: 6, Y: 20, Z: 10.5}
+
+  - Name: F3_NW_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_NW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_W_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 2, Y: 20, Z: 7}
+      - {X: 6, Y: 20, Z: 7}
+      - {X: 6, Y: 20, Z: 10.5}
+      - {X: 2, Y: 20, Z: 10.5}
+
+  # F3_N (6-26, 20-24)
+  - Name: F3_N_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F3_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 24, Z: 7}
+      - {X: 26, Y: 24, Z: 7}
+      - {X: 26, Y: 20, Z: 7}
+      - {X: 6, Y: 20, Z: 7}
+
+  - Name: F3_N_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F3_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 20, Z: 10.5}
+      - {X: 26, Y: 20, Z: 10.5}
+      - {X: 26, Y: 24, Z: 10.5}
+      - {X: 6, Y: 24, Z: 10.5}
+
+  - Name: F3_N_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 24, Z: 10.5}
+      - {X: 26, Y: 24, Z: 7}
+      - {X: 6, Y: 24, Z: 7}
+      - {X: 6, Y: 24, Z: 10.5}
+
+  - Name: F3_N_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_N
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_NW_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 20, Z: 10.5}
+      - {X: 6, Y: 24, Z: 10.5}
+      - {X: 6, Y: 24, Z: 7}
+      - {X: 6, Y: 20, Z: 7}
+
+  - Name: F3_N_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_N
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_NE_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 20, Z: 7}
+      - {X: 26, Y: 24, Z: 7}
+      - {X: 26, Y: 24, Z: 10.5}
+      - {X: 26, Y: 20, Z: 10.5}
+
+  - Name: F3_N_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_N
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_Core_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 6, Y: 20, Z: 7}
+      - {X: 26, Y: 20, Z: 7}
+      - {X: 26, Y: 20, Z: 10.5}
+      - {X: 6, Y: 20, Z: 10.5}
+
+  # F3_NE (26-30, 20-24)
+  - Name: F3_NE_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F3_NE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 24, Z: 7}
+      - {X: 30, Y: 24, Z: 7}
+      - {X: 30, Y: 20, Z: 7}
+      - {X: 26, Y: 20, Z: 7}
+
+  - Name: F3_NE_Ceiling
+    Surface Type: Ceiling
+    Construction Name: Ceiling_Const
+    Zone Name: F3_NE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 20, Z: 10.5}
+      - {X: 30, Y: 20, Z: 10.5}
+      - {X: 30, Y: 24, Z: 10.5}
+      - {X: 26, Y: 24, Z: 10.5}
+
+  - Name: F3_NE_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_NE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 30, Y: 24, Z: 10.5}
+      - {X: 30, Y: 24, Z: 7}
+      - {X: 26, Y: 24, Z: 7}
+      - {X: 26, Y: 24, Z: 10.5}
+
+  - Name: F3_NE_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F3_NE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 30, Y: 20, Z: 7}
+      - {X: 30, Y: 24, Z: 7}
+      - {X: 30, Y: 24, Z: 10.5}
+      - {X: 30, Y: 20, Z: 10.5}
+
+  - Name: F3_NE_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_NE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_N_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 20, Z: 10.5}
+      - {X: 26, Y: 24, Z: 10.5}
+      - {X: 26, Y: 24, Z: 7}
+      - {X: 26, Y: 20, Z: 7}
+
+  - Name: F3_NE_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F3_NE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F3_E_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 26, Y: 20, Z: 7}
+      - {X: 30, Y: 20, Z: 7}
+      - {X: 30, Y: 20, Z: 10.5}
+      - {X: 26, Y: 20, Z: 10.5}
+
+  # ==================================================================
+  # FLOOR 4 SURFACES (24m x 20m, z=10.5-14)
+  # Offset: x=4, y=3, Perimeter: 4m
+  # ==================================================================
+
+  # F4_SW (4-8, 3-7)
+  - Name: F4_SW_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F4_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 7, Z: 10.5}
+      - {X: 8, Y: 7, Z: 10.5}
+      - {X: 8, Y: 3, Z: 10.5}
+      - {X: 4, Y: 3, Z: 10.5}
+
+  - Name: F4_SW_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Const
+    Zone Name: F4_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 3, Z: 14}
+      - {X: 8, Y: 3, Z: 14}
+      - {X: 8, Y: 7, Z: 14}
+      - {X: 4, Y: 7, Z: 14}
+
+  - Name: F4_SW_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 3, Z: 10.5}
+      - {X: 8, Y: 3, Z: 10.5}
+      - {X: 8, Y: 3, Z: 14}
+      - {X: 4, Y: 3, Z: 14}
+
+  - Name: F4_SW_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_SW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 3, Z: 14}
+      - {X: 4, Y: 7, Z: 14}
+      - {X: 4, Y: 7, Z: 10.5}
+      - {X: 4, Y: 3, Z: 10.5}
+
+  - Name: F4_SW_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_SW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_S_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 3, Z: 10.5}
+      - {X: 8, Y: 7, Z: 10.5}
+      - {X: 8, Y: 7, Z: 14}
+      - {X: 8, Y: 3, Z: 14}
+
+  - Name: F4_SW_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_SW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_W_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 7, Z: 14}
+      - {X: 8, Y: 7, Z: 10.5}
+      - {X: 4, Y: 7, Z: 10.5}
+      - {X: 4, Y: 7, Z: 14}
+
+  # F4_S (8-24, 3-7)
+  - Name: F4_S_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F4_S
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 7, Z: 10.5}
+      - {X: 24, Y: 7, Z: 10.5}
+      - {X: 24, Y: 3, Z: 10.5}
+      - {X: 8, Y: 3, Z: 10.5}
+
+  - Name: F4_S_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Const
+    Zone Name: F4_S
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 3, Z: 14}
+      - {X: 24, Y: 3, Z: 14}
+      - {X: 24, Y: 7, Z: 14}
+      - {X: 8, Y: 7, Z: 14}
+
+  - Name: F4_S_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_S
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 3, Z: 10.5}
+      - {X: 24, Y: 3, Z: 10.5}
+      - {X: 24, Y: 3, Z: 14}
+      - {X: 8, Y: 3, Z: 14}
+
+  - Name: F4_S_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_SW_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 3, Z: 14}
+      - {X: 8, Y: 7, Z: 14}
+      - {X: 8, Y: 7, Z: 10.5}
+      - {X: 8, Y: 3, Z: 10.5}
+
+  - Name: F4_S_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_SE_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 3, Z: 10.5}
+      - {X: 24, Y: 7, Z: 10.5}
+      - {X: 24, Y: 7, Z: 14}
+      - {X: 24, Y: 3, Z: 14}
+
+  - Name: F4_S_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_S
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_Core_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 7, Z: 14}
+      - {X: 24, Y: 7, Z: 10.5}
+      - {X: 8, Y: 7, Z: 10.5}
+      - {X: 8, Y: 7, Z: 14}
+
+  # F4_SE (24-28, 3-7)
+  - Name: F4_SE_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F4_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 7, Z: 10.5}
+      - {X: 28, Y: 7, Z: 10.5}
+      - {X: 28, Y: 3, Z: 10.5}
+      - {X: 24, Y: 3, Z: 10.5}
+
+  - Name: F4_SE_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Const
+    Zone Name: F4_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 3, Z: 14}
+      - {X: 28, Y: 3, Z: 14}
+      - {X: 28, Y: 7, Z: 14}
+      - {X: 24, Y: 7, Z: 14}
+
+  - Name: F4_SE_Wall_South
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 3, Z: 10.5}
+      - {X: 28, Y: 3, Z: 10.5}
+      - {X: 28, Y: 3, Z: 14}
+      - {X: 24, Y: 3, Z: 14}
+
+  - Name: F4_SE_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_SE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 28, Y: 3, Z: 10.5}
+      - {X: 28, Y: 7, Z: 10.5}
+      - {X: 28, Y: 7, Z: 14}
+      - {X: 28, Y: 3, Z: 14}
+
+  - Name: F4_SE_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_SE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_S_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 3, Z: 14}
+      - {X: 24, Y: 7, Z: 14}
+      - {X: 24, Y: 7, Z: 10.5}
+      - {X: 24, Y: 3, Z: 10.5}
+
+  - Name: F4_SE_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_SE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_E_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 28, Y: 7, Z: 14}
+      - {X: 28, Y: 7, Z: 10.5}
+      - {X: 24, Y: 7, Z: 10.5}
+      - {X: 24, Y: 7, Z: 14}
+
+  # F4_W (4-8, 7-19)
+  - Name: F4_W_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F4_W
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 19, Z: 10.5}
+      - {X: 8, Y: 19, Z: 10.5}
+      - {X: 8, Y: 7, Z: 10.5}
+      - {X: 4, Y: 7, Z: 10.5}
+
+  - Name: F4_W_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Const
+    Zone Name: F4_W
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 7, Z: 14}
+      - {X: 8, Y: 7, Z: 14}
+      - {X: 8, Y: 19, Z: 14}
+      - {X: 4, Y: 19, Z: 14}
+
+  - Name: F4_W_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_W
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 7, Z: 14}
+      - {X: 4, Y: 19, Z: 14}
+      - {X: 4, Y: 19, Z: 10.5}
+      - {X: 4, Y: 7, Z: 10.5}
+
+  - Name: F4_W_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_SW_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 7, Z: 10.5}
+      - {X: 8, Y: 7, Z: 10.5}
+      - {X: 8, Y: 7, Z: 14}
+      - {X: 4, Y: 7, Z: 14}
+
+  - Name: F4_W_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_NW_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 19, Z: 14}
+      - {X: 8, Y: 19, Z: 10.5}
+      - {X: 4, Y: 19, Z: 10.5}
+      - {X: 4, Y: 19, Z: 14}
+
+  - Name: F4_W_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_W
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_Core_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 7, Z: 10.5}
+      - {X: 8, Y: 19, Z: 10.5}
+      - {X: 8, Y: 19, Z: 14}
+      - {X: 8, Y: 7, Z: 14}
+
+  # F4_Core (8-24, 7-19)
+  - Name: F4_Core_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F4_Core
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 19, Z: 10.5}
+      - {X: 24, Y: 19, Z: 10.5}
+      - {X: 24, Y: 7, Z: 10.5}
+      - {X: 8, Y: 7, Z: 10.5}
+
+  - Name: F4_Core_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Const
+    Zone Name: F4_Core
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 7, Z: 14}
+      - {X: 24, Y: 7, Z: 14}
+      - {X: 24, Y: 19, Z: 14}
+      - {X: 8, Y: 19, Z: 14}
+
+  - Name: F4_Core_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_S_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 7, Z: 10.5}
+      - {X: 24, Y: 7, Z: 10.5}
+      - {X: 24, Y: 7, Z: 14}
+      - {X: 8, Y: 7, Z: 14}
+
+  - Name: F4_Core_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_N_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 19, Z: 14}
+      - {X: 24, Y: 19, Z: 10.5}
+      - {X: 8, Y: 19, Z: 10.5}
+      - {X: 8, Y: 19, Z: 14}
+
+  - Name: F4_Core_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_W_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 7, Z: 14}
+      - {X: 8, Y: 19, Z: 14}
+      - {X: 8, Y: 19, Z: 10.5}
+      - {X: 8, Y: 7, Z: 10.5}
+
+  - Name: F4_Core_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_Core
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_E_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 7, Z: 10.5}
+      - {X: 24, Y: 19, Z: 10.5}
+      - {X: 24, Y: 19, Z: 14}
+      - {X: 24, Y: 7, Z: 14}
+
+  # F4_E (24-28, 7-19)
+  - Name: F4_E_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F4_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 19, Z: 10.5}
+      - {X: 28, Y: 19, Z: 10.5}
+      - {X: 28, Y: 7, Z: 10.5}
+      - {X: 24, Y: 7, Z: 10.5}
+
+  - Name: F4_E_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Const
+    Zone Name: F4_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 7, Z: 14}
+      - {X: 28, Y: 7, Z: 14}
+      - {X: 28, Y: 19, Z: 14}
+      - {X: 24, Y: 19, Z: 14}
+
+  - Name: F4_E_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_E
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 28, Y: 7, Z: 10.5}
+      - {X: 28, Y: 19, Z: 10.5}
+      - {X: 28, Y: 19, Z: 14}
+      - {X: 28, Y: 7, Z: 14}
+
+  - Name: F4_E_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_E
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_SE_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 7, Z: 10.5}
+      - {X: 28, Y: 7, Z: 10.5}
+      - {X: 28, Y: 7, Z: 14}
+      - {X: 24, Y: 7, Z: 14}
+
+  - Name: F4_E_Wall_North
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_E
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_NE_Wall_South
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 28, Y: 19, Z: 14}
+      - {X: 28, Y: 19, Z: 10.5}
+      - {X: 24, Y: 19, Z: 10.5}
+      - {X: 24, Y: 19, Z: 14}
+
+  - Name: F4_E_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_E
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_Core_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 7, Z: 14}
+      - {X: 24, Y: 19, Z: 14}
+      - {X: 24, Y: 19, Z: 10.5}
+      - {X: 24, Y: 7, Z: 10.5}
+
+  # F4_NW (4-8, 19-23)
+  - Name: F4_NW_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F4_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 23, Z: 10.5}
+      - {X: 8, Y: 23, Z: 10.5}
+      - {X: 8, Y: 19, Z: 10.5}
+      - {X: 4, Y: 19, Z: 10.5}
+
+  - Name: F4_NW_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Const
+    Zone Name: F4_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 19, Z: 14}
+      - {X: 8, Y: 19, Z: 14}
+      - {X: 8, Y: 23, Z: 14}
+      - {X: 4, Y: 23, Z: 14}
+
+  - Name: F4_NW_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 23, Z: 14}
+      - {X: 8, Y: 23, Z: 10.5}
+      - {X: 4, Y: 23, Z: 10.5}
+      - {X: 4, Y: 23, Z: 14}
+
+  - Name: F4_NW_Wall_West
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_NW
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 19, Z: 14}
+      - {X: 4, Y: 23, Z: 14}
+      - {X: 4, Y: 23, Z: 10.5}
+      - {X: 4, Y: 19, Z: 10.5}
+
+  - Name: F4_NW_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_NW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_N_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 19, Z: 10.5}
+      - {X: 8, Y: 23, Z: 10.5}
+      - {X: 8, Y: 23, Z: 14}
+      - {X: 8, Y: 19, Z: 14}
+
+  - Name: F4_NW_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_NW
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_W_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 4, Y: 19, Z: 10.5}
+      - {X: 8, Y: 19, Z: 10.5}
+      - {X: 8, Y: 19, Z: 14}
+      - {X: 4, Y: 19, Z: 14}
+
+  # F4_N (8-24, 19-23)
+  - Name: F4_N_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F4_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 23, Z: 10.5}
+      - {X: 24, Y: 23, Z: 10.5}
+      - {X: 24, Y: 19, Z: 10.5}
+      - {X: 8, Y: 19, Z: 10.5}
+
+  - Name: F4_N_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Const
+    Zone Name: F4_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 19, Z: 14}
+      - {X: 24, Y: 19, Z: 14}
+      - {X: 24, Y: 23, Z: 14}
+      - {X: 8, Y: 23, Z: 14}
+
+  - Name: F4_N_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_N
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 23, Z: 14}
+      - {X: 24, Y: 23, Z: 10.5}
+      - {X: 8, Y: 23, Z: 10.5}
+      - {X: 8, Y: 23, Z: 14}
+
+  - Name: F4_N_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_N
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_NW_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 19, Z: 14}
+      - {X: 8, Y: 23, Z: 14}
+      - {X: 8, Y: 23, Z: 10.5}
+      - {X: 8, Y: 19, Z: 10.5}
+
+  - Name: F4_N_Wall_East
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_N
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_NE_Wall_West
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 19, Z: 10.5}
+      - {X: 24, Y: 23, Z: 10.5}
+      - {X: 24, Y: 23, Z: 14}
+      - {X: 24, Y: 19, Z: 14}
+
+  - Name: F4_N_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_N
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_Core_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 8, Y: 19, Z: 10.5}
+      - {X: 24, Y: 19, Z: 10.5}
+      - {X: 24, Y: 19, Z: 14}
+      - {X: 8, Y: 19, Z: 14}
+
+  # F4_NE (24-28, 19-23)
+  - Name: F4_NE_Floor
+    Surface Type: Floor
+    Construction Name: Floor_Const
+    Zone Name: F4_NE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 23, Z: 10.5}
+      - {X: 28, Y: 23, Z: 10.5}
+      - {X: 28, Y: 19, Z: 10.5}
+      - {X: 24, Y: 19, Z: 10.5}
+
+  - Name: F4_NE_Roof
+    Surface Type: Roof
+    Construction Name: Roof_Const
+    Zone Name: F4_NE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 19, Z: 14}
+      - {X: 28, Y: 19, Z: 14}
+      - {X: 28, Y: 23, Z: 14}
+      - {X: 24, Y: 23, Z: 14}
+
+  - Name: F4_NE_Wall_North
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_NE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 28, Y: 23, Z: 14}
+      - {X: 28, Y: 23, Z: 10.5}
+      - {X: 24, Y: 23, Z: 10.5}
+      - {X: 24, Y: 23, Z: 14}
+
+  - Name: F4_NE_Wall_East
+    Surface Type: Wall
+    Construction Name: Exterior_Wall_Const
+    Zone Name: F4_NE
+    Space Name: null
+    Outside Boundary Condition: Outdoors
+    Outside Boundary Condition Object: null
+    Sun Exposure: SunExposed
+    Wind Exposure: WindExposed
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 28, Y: 19, Z: 10.5}
+      - {X: 28, Y: 23, Z: 10.5}
+      - {X: 28, Y: 23, Z: 14}
+      - {X: 28, Y: 19, Z: 14}
+
+  - Name: F4_NE_Wall_West
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_NE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_N_Wall_East
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 19, Z: 14}
+      - {X: 24, Y: 23, Z: 14}
+      - {X: 24, Y: 23, Z: 10.5}
+      - {X: 24, Y: 19, Z: 10.5}
+
+  - Name: F4_NE_Wall_South
+    Surface Type: Wall
+    Construction Name: Interior_Wall_Const
+    Zone Name: F4_NE
+    Space Name: null
+    Outside Boundary Condition: Surface
+    Outside Boundary Condition Object: F4_E_Wall_North
+    Sun Exposure: NoSun
+    Wind Exposure: NoWind
+    View Factor to Ground: autocalculate
+    Vertices:
+      - {X: 24, Y: 19, Z: 10.5}
+      - {X: 28, Y: 19, Z: 10.5}
+      - {X: 28, Y: 19, Z: 14}
+      - {X: 24, Y: 19, Z: 14}
+
+# ==================================================================
+# Fenestration (Windows) - Multiple per exterior wall for complex
+# ==================================================================
+FenestrationSurface:Detailed:
+  # Floor 1 South Windows
+  - Name: F1_S_Window_1
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F1_S_Wall_South
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 7, Y: 0, Z: 0.9}
+      - {X: 11, Y: 0, Z: 0.9}
+      - {X: 11, Y: 0, Z: 2.8}
+      - {X: 7, Y: 0, Z: 2.8}
+
+  - Name: F1_S_Window_2
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F1_S_Wall_South
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 13, Y: 0, Z: 0.9}
+      - {X: 17, Y: 0, Z: 0.9}
+      - {X: 17, Y: 0, Z: 2.8}
+      - {X: 13, Y: 0, Z: 2.8}
+
+  - Name: F1_S_Window_3
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F1_S_Wall_South
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 19, Y: 0, Z: 0.9}
+      - {X: 23, Y: 0, Z: 0.9}
+      - {X: 23, Y: 0, Z: 2.8}
+      - {X: 19, Y: 0, Z: 2.8}
+
+  # Floor 1 North Windows
+  - Name: F1_N_Window_1
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F1_N_Wall_North
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 23, Y: 26, Z: 2.8}
+      - {X: 23, Y: 26, Z: 0.9}
+      - {X: 19, Y: 26, Z: 0.9}
+      - {X: 19, Y: 26, Z: 2.8}
+
+  - Name: F1_N_Window_2
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F1_N_Wall_North
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 17, Y: 26, Z: 2.8}
+      - {X: 17, Y: 26, Z: 0.9}
+      - {X: 13, Y: 26, Z: 0.9}
+      - {X: 13, Y: 26, Z: 2.8}
+
+  - Name: F1_N_Window_3
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F1_N_Wall_North
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 11, Y: 26, Z: 2.8}
+      - {X: 11, Y: 26, Z: 0.9}
+      - {X: 7, Y: 26, Z: 0.9}
+      - {X: 7, Y: 26, Z: 2.8}
+
+  # Floor 1 West Windows
+  - Name: F1_W_Window_1
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F1_W_Wall_West
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 0, Y: 8, Z: 2.8}
+      - {X: 0, Y: 12, Z: 2.8}
+      - {X: 0, Y: 12, Z: 0.9}
+      - {X: 0, Y: 8, Z: 0.9}
+
+  - Name: F1_W_Window_2
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F1_W_Wall_West
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 0, Y: 14, Z: 2.8}
+      - {X: 0, Y: 18, Z: 2.8}
+      - {X: 0, Y: 18, Z: 0.9}
+      - {X: 0, Y: 14, Z: 0.9}
+
+  # Floor 1 East Windows
+  - Name: F1_E_Window_1
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F1_E_Wall_East
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 32, Y: 8, Z: 0.9}
+      - {X: 32, Y: 12, Z: 0.9}
+      - {X: 32, Y: 12, Z: 2.8}
+      - {X: 32, Y: 8, Z: 2.8}
+
+  - Name: F1_E_Window_2
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F1_E_Wall_East
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 32, Y: 14, Z: 0.9}
+      - {X: 32, Y: 18, Z: 0.9}
+      - {X: 32, Y: 18, Z: 2.8}
+      - {X: 32, Y: 14, Z: 2.8}
+
+  # Floor 4 Windows removed due to orientation issues - keeping north windows only
+  - Name: F4_N_Window_1
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F4_N_Wall_North
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 20, Y: 23, Z: 13.3}
+      - {X: 20, Y: 23, Z: 11.4}
+      - {X: 16, Y: 23, Z: 11.4}
+      - {X: 16, Y: 23, Z: 13.3}
+
+  - Name: F4_N_Window_2
+    Surface Type: Window
+    Construction Name: Window_Const
+    Building Surface Name: F4_N_Wall_North
+    Outside Boundary Condition Object: null
+    View Factor to Ground: autocalculate
+    Frame and Divider Name: null
+    Multiplier: 1
+    Number of Vertices: autocalculate
+    Vertices:
+      - {X: 14, Y: 23, Z: 13.3}
+      - {X: 14, Y: 23, Z: 11.4}
+      - {X: 10, Y: 23, Z: 11.4}
+      - {X: 10, Y: 23, Z: 13.3}
+
+# ==================================================================
+# Schedules
+# ==================================================================
+Schedule:
+  ScheduleTypeLimits:
+    - Name: On/Off
+      Lower Limit Value: 0
+      Upper Limit Value: 1
+      Numeric Type: DISCRETE
+      Unit Type: Dimensionless
+    - Name: Temperature
+      Numeric Type: CONTINUOUS
+      Unit Type: Temperature
+  Schedule:Compact:
+    - Name: Always On
+      Schedule Type Limits Name: On/Off
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 1
+    - Name: Heating_Setpoint_Schedule
+      Schedule Type Limits Name: Temperature
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 20
+    - Name: Cooling_Setpoint_Schedule
+      Schedule Type Limits Name: Temperature
+      Data:
+        - Through: "12/31"
+          Days:
+          - For: "AllDays"
+            Times:
+            - Until:
+                Time: "24:00"
+                Value: 26
+
+# ==================================================================
+# HVAC
+# ==================================================================
+HVAC:
+  HVACTemplate:Thermostat:
+    - Name: Ideal Loads Thermostat
+      Heating Setpoint Schedule Name: Heating_Setpoint_Schedule
+      Cooling Setpoint Schedule Name: Cooling_Setpoint_Schedule
+  HVACTemplate:Zone:IdealLoadsAirSystem:
+    # Floor 1
+    - Zone Name: F1_SW
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F1_S
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F1_SE
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F1_W
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F1_Core
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F1_E
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F1_NW
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F1_N
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F1_NE
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    # Floor 2
+    - Zone Name: F2_SW
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F2_S
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F2_SE
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F2_W
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F2_Core
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F2_E
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F2_NW
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F2_N
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    # Floor 3
+    - Zone Name: F3_SW
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F3_S
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F3_SE
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F3_W
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F3_Core
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F3_E
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F3_NW
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F3_N
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F3_NE
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    # Floor 4
+    - Zone Name: F4_SW
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F4_S
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F4_SE
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F4_W
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F4_Core
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F4_E
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F4_NW
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F4_N
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+    - Zone Name: F4_NE
+      Template Thermostat Name: Ideal Loads Thermostat
+      System Availability Schedule Name: Always On
+
+# ==================================================================
+# Output Settings
+# ==================================================================
+Output:VariableDictionary:
+    Key Field: regular
+Output:Diagnostics:
+    Key 1: DisplayExtraWarnings
+Output:Table:SummaryReports:
+    Report 1 Name: AllSummary
+OutputControl:Table:Style:
+    Column Separator: HTML
+Output:Variable:
+  - Key Value: "*"
+    Variable Name: Zone Mean Air Temperature
+    Reporting Frequency: Hourly
+  - Key Value: "*"
+    Variable Name: Surface Inside Face Temperature
+    Reporting Frequency: Hourly

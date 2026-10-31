@@ -1,0 +1,12 @@
+schema_version: "1"
+plan_axis_alignment_tol_m: 0.05
+plan_position_tol_m: 0.30
+plan_extent_tol_m: 0.30
+claim_complete_epsilon_m: 0.05
+opening_match_center_tol_m: 0.40
+opening_assignment_tie_epsilon: 1.0e-9
+along_claim_tol_m: 0.40
+width_claim_tol_m: 0.40
+sill_claim_tol_m: 0.30
+head_claim_tol_m: 0.30
+floor_line_tol_m: 0.30

@@ -1,0 +1,38 @@
+# Explicit opt-in: EP_AGENT_LLM_CONFIG=src/configs/model_roles_paratera.yaml
+# Candidate bindings, not a certified BIM combination or an automatic scheduler.
+# Current subscription BIM runner still uses its own model configuration.
+schema_version: 1
+default_role: modeling
+services:
+  paratera:
+    provider: openai
+    base_url: ${oc.env:PARATERA_BASE_URL,https://llmapi.paratera.com/v1}
+    api_key_env: PARATERA_API_KEY
+models:
+  local_candidate:
+    service: paratera
+    model_name: Qwen3.8-27B
+    temperature: 0.7
+    max_tokens: 16384
+    extra_body:
+      enable_thinking: true
+    # Only the tiny image -> tool -> result loop has been exercised.
+    # Thinking-mode and building task quality remain unverified.
+    capabilities: {image_input: true, tool_calls: true}
+  efficient_candidate:
+    service: paratera
+    model_name: GLM-5.3-Flash
+    temperature: 0.7
+    max_tokens: 16384
+    extra_body:
+      reasoning_effort: low
+    capabilities: {image_input: true, tool_calls: true}
+roles:
+  modeling:
+    model: local_candidate
+    requires: [image_input, tool_calls]
+  visual_review:
+    model: efficient_candidate
+    requires: [image_input, tool_calls]
+# Add roles as needed; these bindings do not force two agents or a fixed order.
+# OCR/embedding/rerank require specialized adapters, not a chat-role fallback.

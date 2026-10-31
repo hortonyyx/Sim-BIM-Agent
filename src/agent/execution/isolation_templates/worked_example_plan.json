@@ -1,0 +1,211 @@
+{
+  "image_label": "Synthetic format example — asymmetric plan",
+  "image_kind": "plan",
+  "scale_origin": {
+    "world_x_m": 0.0,
+    "world_y_m": 0.0,
+    "world_z_m": null,
+    "note": "synthetic plan-local origin at this example's southwest outer corner"
+  },
+  "facade": null,
+  "strokes": [
+    {
+      "id": "S1",
+      "pen": "wall",
+      "provenance": "dimension_derived",
+      "confidence": "high",
+      "dimension_refs": ["D1"],
+      "geometry": {"kind": "line", "p1": [0.0, 0.0], "p2": [12.4, 0.0], "thickness_m": null},
+      "note": "synthetic south perimeter; coordinates belong only to this format example"
+    },
+    {
+      "id": "S2",
+      "pen": "wall",
+      "provenance": "dimension_derived",
+      "confidence": "high",
+      "dimension_refs": ["D2"],
+      "geometry": {"kind": "line", "p1": [12.4, 0.0], "p2": [12.4, 6.8], "thickness_m": null},
+      "note": "synthetic east perimeter"
+    },
+    {
+      "id": "S3",
+      "pen": "wall",
+      "provenance": "dimension_derived",
+      "confidence": "high",
+      "dimension_refs": ["D1"],
+      "geometry": {"kind": "line", "p1": [12.4, 6.8], "p2": [0.0, 6.8], "thickness_m": null},
+      "note": "synthetic north perimeter"
+    },
+    {
+      "id": "S4",
+      "pen": "wall",
+      "provenance": "dimension_derived",
+      "confidence": "high",
+      "dimension_refs": ["D2"],
+      "geometry": {"kind": "line", "p1": [0.0, 6.8], "p2": [0.0, 0.0], "thickness_m": null},
+      "note": "synthetic west perimeter"
+    },
+    {
+      "id": "S5",
+      "pen": "wall",
+      "provenance": "dimension_derived",
+      "confidence": "high",
+      "dimension_refs": ["D3"],
+      "geometry": {"kind": "line", "p1": [0.0, 2.6], "p2": [7.3, 2.6], "thickness_m": null},
+      "note": "synthetic partial interior wall"
+    },
+    {
+      "id": "S6",
+      "pen": "wall",
+      "provenance": "seen",
+      "confidence": "high",
+      "dimension_refs": [],
+      "geometry": {"kind": "line", "p1": [7.3, 0.0], "p2": [7.3, 6.8], "thickness_m": null},
+      "note": "synthetic vertical wall; healed door opening at y approximately 4.1"
+    },
+    {
+      "id": "W1",
+      "pen": "window",
+      "provenance": "dimension_derived",
+      "confidence": "high",
+      "dimension_refs": ["D4"],
+      "geometry": {"kind": "rect", "x_range_m": [2.2, 4.6], "y_range_m": [6.65, 6.8]},
+      "note": "synthetic plan window"
+    }
+  ],
+  "dimensions": [
+    {
+      "id": "D1",
+      "text_verbatim": "12400",
+      "value_m": 12.4,
+      "from": [0.0, 0.0],
+      "to": [12.4, 0.0],
+      "axis": "x",
+      "chain_id": "C_overall_x",
+      "role": "overall",
+      "order": 0,
+      "anchor": null,
+      "note": "synthetic overall width"
+    },
+    {
+      "id": "D2",
+      "text_verbatim": "6800",
+      "value_m": 6.8,
+      "from": [0.0, 0.0],
+      "to": [0.0, 6.8],
+      "axis": "y",
+      "chain_id": "C_overall_y",
+      "role": "overall",
+      "order": 0,
+      "anchor": null,
+      "note": "synthetic overall height"
+    },
+    {
+      "id": "D3",
+      "text_verbatim": "7300",
+      "value_m": 7.3,
+      "from": [0.0, 2.6],
+      "to": [7.3, 2.6],
+      "axis": "x",
+      "chain_id": "C_overall_x",
+      "role": "segment",
+      "order": 1,
+      "anchor": null,
+      "note": "synthetic interior span"
+    },
+    {
+      "id": "D5",
+      "text_verbatim": "5100",
+      "value_m": 5.1,
+      "from": [7.3, 0.0],
+      "to": [12.4, 0.0],
+      "axis": "x",
+      "chain_id": "C_overall_x",
+      "role": "segment",
+      "order": 2,
+      "anchor": null,
+      "note": "synthetic remaining width; D3 plus D5 closes D1"
+    },
+    {
+      "id": "D6",
+      "text_verbatim": "2600",
+      "value_m": 2.6,
+      "from": [0.0, 0.0],
+      "to": [0.0, 2.6],
+      "axis": "y",
+      "chain_id": "C_overall_y",
+      "role": "segment",
+      "order": 1,
+      "anchor": null,
+      "note": "synthetic lower height segment"
+    },
+    {
+      "id": "D7",
+      "text_verbatim": "4200",
+      "value_m": 4.2,
+      "from": [0.0, 2.6],
+      "to": [0.0, 6.8],
+      "axis": "y",
+      "chain_id": "C_overall_y",
+      "role": "segment",
+      "order": 2,
+      "anchor": null,
+      "note": "synthetic upper height segment; D6 plus D7 closes D2"
+    },
+    {
+      "id": "D4",
+      "text_verbatim": "2400",
+      "value_m": 2.4,
+      "from": [2.2, 6.8],
+      "to": [4.6, 6.8],
+      "axis": "x",
+      "chain_id": "C_window_x",
+      "role": "overall",
+      "order": 0,
+      "anchor": null,
+      "note": "synthetic window width"
+    },
+    {
+      "id": "D8",
+      "text_verbatim": "1100",
+      "value_m": 1.1,
+      "from": [2.2, 6.8],
+      "to": [3.3, 6.8],
+      "axis": "x",
+      "chain_id": "C_window_x",
+      "role": "segment",
+      "order": 1,
+      "anchor": null,
+      "note": "synthetic window subsegment"
+    },
+    {
+      "id": "D9",
+      "text_verbatim": "1300",
+      "value_m": 1.3,
+      "from": [3.3, 6.8],
+      "to": [4.6, 6.8],
+      "axis": "x",
+      "chain_id": "C_window_x",
+      "role": "segment",
+      "order": 2,
+      "anchor": null,
+      "note": "synthetic window subsegment; D8 plus D9 closes D4"
+    }
+  ],
+  "ocr_texts": [
+    {"id": "T1", "text": "FORMAT EXAMPLE", "anchor": [9.1, 5.7], "note": "synthetic label"}
+  ],
+  "uncaptured": [
+    "healed synthetic door opening at y approximately 4.1 on S6"
+  ],
+  "self_check": {
+    "all_dimensions_transcribed": true,
+    "all_visible_strokes_captured": true,
+    "no_topology_inferred": true,
+    "pens_used": ["wall", "window"],
+    "unknowns_noted": [
+      "wall thickness is not dimensioned, so plan wall thickness_m is null",
+      "all coordinates are synthetic format examples and must not be reused for another case"
+    ]
+  }
+}

@@ -1,0 +1,3 @@
+model_name: "gemini-embedding-001"
+dimension: 3072
+task_type: "RETRIEVAL_QUERY"

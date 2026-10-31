@@ -1,0 +1,114 @@
+{
+  "sm21_anchor": {
+    "reference_sha256": "a9be379b1735163528396c36d96653cdf71a67ffe54dde6f942c7c86f53f3f8a",
+    "basis": "AI_agent/design/evaluation.md: 10-02 规整后的评价口径; AI_agent/design/model.md: 10-02 规整原则",
+    "plan_observations": [
+      {
+        "path": "AI_agent/logs/experiments/2026-09-26_sm21_whole_building_setup/original_reference.json",
+        "sha256": "edb5e8ee4c589f1dafe678be946006553877c0ef10c02115c9079fd38bf2db14"
+      }
+    ],
+    "line_rules": []
+  },
+  "sm24_anchor": {
+    "reference_sha256": "5a8dcba5ab4f5b2b5dc30df91896eeee50e01f9a5bf06ec1b379101a4d16d420",
+    "basis": "AI_agent/design/evaluation.md: 10-02 规整后的评价口径; AI_agent/design/model.md: 10-02 规整原则",
+    "plan_observations": [
+      {
+        "path": "AI_agent/logs/experiments/2026-09-23_sm24_cold_plan_setup/original_observations.json",
+        "sha256": "2038a6546cef2d83acc39ee3f41584c8a7f586d9ddbad7a26840f27dba0c1524"
+      }
+    ],
+    "line_rules": [],
+    "ground_threshold": {
+      "floor_id": "F1",
+      "threshold_m": 0.2
+    }
+  },
+  "sm25-L_anchor": {
+    "reference_sha256": "654d94fed8a313f24631f36f7551f1a115f83dc66956538fa49cb40b5ad9b0a9",
+    "basis": "AI_agent/design/evaluation.md: 10-02 规整后的评价口径; AI_agent/design/model.md: 10-02 规整原则",
+    "plan_observations": [
+      {
+        "path": "AI_agent/logs/experiments/2026-09-27_sm25_full_inventory_setup/original_reference.json",
+        "sha256": "bdf941d8c65f430c4b34223bcf3bd4f59b528215c5ace1f4a2c834e08369dcfd"
+      }
+    ],
+    "line_rules": [
+      {
+        "id": "F1-half-wall-1",
+        "category": "single_line_half_wall",
+        "floor_id": "F1",
+        "axis": 1,
+        "reference_m": 14.12,
+        "target_m": 14.0,
+        "span_m": [
+          5.0,
+          8.94
+        ],
+        "wall_thickness_m": 0.24,
+        "target_floor": "F1"
+      },
+      {
+        "id": "F1-half-wall-2",
+        "category": "single_line_half_wall",
+        "floor_id": "F1",
+        "axis": 1,
+        "reference_m": 5.88,
+        "target_m": 6.0,
+        "span_m": [
+          11.06,
+          15.0
+        ],
+        "wall_thickness_m": 0.24,
+        "target_floor": "F1"
+      },
+      {
+        "id": "F2-half-wall-1",
+        "category": "single_line_half_wall",
+        "floor_id": "F2",
+        "axis": 1,
+        "reference_m": 14.12,
+        "target_m": 14.0,
+        "span_m": [
+          5.0,
+          8.94
+        ],
+        "wall_thickness_m": 0.24,
+        "target_floor": "F2"
+      },
+      {
+        "id": "F2-half-wall-2",
+        "category": "single_line_half_wall",
+        "floor_id": "F2",
+        "axis": 1,
+        "reference_m": 5.88,
+        "target_m": 6.0,
+        "span_m": [
+          11.06,
+          15.0
+        ],
+        "wall_thickness_m": 0.24,
+        "target_floor": "F2"
+      },
+      {
+        "id": "F1-office-cross-floor",
+        "category": "cross_floor_alignment",
+        "floor_id": "F1",
+        "axis": 1,
+        "reference_m": 15.9996,
+        "target_m": 16.06,
+        "span_m": [
+          11.06,
+          15.0
+        ],
+        "wall_thickness_m": 0.24,
+        "target_floor": "F2"
+      }
+    ],
+    "ground_threshold": {
+      "floor_id": "F1",
+      "threshold_m": 0.2
+    }
+  }
+}
